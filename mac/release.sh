@@ -116,7 +116,9 @@ echo "Release $TAG built:"; ls -la "$OUT"; cat "$OUT/SHA256SUMS"
 if (( PUBLISH )); then
   NOTES="$OUT/notes.md"
   cat > "$NOTES" <<MD
-SimSight Companion for The Sims 4 $GAME on Mac and Windows (game interface from TS4 Access $UPSTREAM).
+**Alpha.** SimSight Companion for The Sims 4 $GAME on Mac and Windows (game interface from TS4 Access $UPSTREAM).
+Guides: https://the40n8.github.io/simsight-companion/ · Testers wanted, especially on Windows:
+https://the40n8.github.io/simsight-companion/testers/
 
 **Mac: install or update** (quit the game first), in Terminal:
 
@@ -143,5 +145,5 @@ MD
   git tag "$TAG" && git push -q origin "$TAG"
   gh release create "$TAG" "$OUT/SimSight-Companion-mac.zip" "$OUT/install.sh" \
     "$OUT/SimSight-Companion-windows.zip" "$OUT/install.ps1" "$OUT/SHA256SUMS" \
-    --repo the40n8/simsight-companion --title "SimSight Companion $TAG" --notes-file "$NOTES" --latest
+    --repo the40n8/simsight-companion --title "SimSight Companion $TAG (alpha)" --notes-file "$NOTES" --latest
 fi

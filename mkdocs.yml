@@ -1,0 +1,74 @@
+# The SimSight guide website, built from docs/ (mkdocs build --strict).
+# Published on GitHub Pages with: mkdocs gh-deploy
+site_name: SimSight Companion
+site_description: Play The Sims 4 with a screen reader, on the Mac or Windows, and from your phone.
+site_url: https://the40n8.github.io/simsight-companion/
+repo_url: https://github.com/the40n8/simsight-companion
+repo_name: the40n8/simsight-companion
+edit_uri: edit/main/docs/
+docs_dir: docs
+site_dir: site
+copyright: SimSight Companion, based on TS4 Access (MIT licence)
+
+theme:
+  name: material
+  language: en
+  icon:
+    logo: material/headphones
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Dark theme
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: Light theme
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - content.code.copy
+    - search.highlight
+
+# Plain text guides that ship inside the Windows mod folder: linked as they are.
+not_in_nav: |
+  mac/PLUGIN.md
+
+nav:
+  - Home: index.md
+  - Install: install.md
+  - Phone app: mac/PHONE-GUIDE.md
+  - Mac:
+      - Keyboard: mac/KEYBOARD.md
+      - Commands: mac/COMMANDS.md
+      - Fixed phone address: mac/FIXED-ADDRESS.md
+      - Meeting point: mac/MEETING-POINT.md
+      - Ask an AI helper: mac/GPT.md
+  - Windows: windows/index.md
+  - Help us test:
+      - Testers wanted: testers.md
+      - Test checklist: mac/TESTING.md
+  - About: about.md
+
+extra_css:
+  - stylesheets/extra.css
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - toc:
+      permalink: false
+  - pymdownx.superfences
+  - pymdownx.highlight
+
+validation:
+  links:
+    absolute_links: relative_to_docs
+    anchors: warn

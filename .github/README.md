@@ -22,6 +22,9 @@ feed, speed, Play menus, House map); its newest parts (game questions,
 notifications, Needs attention) are still being tried. Early: expect rough
 edges.
 
+**Alpha.** Guides for players: **https://the40n8.github.io/simsight-companion/**
+(install, phone app, Mac, Windows, and how to help test).
+
 **Players:** read the [phone guide](../docs/mac/PHONE-GUIDE.md) (also in the
 app's Help tab). To ask ChatGPT or another assistant about the mod, point it
 at [`llms.txt`](https://raw.githubusercontent.com/the40n8/simsight-companion/main/llms.txt).

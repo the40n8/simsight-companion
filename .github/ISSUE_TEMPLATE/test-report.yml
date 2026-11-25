@@ -1,0 +1,42 @@
+name: Test report
+description: Tell us how SimSight worked for you, good or bad.
+title: "Test report: "
+labels: ["test report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for trying SimSight. Every field is optional except "What happened".
+        Short answers are fine. Please do not paste your phone link: it works like a key.
+  - type: dropdown
+    id: computer
+    attributes:
+      label: Computer
+      options:
+        - Windows
+        - Mac with Apple chip (M1 or later)
+        - Mac with Intel chip
+        - Other or not sure
+  - type: input
+    id: reader
+    attributes:
+      label: Screen reader and phone
+      description: For example "NVDA 2026.3, iPhone with VoiceOver", or "none".
+  - type: input
+    id: version
+    attributes:
+      label: SimSight version
+      description: In the accessibility menu, companion setup, "SimSight version". Or the date you installed it.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: Where you were, what you pressed, what was said (word for word if you can), and what you expected.
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Log (optional)
+      description: The end of SimSight.log, in Mods/SimSight. It contains your Sims' names; remove anything you prefer not to share.
+      render: text
