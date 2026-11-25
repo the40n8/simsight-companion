@@ -112,6 +112,11 @@ mac/release.sh    # player release in dist/release (zip, SHA256SUMS, install.sh)
                   # --publish creates the GitHub release
 ```
 
+GitHub builds and tests every push to `main` the same way (Actions >
+Release). To publish without a Mac at hand: **Actions > Release > Run
+workflow**, tick **Publish**. It runs `mac/release.sh --publish` on a GitHub
+Mac; players are then offered the update in the game.
+
 Start the game, accept the mod list, load a household. Player notes:
 [`mac/PLAYERS.md`](../mac/PLAYERS.md). Remove with `mac/uninstall.sh`
 (`--restore-options` also restores Options.ini). `mac/narration.sh on|off`
