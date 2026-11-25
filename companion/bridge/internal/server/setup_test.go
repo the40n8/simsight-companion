@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -72,25 +73,29 @@ func TestSetupRejectsBadInput(t *testing.T) {
 		!strings.Contains(body, `href="#tunnel_token"`) || !strings.Contains(body, `aria-invalid="true"`) {
 		t.Fatalf("status %d: %s", w.Code, body)
 	}
-	if after, _ := pairing.Load(dir); *after != *before {
+	if after, _ := pairing.Load(dir); !reflect.DeepEqual(after, before) {
 		t.Fatal("config changed despite errors")
 	}
 }
 
 func TestSetupLocalOnlyAndMeetingPoint(t *testing.T) {
 	s, dir := newTestSetup(t)
-	if w := setupPost(t, s, url.Values{"csrf": {s.csrf}, "mode": {"local"}, "meeting_point": {"meet.example.com"}}, ""); w.Code != http.StatusUnprocessableEntity {
+	if w := setupPost(t, s, url.Values{"csrf": {s.csrf}, "mode": {"local"}, "meeting_points": {"meet.example.com"}}, ""); w.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("meeting point with Wi-Fi only accepted: %d", w.Code)
 	}
-	if w := setupPost(t, s, url.Values{"csrf": {s.csrf}, "mode": {"quick"}, "meeting_point": {"meet.example.com"}}, ""); w.Code != http.StatusSeeOther {
+	// One per line; repeats dropped; bad lines refused.
+	if w := setupPost(t, s, url.Values{"csrf": {s.csrf}, "mode": {"quick"}, "meeting_points": {"meet.example.com/x\nnot an address"}}, ""); w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("bad meeting point accepted: %d", w.Code)
+	}
+	if w := setupPost(t, s, url.Values{"csrf": {s.csrf}, "mode": {"quick"}, "meeting_points": {"meet.example.com\r\nhttps://other.example.org\nmeet.example.com"}}, ""); w.Code != http.StatusSeeOther {
 		t.Fatalf("status %d", w.Code)
 	}
 	cfg, _ := pairing.Load(dir)
-	if cfg.MeetingPoint != "https://meet.example.com" || cfg.MacID == "" || cfg.MacSecret == "" {
+	if !reflect.DeepEqual(cfg.MeetingPoints, []string{"https://meet.example.com", "https://other.example.org"}) || cfg.MacID == "" || cfg.MacSecret == "" {
 		t.Fatalf("saved %+v", cfg)
 	}
 	setupPost(t, s, url.Values{"csrf": {s.csrf}, "mode": {"local"}}, "")
-	if cfg, _ = pairing.Load(dir); !cfg.LocalOnly || cfg.MeetingPoint != "" {
+	if cfg, _ = pairing.Load(dir); !cfg.LocalOnly || len(cfg.MeetingPoints) != 0 {
 		t.Fatalf("saved %+v", cfg)
 	}
 }

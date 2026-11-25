@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io/fs"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -175,10 +176,10 @@ func (a *auth) WrapStreamingHandler(next connect.StreamingHandlerFunc) connect.S
 
 // Handler serves the API, the web app (an SPA: unknown paths get
 // index.html) and, on this Mac only, the pairing page at /pair.
-// cors is the meeting point's origin, allowed to call this API from the
-// phone app it hosts ("" when there is none). setup is the settings page
+// cors are the meeting points' origins, allowed to call this API from the
+// phone app they host (nil: none). setup is the settings page
 // (/setup, this Mac only; nil for none).
-func Handler(h *hub.Hub, token string, web fs.FS, links LinkFunc, codes *Codes, cors string, setup http.Handler) http.Handler {
+func Handler(h *hub.Hub, token string, web fs.FS, links LinkFunc, codes *Codes, cors []string, setup http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/pair", PairPage(links, codes))
 	if setup != nil {
@@ -208,7 +209,7 @@ func Handler(h *hub.Hub, token string, web fs.FS, links LinkFunc, codes *Codes, 
 		w.Header().Set("Cache-Control", "no-cache")
 		http.ServeFileFS(w, r, web, "index.html")
 	})
-	if cors == "" {
+	if len(cors) == 0 {
 		return mux
 	}
 	return allowOrigin(cors, mux)
@@ -216,9 +217,10 @@ func Handler(h *hub.Hub, token string, web fs.FS, links LinkFunc, codes *Codes, 
 
 // allowOrigin lets the phone app at the meeting point use this API across
 // origins (it still needs the pairing key for everything but the code).
-func allowOrigin(origin string, next http.Handler) http.Handler {
+func allowOrigin(origins []string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Origin") != origin {
+		origin := r.Header.Get("Origin")
+		if origin == "" || !slices.Contains(origins, origin) {
 			next.ServeHTTP(w, r)
 			return
 		}

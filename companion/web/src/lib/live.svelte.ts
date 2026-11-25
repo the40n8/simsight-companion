@@ -1,9 +1,12 @@
 import type { Event, GameState } from './gen/simsight/v1/game_pb.js';
 import { client, isUnauthenticated, token, useGame } from './client.js';
-import { findGame, games, hosted, type Game } from './meeting.js';
+import { findGame, games, hosted, nameGame, type Game } from './meeting.js';
 
-/** waiting: at a meeting point, no paired Mac has its game running. */
-export type Status = 'unpaired' | 'rejected' | 'connecting' | 'live' | 'retrying' | 'waiting';
+/**
+ * waiting: at a meeting point, no paired Mac has its game running.
+ * nopoint: no meeting point answers (offline, or it was shut down).
+ */
+export type Status = 'unpaired' | 'rejected' | 'connecting' | 'live' | 'retrying' | 'waiting' | 'nopoint';
 
 /** How many events the feed keeps on the phone. */
 const FEED_MAX = 100;
@@ -58,9 +61,10 @@ class Live {
 			if (hosted) {
 				const found = await findGame();
 				if (abort.signal.aborted) return;
-				if (!found) {
-					this.status = 'waiting';
-					await new Promise((r) => setTimeout(r, 8000));
+				if (!found || found === 'unreachable') {
+					this.status = found ? 'nopoint' : 'waiting';
+					// Asked again now and then (each ask counts at the meeting point).
+					await new Promise((r) => setTimeout(r, found ? 30000 : 15000));
 					continue;
 				}
 				useGame(found.url, found.game.token);
@@ -77,6 +81,7 @@ class Live {
 					const p = res.payload;
 					if (p.case === 'state') {
 						this.state = p.value;
+						if (this.game) nameGame(this.game.id, p.value.computer);
 					} else if (p.case === 'event') {
 						this.#add(p.value, Date.now() > backlogUntil);
 					} else if (p.case === 'gameConnected') {

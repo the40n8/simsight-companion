@@ -141,7 +141,7 @@ func run() error {
 	defer stop()
 
 	h := hub.New(nil)
-	h.SetPlatform(osutil.Platform())
+	h.SetPlatform(osutil.Platform(), osutil.ComputerName())
 	// What the Mac voice announces: kept in the data folder, set from the phone.
 	h.SetMacAnnounceSaver(func(a *v1.MacAnnounce) error { return announce.Save(*dataDir, a) })
 	_ = h.SetMacAnnounce(announce.Load(*dataDir))
@@ -154,19 +154,21 @@ func run() error {
 	defer stopTunnel()
 	tunDone := make(chan struct{})
 	var onTunnelReady atomic.Pointer[func(url string)] // set once the speaker exists
-	// Optional meeting point: the phone app at one fixed address, which finds
-	// this Mac's tunnel by itself (docs/mac/MEETING-POINT.md).
-	var meet *meeting.Client
-	if cfg.MeetingPoint != "" {
-		meet = meeting.New(cfg.MeetingPoint, cfg.MacID, cfg.MacSecret)
-		go meet.Run(ctx)
-		slog.Info("meeting point", "url", cfg.MeetingPoint)
+	// Optional meeting points: the phone app at one fixed address, which
+	// finds this Mac's tunnel by itself (docs/mac/MEETING-POINT.md). This Mac
+	// announces itself to each; one that cannot be reached is skipped.
+	var meets []*meeting.Client
+	for _, base := range cfg.MeetingPoints {
+		m := meeting.New(base, cfg.MacID, cfg.MacSecret)
+		go m.Run(ctx)
+		meets = append(meets, m)
+		slog.Info("meeting point", "url", base)
 	}
 	links := func() (string, string) {
 		if tun != nil {
 			if url, status := tun.URL(); url != "" {
-				if meet != nil {
-					return meet.AppLink(cfg.Token), "ready"
+				if len(meets) > 0 {
+					return meets[0].AppLink(cfg.Token), "ready"
 				}
 				return url + "/#k=" + cfg.Token, "ready"
 			} else if status == "starting" {
@@ -187,8 +189,8 @@ func run() error {
 			link := url + "/#k=" + cfg.Token
 			path := filepath.Join(*dataDir, "phone-link.txt")
 			_ = os.WriteFile(path, []byte(link+"\n"+strings.Join(cfg.Links(), "\n")+"\n"), 0o600)
-			if meet != nil {
-				meet.SetURL(url)
+			for _, m := range meets {
+				m.SetURL(url)
 			}
 			if f := onTunnelReady.Load(); f != nil {
 				(*f)(url)
@@ -206,10 +208,18 @@ func run() error {
 	}
 	// Pairing code, said by the Mac voice when the phone link page opens.
 	codes := server.NewCodes(cfg.Token)
-	cors := ""
-	if meet != nil {
-		codes.OnNew(meet.SetCode)
-		cors = meet.Origin()
+	var cors []string
+	if len(meets) > 0 {
+		// Many computers' codes side by side at a shared meeting point.
+		codes.SetDigits(9)
+		codes.OnNew(func(code string, until time.Time) {
+			for _, m := range meets {
+				m.SetCode(code, until)
+			}
+		})
+		for _, m := range meets {
+			cors = append(cors, m.Origin())
+		}
 	}
 	if *demoMode {
 		codes.SetSay(func(code string) { fmt.Fprintln(os.Stderr, "pairing code:", code) })

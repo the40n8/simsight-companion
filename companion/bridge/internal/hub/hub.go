@@ -32,6 +32,7 @@ type Hub struct {
 	// Bridge-side settings shown in every state (not sent by the game).
 	macAnnounce *v1.MacAnnounce
 	platform    string // "mac" or "windows", copied into every state
+	computer    string // this computer's name, copied into every state
 	persist     func(*v1.MacAnnounce) error
 
 	send    Sender
@@ -115,6 +116,7 @@ func (h *Hub) SetState(s *v1.GameState) {
 		s.MacAnnounce = h.macAnnounce
 	}
 	s.Platform = h.platform
+	s.Computer = h.computer
 	if h.state != nil && proto.Equal(h.state, s) {
 		return
 	}
@@ -126,15 +128,17 @@ func (h *Hub) SetState(s *v1.GameState) {
 	}
 }
 
-// SetPlatform names the computer for the phones ("mac", "windows"), in
-// every state from now on.
-func (h *Hub) SetPlatform(p string) {
+// SetPlatform names the computer for the phones: its kind ("mac",
+// "windows") and its name, in every state from now on.
+func (h *Hub) SetPlatform(p, computer string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.platform = p
+	h.computer = computer
 	if h.state != nil {
 		s := proto.Clone(h.state).(*v1.GameState)
 		s.Platform = p
+		s.Computer = computer
 		h.state = s
 		h.broadcast(&v1.WatchResponse{Payload: &v1.WatchResponse_State{State: s}})
 	}

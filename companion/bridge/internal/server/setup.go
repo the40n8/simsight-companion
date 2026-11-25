@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 
@@ -42,6 +43,8 @@ type Setup struct {
 func NewSetup(dir string, port int, links LinkFunc) *Setup {
 	return &Setup{dir: dir, port: port, links: links, csrf: pairing.NewToken()}
 }
+
+const maxMeetingPoints = 5
 
 type setupField struct {
 	ID, Error string
@@ -160,7 +163,7 @@ func (s *Setup) data(cfg *pairing.Config) setupData {
 		Mode:       "quick",
 		HasToken:   cfg.TunnelToken != "",
 		PublicURL:  cfg.PublicURL,
-		Meeting:    cfg.MeetingPoint,
+		Meeting:    strings.Join(cfg.MeetingPoints, "\n"),
 		Standalone: s.links == nil,
 		Errors:     map[string]string{},
 		Update:     s.updateData(),
@@ -202,7 +205,7 @@ func (s *Setup) save(w http.ResponseWriter, r *http.Request, cfg *pairing.Config
 	d := s.data(cfg)
 	d.Mode = f.Get("mode")
 	d.PublicURL = strings.TrimSpace(f.Get("public_url"))
-	d.Meeting = strings.TrimSpace(f.Get("meeting_point"))
+	d.Meeting = strings.TrimSpace(f.Get("meeting_points"))
 	problem := func(id, msg string) {
 		d.Errors[id] = msg
 		d.Problems = append(d.Problems, setupField{id, msg})
@@ -235,29 +238,41 @@ func (s *Setup) save(w http.ResponseWriter, r *http.Request, cfg *pairing.Config
 	default:
 		problem("mode-quick", "Choose how the phone reaches this "+osutil.Computer()+".")
 	}
-	next.MeetingPoint = ""
-	if d.Meeting != "" {
-		if d.Mode == "local" {
-			problem("meeting_point", "The meeting point needs the internet: choose a changing or fixed address, or leave the meeting point empty.")
-		} else if u, err := WebAddress(d.Meeting); err != nil {
-			problem("meeting_point", err.Error())
-		} else {
-			next.MeetingPoint = u
+	next.MeetingPoints = nil
+	for _, line := range strings.FieldsFunc(d.Meeting, func(r rune) bool { return r == '\n' || r == '\r' || r == ',' }) {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
 		}
+		if d.Mode == "local" {
+			problem("meeting_points", "Meeting points need the internet: choose a changing or fixed address, or leave the meeting points empty.")
+			break
+		}
+		u, err := WebAddress(line)
+		if err != nil {
+			problem("meeting_points", line+": "+err.Error())
+			break
+		}
+		if !slices.Contains(next.MeetingPoints, u) {
+			next.MeetingPoints = append(next.MeetingPoints, u)
+		}
+	}
+	if len(next.MeetingPoints) > maxMeetingPoints {
+		problem("meeting_points", fmt.Sprintf("At most %d meeting points.", maxMeetingPoints))
 	}
 	if len(d.Problems) > 0 {
 		d.Title = fmt.Sprintf("%d %s", len(d.Problems), plural(len(d.Problems), "problem", "problems"))
 		s.render(w, d, http.StatusUnprocessableEntity)
 		return
 	}
-	if next.MeetingPoint != "" && (next.MacID == "" || next.MacSecret == "") {
+	if len(next.MeetingPoints) > 0 && (next.MacID == "" || next.MacSecret == "") {
 		next.MacID, next.MacSecret = pairing.NewToken(), pairing.NewToken()
 	}
 	if err := next.Save(s.dir); err != nil {
 		http.Error(w, "Cannot save the settings: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	slog.Info("settings saved from the setup page", "mode", d.Mode, "meeting_point", next.MeetingPoint != "")
+	slog.Info("settings saved from the setup page", "mode", d.Mode, "meeting_points", len(next.MeetingPoints))
 	http.Redirect(w, r, "/setup?saved=1", http.StatusSeeOther)
 }
 
@@ -369,7 +384,7 @@ legend{font-weight:700;padding:0;margin-bottom:.5rem}
 .field{margin:1.2rem 0}
 .field label{display:block;font-weight:600}
 .field .hint{margin:.1rem 0 .4rem}
-input[type=text],input[type=url]{width:100%;font:inherit;min-height:2.9rem;padding:.4rem .7rem;border:2px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg)}
+input[type=text],input[type=url],textarea{width:100%;font:inherit;min-height:2.9rem;padding:.4rem .7rem;border:2px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg)}
 input[aria-invalid=true]{border-color:var(--bad)}
 .error{color:var(--bad);font-weight:700;margin:.3rem 0}
 .check{display:flex;gap:.7rem;align-items:flex-start;margin:1rem 0}
@@ -397,7 +412,7 @@ code{font-size:.9em;word-break:break-all}
 <h2>Right now</h2>
 <section>
 {{if .Running}}<p>The game is running. {{.LinkStatus}}</p>
-{{if .Address}}<p>Phone address: <code>{{.Address}}</code></p>{{end}}
+{{if .Address}}<p>Phone address: <a href="{{.Address}}"><code>{{.Address}}</code></a></p>{{end}}
 <p><a href="/pair">Pair a phone</a>: shows the 6-digit code and the QR code.</p>
 {{else}}<p>The game is not running. Your choices here take effect when it starts.</p>
 <p>To pair a phone, start the game, load a household, press Option Command A, then choose phone companion.</p>{{end}}
@@ -462,13 +477,13 @@ code{font-size:.9em;word-break:break-all}
 </div>
 </section>
 
-<h2>Meeting point (optional)</h2>
+<h2>Meeting points (optional)</h2>
 <section>
 <div class="field">
-<label for="meeting_point">Meeting point address</label>
-<p class="hint" id="hint-meet">Your own SimSight meeting point: the phone app always opens at that address and finds this Mac by itself. Leave empty if you do not have one; everything else keeps working.</p>
-{{with index .Errors "meeting_point"}}<p class="error" id="err-meet">{{.}}</p>{{end}}
-<input type="text" inputmode="url" id="meeting_point" name="meeting_point" value="{{.Meeting}}" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="hint-meet{{if index .Errors "meeting_point"}} err-meet{{end}}"{{if index .Errors "meeting_point"}} aria-invalid="true"{{end}}>
+<label for="meeting_points">Meeting point addresses, one per line</label>
+<p class="hint" id="hint-meet">A SimSight meeting point gives the phone app one address for good: the app opens there and finds this Mac by itself each session. Use your own, or a shared one someone runs. With several, this Mac announces itself to each, so the app keeps working if one stops. Pairing codes then have 9 digits. Leave empty if you have none; everything else keeps working.</p>
+{{with index .Errors "meeting_points"}}<p class="error" id="err-meet">{{.}}</p>{{end}}
+<textarea id="meeting_points" name="meeting_points" rows="3" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="hint-meet{{if index .Errors "meeting_points"}} err-meet{{end}}"{{if index .Errors "meeting_points"}} aria-invalid="true"{{end}}>{{.Meeting}}</textarea>
 </div>
 </section>
 <p><button type="submit" name="action" value="save">Save</button></p>

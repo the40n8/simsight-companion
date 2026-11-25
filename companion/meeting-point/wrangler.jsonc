@@ -1,5 +1,5 @@
-// The phone app's meeting point (optional): deploy it to your own Cloudflare
-// account, then put its address in the Mac's config.json ("meeting_point").
+// The phone app's meeting point (optional): deploy it to a Cloudflare
+// account, then add its address on the SimSight setup page (meeting points).
 // Guide: docs/mac/MEETING-POINT.md
 {
   "name": "simsight",
@@ -10,7 +10,9 @@
     "directory": "../web/build",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": true
+    // Only the meeting point's own answers and the app's start page run code;
+    // the app's other files are served directly (free, not counted).
+    "run_worker_first": ["/mp/*", "/", "/index.html", "/manifest.json"]
   },
   "durable_objects": {
     "bindings": [{ "name": "REGISTRY", "class_name": "Registry" }]

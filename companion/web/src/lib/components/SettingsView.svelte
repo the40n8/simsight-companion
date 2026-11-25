@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { sendWhenComplete } from '$lib/code.js';
+	import MeetingPoints from './MeetingPoints.svelte';
 	import { m } from '$lib/i18n/paraglide/messages.js';
 	import { LANGUAGES, changeLocale, i18n, isLocale } from '$lib/i18n/locale.svelte.js';
 	import {
@@ -242,6 +243,7 @@
 					autocomplete="one-time-code"
 					maxlength="11"
 					bind:value={code}
+					data-digits="9"
 					oninput={sendWhenComplete}
 					enterkeyhint="go"
 				/>
@@ -249,6 +251,7 @@
 			<button type="submit" aria-disabled={codeBusy}>{m.pair_code_button()}</button>
 		</form>
 	</section>
+	<MeetingPoints />
 {/if}
 
 <style>

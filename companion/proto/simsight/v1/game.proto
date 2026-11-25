@@ -131,6 +131,9 @@ message GameState {
   // The computer the game runs on: "mac" or "windows" (set by the bridge),
   // for the phone app's wording and shortcuts.
   string platform = 14;
+  // This computer's name (set by the bridge): how the phone app lists it.
+  // Meeting points never get it.
+  string computer = 15;
 }
 
 message MacAnnounce {

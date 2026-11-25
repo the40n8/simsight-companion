@@ -1,7 +1,8 @@
-// Package meeting tells the optional meeting point (a Worker on the player's
-// own Cloudflare account, companion/meeting-point) where this Mac's phone
-// link is today, and which pairing code it shows. Nothing else is sent: no
-// game data, no pairing key.
+// Package meeting tells an optional meeting point (a Worker, the player's own
+// or a shared one, companion/meeting-point) where this Mac's phone link is
+// today, and which pairing code it shows (hashed there). Nothing else is
+// sent: no game data, no pairing key, not even the computer's name (the phone
+// learns it from the computer itself).
 package meeting
 
 import (
@@ -14,16 +15,14 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/the40n8/simsight-companion/companion/bridge/internal/osutil"
 )
 
 // Every so often, so the meeting point knows the Mac is still there.
 const refresh = 10 * time.Minute
 
 type Client struct {
-	base, id, secret, name string
-	http                   *http.Client
+	base, id, secret string
+	http             *http.Client
 
 	mu       sync.Mutex
 	url      string
@@ -33,8 +32,7 @@ type Client struct {
 }
 
 func New(base, id, secret string) *Client {
-	name := osutil.ComputerName()
-	return &Client{base: strings.TrimRight(base, "/"), id: id, secret: secret, name: name,
+	return &Client{base: strings.TrimRight(base, "/"), id: id, secret: secret,
 		http: &http.Client{Timeout: 10 * time.Second}, poke: make(chan struct{}, 1)}
 }
 
@@ -94,7 +92,7 @@ func (c *Client) Run(ctx context.Context) {
 
 func (c *Client) announce(ctx context.Context, gone bool) {
 	c.mu.Lock()
-	body := map[string]any{"id": c.id, "secret": c.secret, "name": c.name, "url": c.url}
+	body := map[string]any{"id": c.id, "secret": c.secret, "url": c.url}
 	if left := time.Until(c.codeTill); c.code != "" && left > 0 {
 		body["code"], body["codeSeconds"] = c.code, int(left.Seconds())
 	}

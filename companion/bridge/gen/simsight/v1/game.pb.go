@@ -906,7 +906,10 @@ type GameState struct {
 	MacAnnounce *MacAnnounce `protobuf:"bytes,13,opt,name=mac_announce,json=macAnnounce,proto3" json:"mac_announce,omitempty"`
 	// The computer the game runs on: "mac" or "windows" (set by the bridge),
 	// for the phone app's wording and shortcuts.
-	Platform      string `protobuf:"bytes,14,opt,name=platform,proto3" json:"platform,omitempty"`
+	Platform string `protobuf:"bytes,14,opt,name=platform,proto3" json:"platform,omitempty"`
+	// This computer's name (set by the bridge): how the phone app lists it.
+	// Meeting points never get it.
+	Computer      string `protobuf:"bytes,15,opt,name=computer,proto3" json:"computer,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1035,6 +1038,13 @@ func (x *GameState) GetMacAnnounce() *MacAnnounce {
 func (x *GameState) GetPlatform() string {
 	if x != nil {
 		return x.Platform
+	}
+	return ""
+}
+
+func (x *GameState) GetComputer() string {
+	if x != nil {
+		return x.Computer
 	}
 	return ""
 }
@@ -2825,7 +2835,7 @@ const file_simsight_v1_game_proto_rawDesc = "" +
 	"\tNarration\x12\x1b\n" +
 	"\tmac_voice\x18\x01 \x01(\bR\bmacVoice\x12\x1f\n" +
 	"\vsim_actions\x18\x02 \x01(\bR\n" +
-	"simActions\"\xab\x04\n" +
+	"simActions\"\xc7\x04\n" +
 	"\tGameState\x12\x10\n" +
 	"\x03seq\x18\x01 \x01(\x04R\x03seq\x12\x17\n" +
 	"\ain_game\x18\x02 \x01(\bR\x06inGame\x12(\n" +
@@ -2842,7 +2852,8 @@ const file_simsight_v1_game_proto_rawDesc = "" +
 	"bills_owed\x18\v \x01(\x03R\tbillsOwed\x12%\n" +
 	"\x0ecamera_follows\x18\f \x01(\tR\rcameraFollows\x12;\n" +
 	"\fmac_announce\x18\r \x01(\v2\x18.simsight.v1.MacAnnounceR\vmacAnnounce\x12\x1a\n" +
-	"\bplatform\x18\x0e \x01(\tR\bplatform\"=\n" +
+	"\bplatform\x18\x0e \x01(\tR\bplatform\x12\x1a\n" +
+	"\bcomputer\x18\x0f \x01(\tR\bcomputer\"=\n" +
 	"\vMacAnnounce\x12\x16\n" +
 	"\x06groups\x18\x01 \x03(\tR\x06groups\x12\x16\n" +
 	"\x06social\x18\x02 \x01(\tR\x06social\"^\n" +

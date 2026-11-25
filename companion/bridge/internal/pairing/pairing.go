@@ -28,11 +28,12 @@ type Config struct {
 	// "https://sims.example.com". Empty: a random quick tunnel each session.
 	TunnelToken string `json:"tunnel_token,omitempty"`
 	PublicURL   string `json:"public_url,omitempty"`
-	// Optional meeting point: the address of your own SimSight Worker
-	// (companion/meeting-point). The phone app then lives there, at one
-	// fixed address, and finds this Mac by itself each session.
-	MeetingPoint string `json:"meeting_point,omitempty"`
-	// This Mac at the meeting point (made when meeting_point is set).
+	// Optional meeting points: addresses of SimSight Workers
+	// (companion/meeting-point), your own or shared ones. The phone app then
+	// lives there, at one fixed address, and finds this Mac by itself each
+	// session. This Mac announces itself to each of them.
+	MeetingPoints []string `json:"meeting_points,omitempty"`
+	// This Mac at the meeting points (made when meeting_points is set).
 	MacID     string `json:"mac_id,omitempty"`
 	MacSecret string `json:"mac_secret,omitempty"`
 	// No Cloudflare tunnel: the phone app on the home Wi-Fi only.
@@ -62,7 +63,7 @@ func Load(dir string) (*Config, error) {
 		cfg.Port = DefaultPort
 		changed = true
 	}
-	if cfg.MeetingPoint != "" && (len(cfg.MacID) < 20 || len(cfg.MacSecret) < 20) {
+	if len(cfg.MeetingPoints) > 0 && (len(cfg.MacID) < 20 || len(cfg.MacSecret) < 20) {
 		cfg.MacID = NewToken()
 		cfg.MacSecret = NewToken()
 		changed = true

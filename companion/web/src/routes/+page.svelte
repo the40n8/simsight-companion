@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { sendWhenComplete } from '$lib/code.js';
+	import { codeDigits, sendWhenComplete } from '$lib/code.js';
+	import MeetingPoints from '$lib/components/MeetingPoints.svelte';
 	import { onMount, tick } from 'svelte';
 	import { linkInAddressBar, pairFromText, pairWithCode } from '$lib/session.js';
 	import * as meeting from '$lib/meeting.js';
@@ -55,6 +56,9 @@
 	}
 	// Or the 6-digit code the Mac says when its phone link page opens.
 	let code = $state('');
+	// 9 digits at meeting points; the computer says, on its own address.
+	let digits = $state(meeting.hosted ? 9 : 6);
+	if (!meeting.hosted) codeDigits().then((n) => (digits = n));
 	let codeBusy = $state(false);
 	let codeError = $state('');
 	async function codePairing(e: SubmitEvent) {
@@ -109,9 +113,14 @@
 
 <Announcer />
 
-{#if live.status === 'unpaired' || live.status === 'rejected' || live.status === 'waiting'}
+{#if live.status === 'unpaired' || live.status === 'rejected' || live.status === 'waiting' || live.status === 'nopoint'}
 	<main class="page stack bare">
-		{#if live.status === 'waiting'}
+		{#if live.status === 'nopoint'}
+			<h1>{m.nopoint_title()}</h1>
+			<p role="status">{m.status_nopoint()}</p>
+			<MeetingPoints />
+			<h2>{m.pair_another()}</h2>
+		{:else if live.status === 'waiting'}
 			<h1>{m.waiting_title()}</h1>
 			<p role="status">
 				{m.waiting_help({
@@ -128,13 +137,14 @@
 		{/if}
 		<form class="stack" onsubmit={codePairing}>
 			<label class="stack">
-				<span>{m.pair_code_label()}</span>
+				<span>{m.pair_code_label({ n: digits })}</span>
 				<input
 					type="text"
 					inputmode="numeric"
 					autocomplete="one-time-code"
 					maxlength="11"
 					bind:value={code}
+					data-digits={digits}
 					oninput={sendWhenComplete}
 					enterkeyhint="go"
 				/>

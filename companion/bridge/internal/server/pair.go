@@ -1,6 +1,8 @@
 package server
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
 	"html/template"
 	"net"
 	"net/http"
@@ -22,18 +24,53 @@ body{font:18px/1.5 system-ui,sans-serif;background:#0f2a1f;color:#eef7f1;margin:
 main{max-width:30rem;padding:2rem;text-align:center}
 .qr{background:#fff;padding:1rem;border-radius:16px;width:min(80vw,22rem);margin:1rem auto}
 .qr svg{display:block;width:100%;height:auto}
-code{word-break:break-all;font-size:.8rem;color:#b5d3c2}
+.link{word-break:break-all;font:.8rem ui-monospace,monospace;color:#b5d3c2}
+.send{display:flex;gap:.75rem;justify-content:center;flex-wrap:wrap;margin:.75rem 0}
+.send button{font:inherit;font-weight:700;min-height:2.75rem;padding:.4rem 1.2rem;border-radius:10px;border:2px solid #7fe0a8;background:#7fe0a8;color:#06200f;cursor:pointer}
+.send button[hidden]{display:none}
+:focus-visible{outline:3px solid #9ec1ff;outline-offset:3px}
 .pin{font:700 2.6rem/1.2 ui-monospace,monospace;margin:.5rem 0}
 </style></head><body><main>
 <h1>Phone link</h1>
 {{if .SVG}}<p>Scan with the phone's camera, then Share &gt; Add to Home Screen.</p>
 <div class="qr">{{.SVG}}</div>
 {{if .Spoken}}<h2>Or type this code in the phone app</h2><p class="pin">{{.Spoken}}</p><p>Works once, for 5 minutes.</p>{{end}}
-<p><code>{{.Link}}</code></p>
+<h2>Or send the link to the phone</h2>
+<p><a class="link" id="link" href="{{.Link}}">{{.Link}}</a></p>
+<div class="send"><button type="button" id="copy" hidden>Copy link</button><button type="button" id="share" hidden>Share…</button></div>
+<p id="said" role="status"></p>
+<p>Anyone with this link can play on this game: send it only to your own phone, for example with Messages or AirDrop.</p>
+<script>` + sendScript + `</script>
 {{else}}<p>{{.Status}}</p>{{end}}
 <p>{{.Note}}</p>
 <p><a href="/setup" style="color:inherit">SimSight setup</a>: fixed address, meeting point, disconnect phones.</p>
 </main></body></html>`))
+
+// sendScript wires the Copy and Share buttons (shown only when they work:
+// the page also works without scripts, the link is a plain link).
+const sendScript = `(() => {
+const link = document.getElementById('link'), said = document.getElementById('said');
+const copy = document.getElementById('copy'), share = document.getElementById('share');
+if (!link) return;
+if (navigator.clipboard) {
+  copy.hidden = false;
+  copy.onclick = async () => {
+    try { await navigator.clipboard.writeText(link.href); said.textContent = 'Link copied.'; }
+    catch { said.textContent = 'Could not copy: select the link, then copy it.'; }
+  };
+}
+if (navigator.share) {
+  share.hidden = false;
+  share.onclick = () => navigator.share({ title: 'SimSight phone link', url: link.href }).catch(() => {});
+}
+})();`
+
+// pairCSP allows only that script on the page.
+var pairCSP = func() string {
+	sum := sha256.Sum256([]byte(sendScript))
+	return "default-src 'none'; style-src 'unsafe-inline'; img-src data:; script-src 'sha256-" +
+		base64.StdEncoding.EncodeToString(sum[:]) + "'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+}()
 
 // localOnly accepts requests made on this Mac to 127.0.0.1/localhost, and
 // refuses tunnel traffic (which also arrives from loopback, via cloudflared).
@@ -88,6 +125,8 @@ func PairPage(links LinkFunc, codes *Codes) http.HandlerFunc {
 		}
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Content-Security-Policy", pairCSP)
+		w.Header().Set("Referrer-Policy", "no-referrer")
 		_ = pairTmpl.Execute(w, data)
 	}
 }

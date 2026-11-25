@@ -25,7 +25,7 @@ an iPhone, often playing together with a sighted player on the Mac.
 2. Press Option+Command+A: the SimSight menu opens with **phone companion**
    first; choose it (or click the accessibility icon in the macOS menu bar,
    then **Phone companion…**). A page with a QR code opens, and the Mac
-   voice says a 6-digit **pairing code** (twice; it is also on the page).
+   voice says a **pairing code** of 6 digits, 9 with a meeting point (said twice; it is also on the page).
 3. Scan the QR code with the phone camera and open the link in Safari.
    **Or, without the camera:** open the app (or the address) on the phone;
    on the **Pair this phone** screen, type the code in **Pairing code
