@@ -136,7 +136,7 @@ irm https://github.com/the40n8/simsight-companion/releases/latest/download/insta
 \`\`\`
 
 Or download SimSight-Companion-windows.zip, extract it and open "Install SimSight Companion.cmd".
-Windows is **beta**: the installer, phone companion and NVDA speech are tested on Windows 11,
+Windows is **alpha** too: the installer, phone companion and NVDA speech are tested on Windows 11,
 the mod inside the game on Windows not yet. Please report what works and what does not.
 
 **Updating later:** accessibility menu > companion setup > Check for updates.
