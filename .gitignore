@@ -18,3 +18,4 @@ companion/meeting-point/node_modules/
 
 # Guide website build (mkdocs build).
 site/
+companion/meeting-point/.deploy.jsonc

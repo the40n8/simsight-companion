@@ -66,9 +66,12 @@ that Mac says.
 - **Update the Worker when you update the mod:** the phone app lives there,
   so run `npx wrangler deploy` again after `mac/build.sh`. An old app with a
   newer mod may miss buttons.
-- **Your own domain** (optional): in the Cloudflare dashboard, Workers >
-  simsight > Settings > Domains & Routes > add a custom domain such as
-  `sims-app.example.com`. Use a different name from a fixed tunnel address
+- **Your own domain** (optional, domain on Cloudflare): deploy with
+  `./deploy.sh simsight-app.example.com` in `companion/meeting-point`. It
+  attaches the domain and turns the workers.dev address off, so limits you
+  set on the domain (Security > WAF > rate limiting) cannot be skipped. Or
+  in the Cloudflare dashboard, Workers > simsight > Settings > Domains &
+  Routes > add a custom domain such as `simsight-app.example.com`. Use a different name from a fixed tunnel address
   ([FIXED-ADDRESS.md](FIXED-ADDRESS.md)) if you have one; the two do not
   need each other.
 - **Free plan, no bill:** a computer asks about 6 times an hour while the
