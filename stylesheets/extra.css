@@ -1,0 +1,32 @@
+/* SimSight green, readable with white text (contrast above 6:1), the same
+   as the setup page. */
+:root,
+[data-md-color-scheme="default"],
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #0b6b3a;
+  --md-primary-fg-color--light: #2f8a58;
+  --md-primary-fg-color--dark: #06492a;
+  --md-accent-fg-color: #1a4fd6;
+}
+[data-md-color-scheme="default"] {
+  --md-typeset-a-color: #0b5c32;
+}
+[data-md-color-scheme="slate"] {
+  --md-typeset-a-color: #7fe0a8;
+  --md-accent-fg-color: #9ec1ff;
+}
+
+/* Links in text are underlined, not told apart by colour alone. */
+.md-typeset a {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+/* Footer text readable on its dark background. */
+.md-footer-meta,
+.md-copyright,
+.md-copyright__highlight {
+  color: #c8c8c8;
+}
+.md-footer-meta a {
+  color: #e8e8e8;
+}

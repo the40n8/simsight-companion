@@ -1,0 +1,49 @@
+SIMSIGHT: OPTIONAL CONSOLE COMMANDS
+
+You do not need these commands for normal play. Use Ctrl+Alt+H for the
+accessibility menu and CONTROLS.txt for keyboard controls.
+
+Press Ctrl+Shift+C to open the game's console. Type a command and press
+Enter. Close the console with Ctrl+Shift+C before navigating menus.
+
+HELP AND SETTINGS
+
+simsight.hub: Open the accessibility menu.
+simsight.menu window: Open settings, including Simplified menus and Build controls.
+simsight.settings: Read current settings.
+simsight.reload: Apply changes you made to SimSight.cfg.
+
+simsight.scannermode on: Enable ordinary arrow-key scanner browsing.
+simsight.scannermode off: Turn Scanner mode off.
+simsight.keys on: Enable keyboard navigation of menus and panels.
+simsight.simactions on: Announce the active Sim's actions.
+simsight.objectnames on: Read world-object tooltips.
+simsight.captions on: Show spoken text on screen.
+Use off instead of on to disable these options.
+
+SPEECH
+
+simsight.speechmode hover: Read controls under the pointer automatically.
+simsight.speechmode manual: Read only when you use the read shortcut.
+simsight.tooltipdelay 1.5: Wait 1.5 seconds before longer descriptions.
+simsight.braille concise: Speak full text and braille the short label.
+
+If you use the fallback Windows voice:
+simsight.voice rate 3: Set voice speed, from -10 to 10.
+simsight.voice volume 70: Set volume, from 0 to 100.
+simsight.voice name zira: Choose the Windows voice.
+simsight.voice list: List available voices.
+
+NVDA and JAWS use their own voice settings.
+
+QUICK ACCESS
+
+simsight.phonelist: Open the phone action list.
+simsight.phone: Open a waiting call or text.
+simsight.household: Choose an active Sim from your household.
+simsight.contacts: Open known contacts.
+simsight.funds: Read household funds.
+simsight.scan rescan: Refresh the scanner.
+
+Settings commands save your preferences. Updating the mod preserves your
+settings file; the release ZIP does not replace it.
