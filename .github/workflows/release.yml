@@ -1,0 +1,86 @@
+# Builds and tests SimSight on every push to main and every pull request.
+# Publishing a release is one click: Actions > Release > Run workflow, with
+# "Publish" ticked. It runs mac/release.sh --publish on a GitHub Mac, the
+# same script as by hand; players get it from the in-game update check.
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["docs/**", "*.md", ".github/*.md", ".github/ISSUE_TEMPLATE/**", "mkdocs.yml"]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish the release (players will be offered it)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    permissions:
+      contents: write   # tag and release, only used when publishing
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PY37: ${{ github.workspace }}/../py37/bin/python
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: companion/bridge/go.mod
+          cache-dependency-path: companion/bridge/go.sum
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: companion/web/pnpm-lock.yaml
+
+      # The game only loads Python 3.7 bytecode; conda-forge has 3.7 for
+      # Intel Macs only, which runs under Rosetta here.
+      - name: Python 3.7
+        run: |
+          softwareupdate --install-rosetta --agree-to-license >/dev/null 2>&1 || true
+          cd "$RUNNER_TEMP"
+          curl -Ls https://micro.mamba.pm/api/micromamba/osx-64/latest | tar -xj bin/micromamba
+          MAMBA_ROOT_PREFIX="$RUNNER_TEMP/mamba" ./bin/micromamba create -y -q \
+            -p "$GITHUB_WORKSPACE/../py37" --platform osx-64 -c conda-forge python=3.7
+          "$PY37" -V
+
+      - name: Downloads cache (game interface, cloudflared, Prism; all checksum-checked)
+        uses: actions/cache@v4
+        with:
+          path: mac/.cache
+          key: pinned-${{ hashFiles('mac/ui-package.json', 'mac/cloudflared.json', 'windows/pins.json') }}
+
+      - name: Build and test
+        if: ${{ !inputs.publish }}
+        run: ./mac/release.sh
+
+      - name: Build, test and publish
+        if: ${{ inputs.publish }}
+        run: ./mac/release.sh --publish
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SimSight-release
+          path: |
+            dist/release/*.zip
+            dist/release/install.*
+            dist/release/SHA256SUMS
+          retention-days: 7
