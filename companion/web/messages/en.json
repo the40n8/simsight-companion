@@ -9,6 +9,7 @@
 	"nav_label": "Sections",
 	"status_connecting": "Connecting to the computer…",
 	"status_retrying": "Connection lost, retrying…",
+	"status_unreachable": "The computer cannot be reached. Start the game there and load a household: this app connects by itself. If the computer's phone address changes each session, open its new link instead.",
 	"status_no_game": "The game is not running on the {computer}.",
 	"status_menu": "Waiting for a game: the game is at the menu or loading.",
 	"pair_title": "Pair this phone",

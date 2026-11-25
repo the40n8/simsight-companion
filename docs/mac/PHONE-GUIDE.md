@@ -44,7 +44,12 @@ an iPhone, often playing together with a sighted player on the Mac.
    `SimSight Setup.command` in the Mods/SimSight folder, game closed or
    not). It chooses the phone address (changing, fixed, or home Wi-Fi
    only), the meeting point, and **Disconnect every phone** if a phone is
-   lost. Changes apply when the game starts.
+   lost. Changes apply when the game starts. Under **SimSight version** it
+   checks for updates: with the game running, the update is downloaded and
+   installed when you quit the game; with the game closed, it is installed
+   at once. At game start the Mac also says when a new version is out.
+7. With the game closed, the app still opens from the Home Screen and says
+   the computer cannot be reached; it connects by itself once the game runs.
 
 ## Using the app with VoiceOver
 

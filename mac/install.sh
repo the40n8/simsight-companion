@@ -26,6 +26,12 @@ tell() {
   [[ "${SIMSIGHT_SPEAK:-0}" == 1 ]] && say -- "$1" 2>/dev/null || true
 }
 
+# An update installed as the game quits (from the SimSight setup page) waits
+# for the game to finish closing: SIMSIGHT_WAIT_GAME=<seconds>.
+wait_game=${SIMSIGHT_WAIT_GAME:-0}
+while (( wait_game > 0 )) && pgrep -f "The Sims 4.app/Contents/MacOS" >/dev/null; do
+  sleep 1; wait_game=$((wait_game - 1))
+done
 if pgrep -f "The Sims 4.app/Contents/MacOS" >/dev/null; then
   tell "The Sims 4 is running. Save, quit the game, then try again. Nothing was changed."; exit 1
 fi

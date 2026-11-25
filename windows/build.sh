@@ -28,7 +28,7 @@ echo "== Python mod (Windows)"
 
 echo "== Bridge (windows/amd64)"
 (cd "$ROOT/companion/bridge" && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
-  go build -trimpath -ldflags "-s -w" -o "$OUT/simsight-bridge.exe" ./cmd/simsight-bridge)
+  go build -trimpath -ldflags "-s -w -X main.version=${SIMSIGHT_VERSION:-dev}" -o "$OUT/simsight-bridge.exe" ./cmd/simsight-bridge)
 
 echo "== cloudflared (Windows)"
 CF_VER=$(pin cloudflared version); CF_ASSET=$(pin cloudflared asset); CF_SHA=$(pin cloudflared sha256)

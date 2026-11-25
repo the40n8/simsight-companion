@@ -9,6 +9,7 @@
 //	simsight-bridge --demo   # fake game, for developing the phone app
 //	simsight-bridge link     # print the phone link and its QR code
 //	simsight-bridge setup    # open the settings page (game running or not)
+//	simsight-bridge version  # this build's release tag, or "dev"
 package main
 
 import (
@@ -42,8 +43,21 @@ import (
 	"github.com/the40n8/simsight-companion/companion/bridge/internal/server"
 	"github.com/the40n8/simsight-companion/companion/bridge/internal/speaker"
 	"github.com/the40n8/simsight-companion/companion/bridge/internal/tunnel"
+	"github.com/the40n8/simsight-companion/companion/bridge/internal/update"
 	"github.com/the40n8/simsight-companion/companion/bridge/internal/webui"
 )
+
+// version is the release tag, set by the release build (-X main.version);
+// "dev" when built from the source.
+var version = "dev"
+
+// updater is this build's update checker, for the setup page. The Sims 4
+// user folder holds this program's folder: <user>/Mods/SimSight/simsight-bridge.
+func updater(dataDir string) *update.Updater {
+	u := update.New(version, dataDir)
+	u.UserDir = filepath.Dir(filepath.Dir(filepath.Dir(osutil.NextToMe("simsight-bridge"))))
+	return u
+}
 
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "link" {
@@ -51,6 +65,10 @@ func main() {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "version" {
+		fmt.Println(version)
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "setup" {
@@ -131,6 +149,10 @@ func run() error {
 	// Phone link: the Cloudflare tunnel when it is up (reachable from any
 	// network), else the Mac's local address. Shown at http://127.0.0.1:<port>/pair.
 	var tun *tunnel.Tunnel
+	// The tunnel stops before an update replaces cloudflared.
+	tunCtx, stopTunnel := context.WithCancel(ctx)
+	defer stopTunnel()
+	tunDone := make(chan struct{})
 	var onTunnelReady atomic.Pointer[func(url string)] // set once the speaker exists
 	// Optional meeting point: the phone app at one fixed address, which finds
 	// this Mac's tunnel by itself (docs/mac/MEETING-POINT.md).
@@ -178,7 +200,7 @@ func run() error {
 		} else {
 			tun = tunnel.New(bin, cfg.Port, ready)
 		}
-		go tun.Run(ctx)
+		go func() { tun.Run(tunCtx); close(tunDone) }()
 	} else if *useTunnel {
 		slog.Info("no cloudflared: phone link on the local network only")
 	}
@@ -199,13 +221,17 @@ func run() error {
 	if runtime.GOOS == "windows" && tun != nil {
 		listen = "127.0.0.1:" + strconv.Itoa(cfg.Port)
 	}
+	upd := updater(*dataDir)
+	update.Cleanup()
+	setup := server.NewSetup(*dataDir, cfg.Port, links)
+	setup.Updates = upd
 	ln, err := net.Listen("tcp", listen)
 	if err != nil {
 		// Another game session or bridge holds the port: keep speech working.
 		slog.Error("phone server unavailable", "port", cfg.Port, "err", err)
 	} else {
 		srv := &http.Server{
-			Handler:           server.Handler(h, cfg.Token, web, links, codes, cors, server.NewSetup(*dataDir, cfg.Port, links)),
+			Handler:           server.Handler(h, cfg.Token, web, links, codes, cors, setup),
 			ReadHeaderTimeout: 10 * time.Second,
 		}
 		go func() {
@@ -256,6 +282,37 @@ func run() error {
 			say("Phone link ready. Press " + osutil.MenuKeys() + " for the accessibility menu, then choose phone companion.")
 		}
 	}
+	// Updates: said once in a household. Just installed, or a newer
+	// release found by a quiet check a minute after the game starts.
+	var updateNews atomic.Pointer[string]
+	if tag := upd.JustInstalled(); tag != "" {
+		news := "SimSight updated to version " + strings.TrimPrefix(tag, "v") + "."
+		updateNews.Store(&news)
+	} else if upd.Released() {
+		go func() {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(time.Minute):
+			}
+			cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			defer cancel()
+			rel, err := upd.Check(cctx)
+			if err != nil || !update.Newer(version, rel.Tag) {
+				return
+			}
+			slog.Info("update available", "tag", rel.Tag)
+			news := "SimSight version " + strings.TrimPrefix(rel.Tag, "v") + " is available. To install it, choose companion setup in the accessibility menu."
+			updateNews.Store(&news)
+		}()
+	}
+	sayNews := func() {
+		if h.State().GetInGame() {
+			if news := updateNews.Swap(nil); news != nil {
+				say(*news)
+			}
+		}
+	}
 	linkUp := func(string) {
 		linkReady.Store(true)
 		tell()
@@ -270,6 +327,7 @@ func run() error {
 		for msg := range h.Subscribe(ctx) {
 			if msg.GetState().GetInGame() {
 				tell()
+				sayNews()
 			}
 			e := msg.GetEvent()
 			if e == nil || e.GetSeq() <= since {
@@ -348,6 +406,24 @@ func run() error {
 	select {
 	case err := <-done:
 		slog.Info("game closed the pipe", "err", err)
+		// A downloaded update: installed now that the game is quitting.
+		if tag := upd.Ready(); tag != "" {
+			stopTunnel()
+			if tun != nil {
+				select {
+				case <-tunDone:
+				case <-time.After(10 * time.Second):
+				}
+			}
+			slog.Info("installing update", "tag", tag)
+			ictx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+			defer cancel()
+			if err := upd.Install(ictx, true); err != nil {
+				slog.Error("update install failed", "err", err)
+			} else {
+				slog.Info("update installed", "tag", tag)
+			}
+		}
 		return nil
 	case <-ctx.Done():
 		return nil
@@ -473,6 +549,8 @@ func runSetup(args []string) error {
 	defer cancel()
 
 	setup := server.NewSetup(*dataDir, cfg.Port, nil)
+	setup.Updates = updater(*dataDir)
+	update.Cleanup()
 	var once atomic.Bool
 	setup.OnDone = func() {
 		if once.CompareAndSwap(false, true) {

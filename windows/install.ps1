@@ -5,10 +5,11 @@
 # SimSight Backups. Your settings (SimSight.cfg) are kept.
 #
 #   powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 [-UserDir <folder>] [-Yes] [-Remove]
+#     [-WaitForGame <seconds>]   (an update installed as the game quits waits for it to close)
 #
 # Windows PowerShell 5.1 or later. Keep this file ASCII: 5.1 reads scripts
 # without a byte order mark as ANSI.
-param([string]$UserDir = '', [switch]$Yes, [switch]$Remove)
+param([string]$UserDir = '', [switch]$Yes, [switch]$Remove, [int]$WaitForGame = 0)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version 2
 
@@ -81,6 +82,7 @@ if (-not (Test-Path -LiteralPath (Join-Path $src 'SimSight.ts4script'))) {
   $src = Join-Path (Split-Path $here -Parent) 'dist\SimSight-windows\SimSight'
 }
 
+for ($i = 0; $i -lt $WaitForGame -and (Test-GameRunning); $i++) { Start-Sleep -Seconds 1 }
 if (Test-GameRunning) {
   Stop-Here 'The Sims 4 is running. Save, quit the game, then try again. Nothing was changed.'
 }

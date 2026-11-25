@@ -9,6 +9,7 @@
 	"nav_label": "Sections",
 	"status_connecting": "Connexion à l’ordinateur…",
 	"status_retrying": "Connexion perdue, nouvelle tentative…",
+	"status_unreachable": "L’ordinateur ne répond pas. Lance le jeu dessus et charge un foyer : l’appli se connecte toute seule. Si l’adresse pour le téléphone change à chaque session, ouvre plutôt son nouveau lien.",
 	"status_no_game": "Le jeu n'est pas lancé sur le {computer}.",
 	"status_menu": "En attente d'une partie : le jeu est au menu ou en chargement.",
 	"pair_title": "Jumeler ce téléphone",

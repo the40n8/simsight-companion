@@ -17,6 +17,8 @@ const FEED_MAX = 100;
 class Live {
 	state = $state<GameState | null>(null);
 	gameConnected = $state(false);
+	/** Reached the computer at least once since the app opened. */
+	reached = $state(false);
 	status = $state<Status>((hosted ? games().length > 0 : !!token) ? 'connecting' : 'unpaired');
 	/** At a meeting point: the Mac in use. */
 	game = $state<Game | null>(null);
@@ -70,6 +72,7 @@ class Live {
 			try {
 				for await (const res of client.watch({}, { signal: abort.signal })) {
 					this.status = 'live';
+					this.reached = true;
 					this.#delay = 1000;
 					const p = res.payload;
 					if (p.case === 'state') {

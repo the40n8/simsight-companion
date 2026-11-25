@@ -9,6 +9,7 @@
 	"nav_label": "Secciones",
 	"status_connecting": "Conectando con el ordenador…",
 	"status_retrying": "Conexión perdida, reintentando…",
+	"status_unreachable": "No se puede contactar con el ordenador. Inicia el juego en él y carga un hogar: la app se conecta sola. Si la dirección para el teléfono cambia en cada sesión, abre el nuevo enlace.",
 	"status_no_game": "El juego no está abierto en el {computer}.",
 	"status_menu": "Esperando una partida: el juego está en el menú o cargando.",
 	"pair_title": "Vincular este teléfono",

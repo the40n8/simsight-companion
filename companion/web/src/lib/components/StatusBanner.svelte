@@ -7,7 +7,8 @@
 			case 'connecting':
 				return m.status_connecting();
 			case 'retrying':
-				return m.status_retrying();
+				// Never reached since the app opened: the game is probably closed.
+				return live.reached ? m.status_retrying() : m.status_unreachable();
 			case 'live':
 				if (!live.gameConnected) return m.status_no_game(computer());
 				if (!live.state?.inGame) return m.status_menu();

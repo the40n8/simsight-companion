@@ -40,7 +40,7 @@ cp -R "$COMP/web/build" "$COMP/bridge/internal/webui/dist"
 echo "== Bridge"
 for arch in arm64 amd64; do
   (cd "$COMP/bridge" && CGO_ENABLED=0 GOOS=darwin GOARCH=$arch \
-    go build -trimpath -ldflags "-s -w" -o "$CACHE/simsight-bridge-$arch" ./cmd/simsight-bridge)
+    go build -trimpath -ldflags "-s -w -X main.version=${SIMSIGHT_VERSION:-dev}" -o "$CACHE/simsight-bridge-$arch" ./cmd/simsight-bridge)
 done
 lipo -create -output "$DIST/simsight-bridge" "$CACHE/simsight-bridge-arm64" "$CACHE/simsight-bridge-amd64"
 chmod +x "$DIST/simsight-say" "$DIST/simsight-bridge"

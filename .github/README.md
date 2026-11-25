@@ -70,6 +70,11 @@ app works right away (QR code or 6-digit code each session). Optional later:
 a [fixed address](../docs/mac/FIXED-ADDRESS.md) (your own domain) or a
 [meeting point](../docs/mac/MEETING-POINT.md) (free Cloudflare account).
 
+Updates: **companion setup** in the accessibility menu checks for a new
+version and installs it (when you quit the game, or at once with the game
+closed), with the same backups as the installer. The game also says when a
+new version is out.
+
 ## On the Mac
 
 | | |

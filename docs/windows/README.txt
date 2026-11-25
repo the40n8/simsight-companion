@@ -70,8 +70,12 @@ try without it.
 
 UPDATING
 
-Close the game, then run the install line again. Your settings in
-SimSight.cfg are kept.
+In the accessibility menu, choose companion setup, then Check for
+updates. With the game running, the update is downloaded and installed
+when you quit the game; with the game closed (SimSight Setup.cmd in
+Mods\SimSight), it is installed at once. Or close the game and run the
+install line again. Your settings in SimSight.cfg are kept. At game
+start, your screen reader is told when a new version is out.
 
 After every Sims 4 patch, check for a compatible SimSight release. Game
 patches can turn mods off again: run the install line again with the game

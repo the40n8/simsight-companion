@@ -10,13 +10,16 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 
 	"github.com/the40n8/simsight-companion/companion/bridge/internal/osutil"
 	"github.com/the40n8/simsight-companion/companion/bridge/internal/pairing"
+	"github.com/the40n8/simsight-companion/companion/bridge/internal/update"
 )
 
 // Setup is the settings page, on this Mac only (http://127.0.0.1:<port>/setup):
-// how the phone reaches the Mac, the meeting point, and disconnecting phones.
+// how the phone reaches the Mac, the meeting point, disconnecting phones, and
+// updates.
 // It writes config.json; the bridge reads it when the game starts.
 type Setup struct {
 	dir  string
@@ -27,6 +30,13 @@ type Setup struct {
 	csrf  string
 	// OnDone runs when the player presses "Done" (standalone page: exit).
 	OnDone func()
+	// Updates checks and installs new versions; nil hides that part.
+	Updates *update.Updater
+
+	mu         sync.Mutex
+	latest     string // latest release found by "Check for updates"
+	updateNote string // what the last update action did, shown once
+	updateBad  bool
 }
 
 func NewSetup(dir string, port int, links LinkFunc) *Setup {
@@ -47,6 +57,9 @@ type setupData struct {
 	Problems            []setupField
 	Errors              map[string]string
 	Finished            bool
+	Update              updateView
+	UpdateNote          string
+	UpdateBad           bool
 }
 
 func (s *Setup) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -75,6 +88,12 @@ func (s *Setup) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		case "reset":
 			d.Saved = "New pairing key saved. " + s.when() + " Then pair each phone again with the 6-digit code."
 		}
+		if r.URL.Query().Get("update") == "1" {
+			s.mu.Lock()
+			d.UpdateNote, d.UpdateBad = s.updateNote, s.updateBad
+			s.updateNote = ""
+			s.mu.Unlock()
+		}
 		s.render(w, d, http.StatusOK)
 	case http.MethodPost:
 		if !s.sameOrigin(r) {
@@ -89,6 +108,8 @@ func (s *Setup) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		switch r.PostForm.Get("action") {
 		case "reset":
 			s.reset(w, r, cfg)
+		case "update-check", "update-get", "update-install":
+			s.updateAction(w, r, r.PostForm.Get("action"))
 		case "done":
 			d := s.data(cfg)
 			d.Finished = true
@@ -142,6 +163,7 @@ func (s *Setup) data(cfg *pairing.Config) setupData {
 		Meeting:    cfg.MeetingPoint,
 		Standalone: s.links == nil,
 		Errors:     map[string]string{},
+		Update:     s.updateData(),
 	}
 	switch {
 	case cfg.LocalOnly:
@@ -366,6 +388,7 @@ code{font-size:.9em;word-break:break-all}
 <p role="status" class="note saved">Finished. You can close this browser tab.</p>
 {{else}}
 {{if .Saved}}<p role="status" class="note saved">{{.Saved}}</p>{{end}}
+{{if .UpdateNote}}<p {{if .UpdateBad}}role="alert" class="note problems"{{else}}role="status" class="note saved"{{end}}>{{.UpdateNote}}</p>{{end}}
 {{if .Problems}}<div class="note problems" role="alert">
 <h2>{{len .Problems}} {{if eq (len .Problems) 1}}problem{{else}}problems{{end}}, nothing was saved</h2>
 <ul>{{range .Problems}}<li><a href="#{{.ID}}">{{.Error}}</a></li>{{end}}</ul>
@@ -379,6 +402,27 @@ code{font-size:.9em;word-break:break-all}
 {{else}}<p>The game is not running. Your choices here take effect when it starts.</p>
 <p>To pair a phone, start the game, load a household, press Option Command A, then choose phone companion.</p>{{end}}
 </section>
+
+{{with .Update}}{{if .Shown}}
+<h2 id="update">SimSight version</h2>
+<section>
+<p>{{if .Released}}Installed: SimSight {{.Version}}.{{else}}Installed: built from the source code ({{.Version}}).{{end}}{{if .Latest}} Latest release: {{.Latest}}.{{end}}</p>
+{{if .Ready}}
+{{if $.Running}}<p>Update {{.Ready}} is downloaded. It is installed when you quit the game; the next game start uses it.</p>
+{{else}}{{if .LastProblem}}<p class="error">The last install did not finish: {{.LastProblem}}</p>{{end}}
+<form method="post" action="/setup"><input type="hidden" name="csrf" value="{{$.CSRF}}">
+<p class="hint" id="hint-install">It backs up your game settings and saves first, like the installer. Takes a minute.</p>
+<p><button type="submit" name="action" value="update-install" aria-describedby="hint-install">Install SimSight {{.Ready}} now</button></p></form>{{end}}
+{{else if .Newer}}
+<form method="post" action="/setup"><input type="hidden" name="csrf" value="{{$.CSRF}}">
+<p class="hint" id="hint-get">{{if $.Running}}Downloads it now; it is installed when you quit the game.{{else}}Downloads and installs it. It backs up your game settings and saves first, like the installer. Takes a minute or two.{{end}}</p>
+<p><button type="submit" name="action" value="update-get" aria-describedby="hint-get">{{if $.Running}}Download SimSight {{.Latest}}{{else}}Download and install SimSight {{.Latest}}{{end}}</button></p></form>
+{{else}}
+<form method="post" action="/setup"><input type="hidden" name="csrf" value="{{$.CSRF}}">
+<p><button type="submit" name="action" value="update-check" class="secondary">Check for updates</button></p></form>
+{{end}}
+</section>
+{{end}}{{end}}
 
 <form method="post" action="/setup">
 <input type="hidden" name="csrf" value="{{.CSRF}}">

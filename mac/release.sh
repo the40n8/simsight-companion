@@ -23,6 +23,8 @@ done
 GAME=$(python3 -c 'import json;print(json.load(open("mac/ui-package.json"))["game_version"])')
 UPSTREAM=$(python3 -c 'import json;print(json.load(open("mac/ui-package.json"))["release"])')
 
+# The bridge knows its version: the setup page offers newer releases.
+export SIMSIGHT_VERSION="$TAG"
 ./mac/build.sh
 SKIP_MAC_BUILD=1 ./windows/build.sh
 ./mac/test.sh
@@ -132,6 +134,10 @@ irm https://github.com/the40n8/simsight-companion/releases/latest/download/insta
 \`\`\`
 
 Or download SimSight-Companion-windows.zip, extract it and open "Install SimSight Companion.cmd".
+Windows is **beta**: the installer, phone companion and NVDA speech are tested on Windows 11,
+the mod inside the game on Windows not yet. Please report what works and what does not.
+
+**Updating later:** accessibility menu > companion setup > Check for updates.
 Guides: [docs/windows](https://github.com/the40n8/simsight-companion/tree/main/docs/windows).
 MD
   git tag "$TAG" && git push -q origin "$TAG"
