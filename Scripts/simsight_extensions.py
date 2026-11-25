@@ -1,5 +1,11 @@
 """Load only local extensions not integrated into SimSight itself."""
+import sys
+
 import simsight_speech as speech
+
+# They move the real mouse through Windows APIs (ctypes); the Mac build
+# leaves them out.
+WINDOWS_ONLY = {'simsight_build_coordinates', 'simsight_build_helpers'}
 
 _installed = False
 
@@ -22,6 +28,8 @@ def install():
         ('simsight_basement', True),
         ('simsight_house_workflow', True),
     ):
+        if name in WINDOWS_ONLY and sys.platform != 'win32':
+            continue
         try:
             module = importlib.import_module(name)
             if explicit:

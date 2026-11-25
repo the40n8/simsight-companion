@@ -218,7 +218,7 @@ var demoMenus = map[string][]*v1.Interaction{
 	"o11":  {{Id: "1", Name: "Grab a Plate", Enabled: true}, {Id: "2", Name: "Put Away", Enabled: true}},
 	"o9":   {{Id: "1", Name: "Pay Bills", Enabled: true}, {Id: "2", Name: "Check Mail", Enabled: true}},
 	"2001": {{Id: "1", Name: "Greet", Enabled: true}, {Id: "2", Name: "Welcome", Category: "Friendly", Enabled: true}},
-	"o4":   {{Id: "1", Name: "Play Games", Enabled: true}, {Id: "2", Name: "Browse Web", Enabled: true}},
+	"o4":   {{Id: "1", Name: "Play Games", Enabled: true}, {Id: "2", Name: "Browse Web", Enabled: true}, {Id: "3", Name: "Write a Book", Enabled: true}},
 	"phone": {{Id: "1", Name: "Call to Chat...", Category: "Social", Enabled: true}, {Id: "2", Name: "Invite Over...", Category: "Social", Enabled: true},
 		{Id: "3", Name: "Order Pizza", Category: "Household", Enabled: true},
 		{Id: "5", Name: "Hire a Maid", Category: "Household", Enabled: true}, {Id: "6", Name: "Hire a Repair Technician", Category: "Household", Enabled: true}, {Id: "4", Name: "Travel", Category: "Travel", Enabled: true}},
@@ -302,6 +302,16 @@ func (g *game) call(c *v1.ToGame) *v1.CommandResult {
 			})
 			return &v1.CommandResult{Outcome: &v1.CommandOutcome{Ok: true}}
 		}
+		// A game text box, like naming a baby or a book.
+		if ri.GetTargetId() == "o4" && ri.GetInteractionId() == "3" {
+			g.nextID++
+			g.state.Dialogs = append(g.state.Dialogs, &v1.Dialog{
+				Id: fmt.Sprint(g.nextID), Title: "Write a Book", Text: "Name your book.",
+				Choices:   []*v1.DialogChoice{{Id: okID}, {Id: cancelID}},
+				TextInput: "title", TextDefault: "My Book",
+			})
+			return &v1.CommandResult{Outcome: &v1.CommandOutcome{Ok: true}}
+		}
 		// Fixing a problem clears it.
 		for i, p := range g.state.Problems {
 			if p.GetTargetId() == ri.GetTargetId() {
@@ -318,6 +328,9 @@ func (g *game) call(c *v1.ToGame) *v1.CommandResult {
 				continue
 			}
 			g.state.Dialogs = append(g.state.Dialogs[:i], g.state.Dialogs[i+1:]...)
+			if rd.GetChoiceId() == okID && d.GetTextInput() != "" {
+				g.addAction(g.active(), "Write "+rd.GetText())
+			}
 			if rd.GetChoiceId() == okID && len(rd.GetRowIds()) > 0 {
 				for _, r := range d.GetRows() {
 					if r.GetId() == rd.GetRowIds()[0] {

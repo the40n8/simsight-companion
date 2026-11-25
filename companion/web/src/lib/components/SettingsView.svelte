@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { sendWhenComplete } from '$lib/code.js';
 	import { m } from '$lib/i18n/paraglide/messages.js';
 	import { LANGUAGES, changeLocale, i18n, isLocale } from '$lib/i18n/locale.svelte.js';
 	import {
@@ -241,6 +242,7 @@
 					autocomplete="one-time-code"
 					maxlength="11"
 					bind:value={code}
+					oninput={sendWhenComplete}
 					enterkeyhint="go"
 				/>
 			</label>

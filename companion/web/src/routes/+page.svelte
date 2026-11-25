@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { sendWhenComplete } from '$lib/code.js';
 	import { onMount, tick } from 'svelte';
 	import { linkInAddressBar, pairFromText, pairWithCode } from '$lib/session.js';
 	import * as meeting from '$lib/meeting.js';
@@ -134,6 +135,7 @@
 					autocomplete="one-time-code"
 					maxlength="11"
 					bind:value={code}
+					oninput={sendWhenComplete}
 					enterkeyhint="go"
 				/>
 			</label>

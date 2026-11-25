@@ -148,7 +148,18 @@
 	{#if dialog.textInput}
 		<label class="stack">
 			<span>{m.dialog_answer()}</span>
-			<input type="text" bind:value={text} autocomplete="off" />
+			<!-- Return (Done on the iPhone keyboard) answers like the game's OK. -->
+			<input
+				type="text"
+				bind:value={text}
+				autocomplete="off"
+				enterkeyhint="done"
+				onkeydown={(e) => {
+					if (e.key !== 'Enter' || e.isComposing) return;
+					e.preventDefault();
+					answer(okChoice as DialogChoice);
+				}}
+			/>
 		</label>
 	{/if}
 

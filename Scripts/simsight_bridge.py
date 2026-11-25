@@ -760,6 +760,18 @@ def _goals(info):
 MAX_RELATIONSHIPS = 12
 
 
+def _bit_label(bit, other, info):
+    """A relationship label (Father, Sister...) in the gender of the Sim it
+    describes: the game's text takes that Sim as token 0, {M0.Father}{F0.Mother}."""
+    name = getattr(bit, 'display_name', None)
+    if callable(name) and not hasattr(name, 'hash'):
+        try:
+            return text_of(name(other, info))
+        except Exception:
+            pass
+    return text_of(name)
+
+
 def _relationships(info):
     """Strongest relationships first: friendship, romance and the game's labels."""
     from relationships.relationship_track import RelationshipTrack
@@ -786,7 +798,7 @@ def _relationships(info):
             bits = [b for b in tracker.get_all_bits(other.sim_id) if getattr(b, 'visible', False)]
             bits.sort(key=lambda b: -(getattr(b, 'priority', 0) or 0))
             for bit in bits[:3]:
-                label = text_of(getattr(bit, 'display_name', None))
+                label = _bit_label(bit, other, info)
                 if label and label not in labels:
                     labels.append(label)
         except Exception:
