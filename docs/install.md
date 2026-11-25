@@ -34,7 +34,8 @@ irm https://github.com/the40n8/simsight-companion/releases/latest/download/insta
 ```
 
 It writes each step as a line your screen reader reads, finds your Sims 4
-folder (OneDrive and other languages too), checks the download and installs
+folder (even when Windows keeps Documents in OneDrive, or when the game
+names it in your language, like "Les Sims 4"), checks the download and installs
 the mod with its speech pack for NVDA and JAWS.
 
 Without PowerShell: download `SimSight-Companion-windows.zip` from the

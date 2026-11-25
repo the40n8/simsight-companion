@@ -41,7 +41,8 @@ irm https://github.com/the40n8/simsight-companion/releases/latest/download/insta
 ```
 
 It writes each step as a line your screen reader reads, finds your Sims 4
-folder (OneDrive and other languages too), backs up your settings and saves,
+folder (even when Windows keeps Documents in OneDrive, or when the game
+names it in your language, like "Les Sims 4"), backs up your settings and saves,
 installs the mod with its speech pack (Prism, for NVDA and JAWS) and allows
 mods in the game. Run it again to update, or to remove SimSight (type r).
 Without PowerShell: `SimSight-Companion-windows.zip` from the latest release,
