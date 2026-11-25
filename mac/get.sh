@@ -33,7 +33,7 @@ main() {
   ask() {
     local answer=""
     tell "$1" >&2
-    if [[ -r /dev/tty ]]; then read -r answer < /dev/tty || true; fi
+    if [[ -r /dev/tty ]]; then { read -r answer < /dev/tty; } 2>/dev/null || true; fi
     print -r -- "$answer"
   }
 
