@@ -318,11 +318,9 @@ def _house_build(plan: Any) -> Any:
     if planner is None:
         return _original_house_build(plan)
     _house_context.transitions = tuple(getattr(plan, '_a11y_transitions', ()))
-    planner._pending_stairs = []
     try:
         return _original_house_build(plan)
     finally:
-        planner._pending_stairs = []
         _house_context.transitions = ()
 
 

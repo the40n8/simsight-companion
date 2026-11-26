@@ -1,4 +1,4 @@
-"""House plans: room names, stacked levels and doors, detached structures."""
+"""House plans: stacked levels and doors, detached structures."""
 
 import types
 import unittest
@@ -10,21 +10,6 @@ fakegame.scripts_on_path()
 import simsight_detached as detached  # noqa: E402
 import simsight_house_planner as planner  # noqa: E402
 import simsight_house_workflow as workflow  # noqa: E402
-
-
-class CleanNames(unittest.TestCase):
-    def test_defaults_fill_the_gaps(self):
-        self.assertEqual(
-            planner._clean_names(' big  hall , ', 4, 1),
-            ['big hall', 'Bedroom', 'Study', 'Bathroom'],
-        )
-
-    def test_ground_and_attic_defaults(self):
-        self.assertEqual(planner._clean_names('', 2, 0), ['Living room', 'Kitchen'])
-        self.assertEqual(planner._clean_names(None, 2, 2, attic=True), ['Attic room', 'Storage'])
-
-    def test_extra_names_are_dropped(self):
-        self.assertEqual(planner._clean_names('a,b,c', 2, 0), ['a', 'b'])
 
 
 class StackedLevel(unittest.TestCase):

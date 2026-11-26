@@ -1,4 +1,5 @@
-"""Configurable, conservative stacked-house plans for SimSight Plus."""
+"""Stacked-house pieces for simsight_house_workflow: room and hallway layout of
+each level, floor limits, stair placement, room framing and the roof follow-up."""
 
 from __future__ import annotations
 
@@ -13,12 +14,6 @@ if TYPE_CHECKING:
 
     Point = tuple[float, float]
     Tile = tuple[int, int]
-    # (top step lot tile, climb direction, lower level, upper level)
-    Transition = tuple[Any, Any, int, int]
-
-# Stair runs the approved plan still has to place. simsight_build_helpers
-# rebinds this attribute (planner._pending_stairs = []): keep it a module list.
-_pending_stairs: list[Transition] = []
 
 _FRONT = 4  # depth of the street-facing rooms, metres
 _HALL = 2  # depth of the hallway between front and back rooms, metres
@@ -97,27 +92,6 @@ def _limits() -> tuple[int, int]:
     except (ImportError, AttributeError, TypeError, ValueError, RuntimeError) as ex:
         simsight_log.line(f'house planner: floor limits unavailable: {ex!r}')
         return -1, 3
-
-
-def _clean_names(text: str | None, count: int, level: int, attic: bool = False) -> list[str]:
-    """Exactly `count` room names from a comma list, defaults filling the gaps;
-    repeated names get a number."""
-    names = [' '.join(v.strip().split())[:50] for v in (text or '').split(',') if v.strip()]
-    if attic:
-        defaults: tuple[str, ...] = ('Attic room', 'Storage', 'Attic bedroom', 'Attic bathroom')
-    elif level == 0:
-        defaults = ('Living room', 'Kitchen', 'Bedroom', 'Bathroom')
-    else:
-        defaults = ('Bedroom', 'Bedroom', 'Study', 'Bathroom')
-    while len(names) < count:
-        names.append(defaults[len(names) % len(defaults)])
-    names = names[:count]
-    seen: dict[str, int] = {}
-    for i, name in enumerate(names):
-        seen[name] = seen.get(name, 0) + 1
-        if names.count(name) > 1:
-            names[i] = f'{name} {seen[name]}'
-    return names
 
 
 def _room(kind: str, name: str, uv: tuple[int, int, int, int], level: int) -> dict[str, Any]:
@@ -332,211 +306,6 @@ def _build_with_followup(plan: Any) -> Any:
             simsight_log.line(f'house planner: roof follow-up failed: {ex!r}')
             simsight_log.error('house planner: roof follow-up')
     return result
-
-
-def _review(plan: Any, description: str) -> None:
-    import simsight_plus_build as build
-    import simsight_plus_core as core
-    import simsight_plus_house as house
-
-    if plan.problem:
-        core.speak(plan.problem)
-        return
-    estimate = (
-        house.wall_meters(plan) * house.WALL_PRICE
-        + len(plan.doors) * 100
-        + len(plan._a11y_transitions) * house.STAIR_PRICE
-    )
-    rows = [
-        (
-            'Build it',
-            'Every room, door and stair is checked; construction stops on the first failed room.',
-            True,
-        ),
-        ('Cancel', None, False),
-    ]
-
-    def chosen(go: bool) -> None:
-        if not go:
-            return
-        # In place: the module attribute stays the list other modules see.
-        _pending_stairs[:] = list(plan._a11y_transitions)
-        simsight_log.line(
-            'house planner: approved plan levels={} size={}x{} rooms={} stairs={}'.format(
-                sorted({r['level'] for r in plan.rooms}),
-                plan.width,
-                plan.depth,
-                [(r['level'], r['name'], r['box']) for r in plan.rooms],
-                _pending_stairs,
-            )
-        )
-        house.start_build(plan)
-
-    core.choose(
-        'Configurable stacked house',
-        description
-        + f' Estimated structural cost {estimate:,}; household funds {build.funds() or 0:,}.',
-        rows,
-        chosen,
-        tag='build',
-    )
-
-
-class _StackedHouseChoices:
-    """The planner's dialogs, one after the other: stories, basement, footprint,
-    layout, top-floor use, then the room names of each level."""
-
-    def __init__(self, low: int, high: int) -> None:
-        import simsight_plus_core as core
-
-        self.core: Any = core
-        self.low = low
-        self.high = high
-        self.stories = 1
-        self.basement = False
-        self.size = (10, 10)
-        self.layout = 'two'
-        self.attic = False
-        self.levels: list[int] = []
-        self.count = 2
-        self.names: dict[int, list[str]] = {}
-
-    def start(self) -> None:
-        floor_rows = [
-            ('{} above-ground stor{}'.format(n, 'y' if n == 1 else 'ies'), None, n)
-            for n in range(1, max(1, self.high + 1) + 1)
-        ]
-        self.core.choose(
-            'Number of stories',
-            f'The game currently reports support through floor {self.high}. Choose an above-ground count.',
-            floor_rows,
-            self.floors_chosen,
-            tag='build',
-        )
-
-    def floors_chosen(self, stories: int) -> None:
-        self.stories = stories
-        basement_rows: list[tuple[str, str | None, bool]] = [('No basement', None, False)]
-        if self.low < 0:
-            basement_rows.append(
-                (
-                    'One basement level',
-                    'Experimental negative-level room and stair placement; every step is logged and verified.',
-                    True,
-                )
-            )
-        self.core.choose(
-            'Basement',
-            'A basement counts as level minus one and receives the same footprint.',
-            basement_rows,
-            self.basement_chosen,
-            tag='build',
-        )
-
-    def basement_chosen(self, basement: bool) -> None:
-        self.basement = basement
-        sizes = [
-            ('Compact square', '10 by 10 metres.', (10, 10)),
-            ('Standard rectangle', '10 by 11 metres.', (10, 11)),
-            ('Large rectangle', '12 by 14 metres.', (12, 14)),
-        ]
-        self.core.choose(
-            'House footprint',
-            'Every level uses exactly this perimeter.',
-            sizes,
-            self.size_chosen,
-            tag='build',
-        )
-
-    def size_chosen(self, size: tuple[int, int]) -> None:
-        self.size = size
-        layouts = [
-            ('Two rooms per floor', 'One front room, hallway, one back room.', 'two'),
-            ('Four rooms per floor', 'Two front rooms, hallway, two back rooms.', 'four'),
-        ]
-        self.core.choose(
-            'Room layout',
-            'The same proven rectangular partition pattern is used on every level.',
-            layouts,
-            self.layout_chosen,
-            tag='build',
-        )
-
-    def layout_chosen(self, layout: str) -> None:
-        self.layout = layout
-        self.levels = list(range(-1 if self.basement else 0, self.stories))
-        self.count = 2 if layout == 'two' else 4
-        self.names = {}
-        self.attic = False
-        attic_rows = [
-            ('Normal top floor', None, False),
-            (
-                'Attic-style top floor',
-                'A full-height normal story with attic and storage defaults, followed by the roof chooser.',
-                True,
-            ),
-        ]
-        self.core.choose(
-            'Top-floor use',
-            'This does not create unsafe sloped rooms; it changes the intended room naming and roof follow-up.',
-            attic_rows,
-            self.attic_chosen,
-            tag='build',
-        )
-
-    def attic_chosen(self, value: bool) -> None:
-        self.attic = value
-        self.ask(0)
-
-    def ask(self, index: int) -> None:
-        """The room names of level number `index`; after the last level, the review."""
-        if index >= len(self.levels):
-            self.review()
-            return
-        level = self.levels[index]
-        count = self.count
-        where = 'basement' if level < 0 else f'floor {level + 1}'
-        order = 'front, back' if count == 2 else 'front west, front east, back west, back east'
-        is_attic = self.attic and level == max(self.levels)
-
-        def named(text: str) -> None:
-            self.names[level] = _clean_names(text, count, level, is_attic)
-            self.ask(index + 1)
-
-        self.core.ask_text(
-            f'Rooms on {where}',
-            'Type {} room names separated by commas, in this order: {}.{}'.format(
-                count,
-                order,
-                ' Leave blank for attic and storage defaults.' if is_attic else '',
-            ),
-            '',
-            named,
-        )
-
-    def review(self) -> None:
-        size, levels = self.size, self.levels
-        plan = _build_plan(size[0], size[1], levels, self.layout, self.names)
-        plan._a11y_roof_prompt = True
-        desc = '{} by {} metre {} house; levels {}; {} rooms plus a hallway per level; straight aligned stairs.'.format(
-            size[0],
-            size[1],
-            'square' if size[0] == size[1] else 'rectangular',
-            ', '.join(str(v) for v in levels),
-            self.count,
-        )
-        _review(plan, desc)
-
-
-def open_planner() -> None:
-    import simsight_plus_build as build
-    import simsight_plus_core as core
-
-    if not build.in_build_mode():
-        core.speak('Enter Build mode first.')
-        return
-    low, high = _limits()
-    _StackedHouseChoices(low, high).start()
 
 
 def shaped_stair_diagnostics() -> None:
