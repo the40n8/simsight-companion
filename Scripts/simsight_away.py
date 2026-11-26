@@ -4,16 +4,30 @@ Only opens the game's menu. Never switches Sims, travels, or applies an
 away action directly. Called on the simulation-thread pump by the hub.
 """
 
+from __future__ import annotations
+
 import math
+from typing import TYPE_CHECKING, Any
+
 import simsight_lang as lang
+import simsight_log
 import simsight_speech as speech
 
+if TYPE_CHECKING:
+    from simsight_hub import Row
 
-def _say(term):
+
+def _say(term: str) -> None:
     speech.speak(lang.t(term), explicit=True)
 
 
-def _state():
+def _full_name(info: Any) -> str:
+    return ' '.join(p for p in (info.first_name, info.last_name) if p)
+
+
+def _state() -> tuple[Any, Any, Any, int] | None:
+    """(active Sim, household, lot, zone id) outside Build mode, when the
+    active Sim belongs to the active household."""
     import services
     import simsight_place as place
 
@@ -29,7 +43,7 @@ def _state():
     return actor, household, lot, services.current_zone_id()
 
 
-def _candidates(household, actor_id):
+def _candidates(household: Any, actor_id: int) -> dict[int, Any]:
     result = {}
     for info in household.sim_info_gen():
         if info.sim_id == actor_id or info.is_baby:
@@ -42,84 +56,94 @@ def _candidates(household, actor_id):
     return result
 
 
-def open_sim(sim_id, actor_id, zone_id, household_id):
-    try:
-        import simsight_scanner as scanner
-        from server.pick_info import PickType
+def _portrait_request(sim_id: int, actor_id: int, zone_id: int, household_id: int) -> bool:
+    """Sends the portrait pick for sim_id; ValueError when the context changed."""
+    import simsight_scanner as scanner
+    from server.pick_info import PickType
 
-        state = _state()
-        if state is None:
-            raise ValueError('no live household context')
-        actor, household, lot, current_zone = state
-        if (
-            actor.sim_info.sim_id != actor_id
-            or current_zone != zone_id
-            or household.id != household_id
-        ):
-            raise ValueError('household, actor or zone changed')
-        info = _candidates(household, actor_id).get(sim_id)
-        if info is None:
-            raise ValueError('target no longer away in this household')
-        pos = actor.position
-        point = tuple(float(v) for v in (pos.x, pos.y, pos.z))
-        if not all(math.isfinite(v) for v in point):
-            raise ValueError('invalid actor position')
-        lot_id = int(lot.lot_id)
-        if lot_id < 0:
-            raise ValueError('invalid lot')
-        if lot_id > 0xFFFFFFFF:
-            lot_id = 0  # Native current-lot sentinel; never truncate an ID.
-        name = ' '.join(p for p in (info.first_name, info.last_name) if p).replace('|', ' ')
-        sent = scanner._send_ui(
-            'A11y|pick|{}|{}|{}|{}|{:.3f}|{:.3f}|{:.3f}|{}'.format(
-                sim_id, int(PickType.PICK_SKEWER), lot_id, name, *point, int(actor.level)
+    state = _state()
+    if state is None:
+        raise ValueError('no live household context')
+    actor, household, lot, current_zone = state
+    if actor.sim_info.sim_id != actor_id or current_zone != zone_id or household.id != household_id:
+        raise ValueError('household, actor or zone changed')
+    info = _candidates(household, actor_id).get(sim_id)
+    if info is None:
+        raise ValueError('target no longer away in this household')
+    pos = actor.position
+    point = tuple(float(v) for v in (pos.x, pos.y, pos.z))
+    if not all(math.isfinite(v) for v in point):
+        raise ValueError('invalid actor position')
+    lot_id = int(lot.lot_id)
+    if lot_id < 0:
+        raise ValueError('invalid lot')
+    if lot_id > 0xFFFFFFFF:
+        lot_id = 0  # Native current-lot sentinel; never truncate an ID.
+    name = _full_name(info).replace('|', ' ')
+    sent = scanner._send_ui(
+        'A11y|pick|{}|{}|{}|{}|{:.3f}|{:.3f}|{:.3f}|{}'.format(
+            sim_id, int(PickType.PICK_SKEWER), lot_id, name, *point, int(actor.level)
+        )
+    )
+    simsight_log.line(
+        f'away actions: portrait request sim={sim_id} actor={actor_id} zone={current_zone} sent={bool(sent)}'
+    )
+    return bool(sent)
+
+
+def open_sim(sim_id: int, actor_id: int, zone_id: int, household_id: int) -> bool:
+    try:
+        sent = _portrait_request(sim_id, actor_id, zone_id, household_id)
+    except ValueError as exc:
+        simsight_log.line(f'away actions: request refused: {type(exc).__name__}: {exc}')
+        sent = False
+    except Exception:
+        simsight_log.error('away: portrait request')
+        sent = False
+    if not sent:
+        _say('action unavailable')
+    return sent
+
+
+def _rows(state: tuple[Any, Any, Any, int]) -> list[Row]:
+    """One row per away household Sim, by name."""
+    import simsight_menu as menu
+
+    actor, household, _lot, zone_id = state
+    actor_id, household_id = actor.sim_info.sim_id, household.id
+    candidates = _candidates(household, actor_id)
+    rows: list[Row] = []
+    for ident, info in sorted(
+        candidates.items(),
+        key=lambda pair: (pair[1].first_name.casefold(), pair[1].last_name.casefold(), pair[0]),
+    ):
+        rows.append(
+            (
+                menu._raw(_full_name(info) or str(ident)),
+                None,
+                lambda ident=ident: open_sim(ident, actor_id, zone_id, household_id),
             )
         )
-        speech.log_line(
-            f'away actions: portrait request sim={sim_id} actor={actor_id} zone={current_zone} sent={bool(sent)}'
-        )
-        if not sent:
-            _say('action unavailable')
-        return bool(sent)
-    except Exception as exc:
-        speech.log_line(f'away actions: request refused: {type(exc).__name__}: {exc}')
-        _say('action unavailable')
-        return False
+    simsight_log.line(
+        f'away actions: household={household_id} zone={zone_id} candidates={len(rows)}'
+    )
+    return rows
 
 
-def open_away_actions():
+def open_away_actions() -> bool:
     try:
         import simsight_hub as hub
-        import simsight_menu as menu
 
         state = _state()
         if state is None:
             _say('action unavailable')
             return False
-        actor, household, lot, zone_id = state
-        actor_id, household_id = actor.sim_info.sim_id, household.id
-        candidates = _candidates(household, actor_id)
-        rows = []
-        for ident, info in sorted(
-            candidates.items(),
-            key=lambda pair: (pair[1].first_name.casefold(), pair[1].last_name.casefold(), pair[0]),
-        ):
-            name = ' '.join(p for p in (info.first_name, info.last_name) if p)
-            rows.append(
-                (
-                    menu._raw(name or str(ident)),
-                    None,
-                    lambda ident=ident: open_sim(ident, actor_id, zone_id, household_id),
-                )
-            )
-        speech.log_line(
-            f'away actions: household={household_id} zone={zone_id} candidates={len(rows)}'
-        )
+        rows = _rows(state)
         if not rows:
             _say('no away household sims')
             return False
         return hub._window('away actions', 'away actions instructions', rows)
-    except Exception as exc:
-        speech.log_line(f'away actions: picker failed: {type(exc).__name__}: {exc}')
+    except Exception:
+        simsight_log.error('away: picker')
         _say('action unavailable')
         return False

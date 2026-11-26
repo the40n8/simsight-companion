@@ -13,27 +13,35 @@ served, markup and revenue, plus the star rating, employees and hourly wages.
 Rows only read. Enter opens EA's owned-business panel.
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, Callable
+
 import simsight_lang as lang
+import simsight_log
 import simsight_menu as menu
 import simsight_speech as speech
 
+if TYPE_CHECKING:
+    from simsight_hub import Row
 
-def _say(term):
+
+def _say(term: str) -> None:
     speech.speak(lang.t(term), explicit=True)
 
 
-def _money(amount):
+def _money(amount: float) -> str:
     return '{:,} {}'.format(int(amount), lang.t('simoleons'))
 
 
-def _signed(amount):
+def _signed(amount: float) -> str:
     amount = int(amount)
     if amount < 0:
         return '{} {}'.format(lang.t('minus'), _money(-amount))
     return _money(amount)
 
 
-def _managers():
+def _managers() -> list[Any] | None:
     import services
 
     household = services.active_household()
@@ -43,25 +51,26 @@ def _managers():
     return list(found.values())
 
 
-def business_name(manager):
-    import services
-
-    try:
-        zone = services.get_persistence_service().get_zone_proto_buff(manager.business_zone_id)
-        name = str(getattr(zone, 'name', '') or '')
-    except Exception:
-        name = ''
-    return name or lang.t('business')
-
-
-def _value(read, default=None):
+def _value(read: Callable[[], Any], default: Any = None) -> Any:
+    """read(), or default when it fails. Business managers can be a mod's
+    subclass (WickedWhims): any of their properties may raise anything."""
     try:
         return read()
     except Exception:
         return default
 
 
-def business_lines(manager):
+def business_name(manager: Any) -> str:
+    import services
+
+    def zone_name() -> str:
+        zone = services.get_persistence_service().get_zone_proto_buff(manager.business_zone_id)
+        return str(getattr(zone, 'name', '') or '')
+
+    return _value(zone_name, '') or lang.t('business')
+
+
+def business_lines(manager: Any) -> list[str]:
     lines = [
         lang.t('business open') if _value(lambda: manager.is_open) else lang.t('business closed')
     ]
@@ -94,31 +103,31 @@ def business_lines(manager):
     return lines
 
 
-def _open_panel():
+def _open_panel() -> bool:
     import simsight_hub as hub
 
     hub._ui('OpenHouseholdInfoVenuePanel')
     return True
 
 
-def businesses_window():
+def businesses_window() -> bool:
     import simsight_hub as hub
 
     try:
         managers = _managers()
-    except Exception as ex:
-        speech.log_line(f'business: unavailable ({ex!r})')
+    except Exception:
+        simsight_log.error('business: unavailable')
         _say('action unavailable')
         return False
     if managers is None:
         _say('load a household first')
         return False
-    rows = []
+    rows: list[Row] = []
     for manager in managers:
         try:
             text = ' '.join(business_lines(manager))
-        except Exception as ex:
-            speech.log_line(f'business: {type(manager).__name__} unreadable ({ex!r})')
+        except Exception:  # noqa: PERF203 - one unreadable business must not hide the others
+            simsight_log.error(f'business: {type(manager).__name__} unreadable')
             continue
         rows.append((menu._raw(business_name(manager)), menu._raw(text), _open_panel))
     if not rows:

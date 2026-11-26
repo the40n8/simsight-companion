@@ -4,13 +4,22 @@ Contacts do not need instantiated Sims or a position on the loaded lot.
 The native client requests, displays and resolves its own interaction menu.
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
+
 import sims4.commands
 import simsight_lang as lang
+import simsight_log
 import simsight_menu as menu
 import simsight_speech as speech
 
+if TYPE_CHECKING:
+    from simsight_hub import Row
 
-def _contacts(actor):
+
+def _contacts(actor: Any) -> list[tuple[str, int]]:
+    """(full name, sim id) of the actor's visible relationships, by name."""
     tracker = actor.sim_info.relationship_tracker
     seen = {actor.sim_info.sim_id}
     result = []
@@ -24,7 +33,7 @@ def _contacts(actor):
     return sorted(result, key=lambda item: (item[0].casefold(), item[1]))
 
 
-def open_contact(sim_id, actor_id):
+def open_contact(sim_id: int, actor_id: int) -> bool:
     import services
     import simsight_scanner as scanner
     from server.pick_info import PickType
@@ -47,7 +56,7 @@ def open_contact(sim_id, actor_id):
     )
 
 
-def open_contacts():
+def open_contacts() -> bool:
     import services
     import simsight_hub as hub
 
@@ -56,7 +65,7 @@ def open_contacts():
         speech.speak(lang.t('load a household first'), explicit=True)
         return False
     actor_id = actor.sim_info.sim_id
-    rows = [
+    rows: list[Row] = [
         (menu._raw(name), None, lambda ident=ident: open_contact(ident, actor_id))
         for name, ident in _contacts(actor)
     ]
@@ -69,5 +78,9 @@ def open_contacts():
 @sims4.commands.Command(
     'simsight.contacts', 'a11y.contacts', command_type=sims4.commands.CommandType.Live
 )
-def a11y_contacts(_connection=None):
-    return open_contacts()
+def a11y_contacts(_connection: Any = None) -> bool:
+    try:
+        return open_contacts()
+    except Exception:
+        simsight_log.error('contacts: open')
+        return False
