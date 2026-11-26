@@ -4,6 +4,10 @@ Imported lazily by the hub/scanner: importing help must not start key threads.
 Key combinations live in keys.py; this module supplies their spoken meanings.
 """
 
+from __future__ import annotations
+
+from typing import Any
+
 import simsight_lang as lang
 import simsight_settings as settings
 import simsight_speech as speech
@@ -81,7 +85,7 @@ KEY_LABELS = {
 }
 
 
-def key_name(vk, keyboard):
+def key_name(vk: int, keyboard: Any) -> str:
     if vk in KEY_LABELS:
         return lang.t(KEY_LABELS[vk])
     if 0x60 <= vk <= 0x69:
@@ -94,7 +98,7 @@ def key_name(vk, keyboard):
     return lang.t(name)
 
 
-def chord_label(intent):
+def chord_label(intent: str) -> str:
     if intent.startswith('sim') and intent[3:].isdigit():
         return lang.t('shortcut household sim').format(int(intent[3:]))
     # New intents are still enumerated, even before their prose is added.
@@ -104,14 +108,9 @@ def chord_label(intent):
     return label
 
 
-def sections(keyboard=None, numpad=None):
-    """Return complete sections; never cache a user's optional key settings."""
-    if keyboard is None:
-        import simsight_keys as keyboard
-    if numpad is None:
-        numpad = settings.get('numpad_navigation', False)
+def _ordinary_rows(keyboard: Any) -> list[str]:
     ordinary = []
-    for _message, (label, combos) in keyboard.BINDINGS.items():
+    for label, combos in keyboard.BINDINGS.values():
         for vk, alt in combos:
             combo = ('{} + '.format(lang.t('Alt')) if alt else '') + key_name(vk, keyboard)
             ordinary.append(f'{combo}: {lang.t(label)}')
@@ -120,27 +119,45 @@ def sections(keyboard=None, numpad=None):
     if settings.get('simplified_menus', True):
         ordinary.append(lang.t('shortcut simplified'))
     ordinary.append(lang.t('shortcut needs'))
+    return ordinary
+
+
+def _numpad_rows(keyboard: Any) -> list[str]:
+    rows = []
+    for vk, message in keyboard.NUMPAD_BINDINGS.items():
+        label = (
+            keyboard.BINDINGS[message][0]
+            if message in keyboard.BINDINGS
+            else EXTRA_LABELS.get(message, message)
+        )
+        rows.append(f'{key_name(vk, keyboard)}: {lang.t(label)}')
+    return rows
+
+
+def sections(keyboard: Any = None, numpad: bool | None = None) -> list[tuple[str, list[str]]]:
+    """Return complete sections; never cache a user's optional key settings."""
+    if keyboard is None:
+        import simsight_keys
+
+        keyboard = simsight_keys
+    if numpad is None:
+        numpad = settings.get('numpad_navigation', False)
     chords = [
         '{} + {} + {}: {}'.format(
             lang.t('Control'), lang.t('Alt'), key_name(vk, keyboard), chord_label(intent)
         )
         for vk, (intent, _repeat) in keyboard.CHORDS.items()
     ]
-    result = [(lang.t('shortcut controls'), ordinary), (lang.t('shortcut chords'), chords)]
+    result = [
+        (lang.t('shortcut controls'), _ordinary_rows(keyboard)),
+        (lang.t('shortcut chords'), chords),
+    ]
     if numpad:
-        rows = []
-        for vk, message in keyboard.NUMPAD_BINDINGS.items():
-            label = (
-                keyboard.BINDINGS[message][0]
-                if message in keyboard.BINDINGS
-                else EXTRA_LABELS.get(message, message)
-            )
-            rows.append(f'{key_name(vk, keyboard)}: {lang.t(label)}')
-        result.append((lang.t('shortcut numpad'), rows))
+        result.append((lang.t('shortcut numpad'), _numpad_rows(keyboard)))
     return result
 
 
-def readout():
+def readout() -> str:
     parts = [lang.t('keyboard shortcuts'), lang.t('shortcut context')]
     for heading, rows in sections():
         parts.append(heading)
@@ -148,7 +165,7 @@ def readout():
     return '. '.join(part.rstrip('. ') for part in parts) + '.'
 
 
-def speak():
+def speak() -> bool:
     # One explicit utterance: separate calls would interrupt each other.
     speech.speak(readout(), explicit=True)
     return True
