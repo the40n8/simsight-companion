@@ -9,48 +9,67 @@ wall object is only placed while a wall height is the target. With layer
 focus off, the two keys only change the wall height for a wall object.
 """
 
-import simsight_speech as speech
+from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any
+
+import simsight_log
+
+if TYPE_CHECKING:
+    from simsight_tiles import Frame
 
 SETTING_KEY = 'surface_layer_focus'
-_mode = 3  # 0 ground, 1-6 the wall heights, 7 ceiling
-_wall_index = 2  # the last wall height chosen (middle)
-_focus = {'obj_id': None, 'tile': None, 'level': None, 'mode': None, 'index': -1}
+CEILING = 7  # layer 0 is the ground, 1 to 6 the wall heights, 7 the ceiling
 
 
-def enabled():
+class _State:
+    def __init__(self) -> None:
+        self.mode = 3  # the target layer
+        self.wall_index = 2  # the last wall height chosen (middle)
+        # The object number 1 focused, and where: tile, floor, layer, and
+        # its place among the matches.
+        self.focus_id: Any = None
+        self.focus_where: tuple[Any, Any, Any] = (None, None, None)
+        self.focus_index = -1
+
+
+_state = _State()
+
+
+def enabled() -> bool:
     import simsight_settings as settings
 
     return bool(settings.get(SETTING_KEY, True))
 
 
-def _log(message):
-    speech.log_line('layers: ' + message)
+def _log(message: str) -> None:
+    simsight_log.line('layers: ' + message)
 
 
-def _text(en, pl):
+def _text(en: str, pl: str) -> str:
     import simsight_grid as grid
 
     return grid._text(en, pl)
 
 
-def wall_height():
+def wall_height() -> tuple[str, float]:
     """(label, metres) of the chosen wall height."""
     import simsight_wall as wall
 
-    return wall.HEIGHTS[_wall_index]
+    return wall.HEIGHTS[_state.wall_index]
 
 
-def _mode_info():
-    if _mode == 0:
+def _mode_info() -> tuple[str, str, float | None]:
+    """(kind, spoken label, wall height or None) of the target layer."""
+    if _state.mode == 0:
         return 'ground', _text('ground', 'podłoga'), None
-    if _mode == 7:
+    if _state.mode == CEILING:
         return 'ceiling', _text('ceiling', 'sufit'), None
     label, height = wall_height()
     return 'wall', _text('wall {}', 'ściana {}').format(label), height
 
 
-def wall_refusal():
+def wall_refusal() -> bool:
     """True (and spoken) when a wall object would be placed while the target
     layer is not a wall height."""
     if not enabled() or _mode_info()[0] == 'wall':
@@ -64,22 +83,23 @@ def wall_refusal():
     return True
 
 
-def _definition_id(obj):
+def _definition_id(obj: Any) -> int | None:
     try:
         return int(obj.definition.id)
-    except Exception:
-        try:
-            return int(obj.definition_id)
-        except Exception:
-            return None
+    except Exception:  # no definition: try the bare id
+        pass
+    try:
+        return int(obj.definition_id)
+    except Exception:  # an object without a definition
+        return None
 
 
-def _kind(obj):
+def _kind(obj: Any) -> str:
     try:
         import simsight_place as place
 
         need = place.requirement(_definition_id(obj))
-    except Exception:
+    except Exception:  # unknown requirement: a ground object
         need = None
     if need == 'ceiling':
         return 'ceiling'
@@ -88,25 +108,27 @@ def _kind(obj):
     return 'ground'
 
 
-def _floor_y(frame, i, j, level):
+def _floor_y(frame: Frame, i: Any, j: Any, level: Any) -> float | None:
     try:
         import simsight_tiles as tiles
 
         return float(tiles.position(frame, i, j, level).y)
-    except Exception:
+    except Exception:  # no height at that tile
         return None
 
 
-def _height(obj, floor_y):
+def _height(obj: Any, floor_y: float | None) -> float | None:
     if floor_y is None:
         return None
     try:
         return max(0.0, float(obj.position.y) - floor_y)
-    except Exception:
+    except Exception:  # an object without a position
         return None
 
 
-def _label(obj, frame=None, i=None, j=None, level=None):
+def _label(
+    obj: Any, frame: Frame | None = None, i: Any = None, j: Any = None, level: Any = None
+) -> str:
     kind = _kind(obj)
     if kind == 'ceiling':
         return _text('ceiling', 'sufit')
@@ -118,11 +140,11 @@ def _label(obj, frame=None, i=None, j=None, level=None):
     return _text('ground', 'podłoga')
 
 
-def _matches(obj, frame, i, j, level):
+def _matches(obj: Any, frame: Frame, i: int, j: int, level: int) -> bool:
     kind, _label_text, selected_height = _mode_info()
     if _kind(obj) != kind:
         return False
-    if kind != 'wall':
+    if kind != 'wall' or selected_height is None:
         return True
     value = _height(obj, _floor_y(frame, i, j, level))
     # Wall heights are 0.5 m apart. A quarter-metre window avoids silently
@@ -130,7 +152,7 @@ def _matches(obj, frame, i, j, level):
     return value is not None and abs(value - selected_height) <= 0.26
 
 
-def _objects_here(frame):
+def _objects_here(frame: Frame) -> list[Any]:
     import simsight_grid as grid
     import simsight_tiles as tiles
 
@@ -142,13 +164,23 @@ def _objects_here(frame):
     ]
 
 
-def _focus_objects(objects):
-    """Return tile objects followed by their attached contents."""
+def _children(obj: Any) -> list[Any]:
     import simsight_tiles as tiles
 
-    result, seen = [], set()
+    try:
+        children = list(tiles.children_on(obj))
+    except Exception:  # children the game will not list
+        children = []
+    children.sort(key=lambda child: int(getattr(child, 'id', 0)))
+    return children
 
-    def add(obj, depth):
+
+def _focus_objects(objects: list[Any]) -> list[Any]:
+    """Return tile objects followed by their attached contents."""
+    result: list[Any] = []
+    seen: set[Any] = set()
+
+    def add(obj: Any, depth: int) -> None:
         obj_id = getattr(obj, 'id', None)
         if obj_id is None or obj_id in seen or getattr(obj, 'is_sim', False):
             return
@@ -156,12 +188,7 @@ def _focus_objects(objects):
         result.append(obj)
         if depth >= 4:
             return
-        try:
-            children = list(tiles.children_on(obj))
-        except Exception:
-            children = []
-        children.sort(key=lambda child: int(getattr(child, 'id', 0)))
-        for child in children:
+        for child in _children(obj):
             add(child, depth + 1)
 
     for obj in sorted(objects, key=lambda item: int(getattr(item, 'id', 0))):
@@ -169,18 +196,20 @@ def _focus_objects(objects):
     return result
 
 
-def _name_parts(obj):
+def _name_parts(obj: Any) -> list[Any]:
     import simsight_grid as grid
 
     value = grid._name(obj)
     return list(value) if isinstance(value, list) else [value]
 
 
-def clear_focus():
-    _focus.update({'obj_id': None, 'tile': None, 'level': None, 'mode': None, 'index': -1})
+def clear_focus() -> None:
+    _state.focus_id = None
+    _state.focus_where = (None, None, None)
+    _state.focus_index = -1
 
 
-def focus_detail(frame):
+def focus_detail(frame: Frame) -> bool:
     """Number 1: focus the next object on the target layer, then list the tile."""
     import simsight_grid as grid
     import simsight_scanner as scanner
@@ -189,27 +218,15 @@ def focus_detail(frame):
     i, j = grid._tile
     matches = [obj for obj in _focus_objects(objects) if _matches(obj, frame, i, j, grid._level)]
     matches.sort(key=lambda obj: int(getattr(obj, 'id', 0)))
-    context = (grid._tile, grid._level, _mode)
-    same = (_focus['tile'], _focus['level'], _focus['mode']) == context
-    index = ((_focus['index'] + 1) % len(matches)) if same and matches else 0
     if not matches:
         clear_focus()
-        parts = [
-            _text(
-                'Nothing at the selected {} layer. ', 'Brak obiektów na wybranej warstwie {}. '
-            ).format(_mode_info()[1])
-        ]
-        if objects:
-            parts.append(_text('Objects here: ', 'Obiekty tutaj: '))
-            parts.extend(grid._object_parts(frame, objects))
-        else:
-            parts.append(_text('Nothing here.', 'Nic tu nie ma.'))
-        scanner._speak_parts(parts)
+        scanner._speak_parts(_no_match_parts(frame, objects))
         return True
+    context = (grid._tile, grid._level, _state.mode)
+    same = _state.focus_where == context
+    index = (_state.focus_index + 1) % len(matches) if same else 0
     obj = matches[index]
-    _focus.update(
-        {'obj_id': obj.id, 'tile': grid._tile, 'level': grid._level, 'mode': _mode, 'index': index}
-    )
+    _state.focus_id, _state.focus_where, _state.focus_index = obj.id, context, index
     parts = [_text('Focused: ', 'Wybrano: ')]
     parts.extend(_name_parts(obj))
     parts.extend([', ', _label(obj, frame, i, j, grid._level), '. '])
@@ -227,25 +244,62 @@ def focus_detail(frame):
     return True
 
 
-def nearby_detail(frame):
+def _no_match_parts(frame: Frame, objects: list[Any]) -> list[Any]:
+    import simsight_grid as grid
+
+    parts: list[Any] = [
+        _text(
+            'Nothing at the selected {} layer. ', 'Brak obiektów na wybranej warstwie {}. '
+        ).format(_mode_info()[1])
+    ]
+    if objects:
+        parts.append(_text('Objects here: ', 'Obiekty tutaj: '))
+        parts.extend(grid._object_parts(frame, objects))
+    else:
+        parts.append(_text('Nothing here.', 'Nic tu nie ma.'))
+    return parts
+
+
+def _nearby(frame: Frame, i: int, j: int, level: int) -> list[tuple[int, int, int, Any]]:
+    """(squared distance, di, dj, object) for each object within
+    tiles.NEARBY_RADIUS, the cursor tile included."""
+    import simsight_tiles as tiles
+
+    nearby: list[tuple[int, int, int, Any]] = []
+    radius = tiles.NEARBY_RADIUS
+    for di in range(-radius, radius + 1):
+        for dj in range(-radius, radius + 1):
+            if (di, dj) != (0, 0) and not frame.inside(i + di, j + dj):
+                continue
+            nearby.extend(
+                (di * di + dj * dj, di, dj, obj)
+                for obj in _objects_on_or_none(frame, i + di, j + dj, level)
+            )
+    return nearby
+
+
+def _objects_on_or_none(frame: Frame, i: int, j: int, level: int) -> list[Any]:
+    import simsight_tiles as tiles
+
+    try:
+        return tiles.objects_on(frame, i, j, level)
+    except Exception:  # no height at that tile: nothing listed there
+        return []
+
+
+def nearby_detail(frame: Frame) -> bool:
     """Number 4: nearby objects with the layer each one is on."""
     import simsight_grid as grid
     import simsight_scanner as scanner
     import simsight_tiles as tiles
 
     i, j = grid._tile
-    nearby = []
-    for di in range(-tiles.NEARBY_RADIUS, tiles.NEARBY_RADIUS + 1):
-        for dj in range(-tiles.NEARBY_RADIUS, tiles.NEARBY_RADIUS + 1):
-            if (di, dj) != (0, 0) and not frame.inside(i + di, j + dj):
-                continue
-            try:
-                for obj in tiles.objects_on(frame, i + di, j + dj, grid._level):
-                    nearby.append((di * di + dj * dj, di, dj, obj))
-            except Exception:
-                continue
-    parts, seen, count = [], set(), 0
-    for _distance, di, dj, obj in sorted(nearby, key=lambda item: item[0]):
+    parts: list[Any] = []
+    seen: set[Any] = set()
+    count = 0
+    for _distance, di, dj, obj in sorted(
+        _nearby(frame, i, j, grid._level), key=lambda item: item[0]
+    ):
         if obj.id in seen:
             continue
         seen.add(obj.id)
@@ -270,17 +324,17 @@ def nearby_detail(frame):
     return True
 
 
-def focused_target():
+def focused_target() -> Any:
     """The object number 1 focused, while the cursor and layer are unchanged."""
-    if not enabled() or _focus['obj_id'] is None:
+    if not enabled() or _state.focus_id is None:
         return None
     import services
     import simsight_grid as grid
     import simsight_tiles as tiles
 
-    if _focus['tile'] != grid._tile or _focus['level'] != grid._level or _focus['mode'] != _mode:
+    if _state.focus_where != (grid._tile, grid._level, _state.mode):
         return None
-    obj = services.object_manager().get(_focus['obj_id'])
+    obj = services.object_manager().get(_state.focus_id)
     frame = tiles.frame()
     if (
         obj is None
@@ -292,43 +346,49 @@ def focused_target():
     return obj
 
 
-def change_layer(delta):
-    """Ctrl+Alt+U (up) and Ctrl+Alt+D (down) with the Build cursor on."""
-    global _mode, _wall_index
+def _step_wall_height(step: int) -> bool:
+    """Layer focus off: the keys only set a wall object's height."""
     import simsight_grid as grid
     import simsight_place as place
     import simsight_tiles as tiles
     import simsight_wall as wall
 
+    item = place.product()
+    if item is None or place.requirement(item['id']) != 'wall':
+        place._say_text(
+            'Choose a wall object first; these keys set its height.',
+            'Najpierw wybierz obiekt ścienny; te klawisze ustawiają jego wysokość.',
+        )
+        return False
+    _state.wall_index = max(0, min(len(wall.HEIGHTS) - 1, _state.wall_index + step))
+    _state.mode = _state.wall_index + 1
+    label, height = wall_height()
+    direction = tiles.direction_name(int(grid._facing) % 4)
+    available = wall.selected_wall() is not None
+    place._say_text(
+        'Height {}, {:.1f} metres. {} {}.'.format(
+            label, height, 'Wall' if available else 'No wall', direction
+        ),
+        'Wysokość {}, {:.1f} metra. {} {}.'.format(
+            label, height, 'Ściana' if available else 'Brak ściany', direction
+        ),
+    )
+    return True
+
+
+def change_layer(delta: int) -> bool:
+    """Ctrl+Alt+U (up) and Ctrl+Alt+D (down) with the Build cursor on."""
+    import simsight_place as place
+
     step = 1 if delta > 0 else -1
     if not enabled():
-        item = place.product()
-        if item is None or place.requirement(item['id']) != 'wall':
-            place._say_text(
-                'Choose a wall object first; these keys set its height.',
-                'Najpierw wybierz obiekt ścienny; te klawisze ustawiają jego wysokość.',
-            )
-            return False
-        _wall_index = max(0, min(len(wall.HEIGHTS) - 1, _wall_index + step))
-        _mode = _wall_index + 1
-        label, height = wall_height()
-        direction = tiles.direction_name(int(grid._facing) % 4)
-        available = wall.selected_wall() is not None
-        place._say_text(
-            'Height {}, {:.1f} metres. {} {}.'.format(
-                label, height, 'Wall' if available else 'No wall', direction
-            ),
-            'Wysokość {}, {:.1f} metra. {} {}.'.format(
-                label, height, 'Ściana' if available else 'Brak ściany', direction
-            ),
-        )
-        return True
-    _mode = max(0, min(7, _mode + step))
+        return _step_wall_height(step)
+    _state.mode = max(0, min(CEILING, _state.mode + step))
     clear_focus()
-    if 1 <= _mode <= 6:
-        _wall_index = _mode - 1
-    kind, label, height = _mode_info()
-    if kind == 'wall':
+    if 1 <= _state.mode <= 6:
+        _state.wall_index = _state.mode - 1
+    _kind_name, label, height = _mode_info()
+    if height is not None:
         place._say_text(
             f'Target layer: {label}, {height:.1f} metres. Press 1 to focus an object here.',
             f'Warstwa docelowa: {label}, {height:.1f} metra. Naciśnij 1, aby wybrać obiekt.',
@@ -341,14 +401,24 @@ def change_layer(delta):
     return True
 
 
-def surface_slots(surface):
+def surface_slots(surface: Any) -> list[Any]:
     try:
         return list(surface.get_runtime_slots_gen())
-    except Exception:
+    except Exception:  # an object without runtime slots
         return []
 
 
-def selected_surface_slot(target_id, candidate, level):
+def _slot_valid(target_id: Any, index: int, slot: Any, candidate: Any) -> bool:
+    try:
+        valid = slot.empty and slot.is_valid_for_placement(obj=candidate)
+    except Exception as exc:
+        _log(f'surface {target_id} slot {index} validation error: {exc!r}')
+        return False
+    _log(f'surface {target_id} slot {index} native validation={valid!r}')
+    return bool(valid)
+
+
+def selected_surface_slot(target_id: Any, candidate: Any, level: Any) -> tuple[Any, Any] | None:
     """Only the explicitly focused surface; native slots decide compatibility."""
     import services
     import simsight_place as place
@@ -364,11 +434,6 @@ def selected_surface_slot(target_id, candidate, level):
     if not services.active_lot().is_position_on_lot(target.position):
         return None
     for index, slot in enumerate(surface_slots(target)):
-        try:
-            valid = slot.empty and slot.is_valid_for_placement(obj=candidate)
-            _log(f'surface {target_id} slot {index} native validation={valid!r}')
-            if valid:
-                return target, slot
-        except Exception as exc:
-            _log(f'surface {target_id} slot {index} validation error: {exc!r}')
+        if _slot_valid(target_id, index, slot, candidate):
+            return target, slot
     return None

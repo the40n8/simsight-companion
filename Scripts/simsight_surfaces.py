@@ -6,10 +6,17 @@ Every placement still goes through place.place with exact=True, so the
 game's own placement test must pass before anything is bought.
 """
 
+from __future__ import annotations
+
 import math
+from typing import TYPE_CHECKING, Any
 
-import simsight_speech as speech
+import simsight_log
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from simsight_tiles import Frame
 
 SUPPORTED = frozenset(('terrain', 'water', 'ceiling', 'fence'))
 SETTING = {
@@ -20,17 +27,17 @@ SETTING = {
 }
 
 
-def _log(message):
-    speech.log_line('surfaces: ' + message)
+def _log(message: str) -> None:
+    simsight_log.line('surfaces: ' + message)
 
 
-def _text(en, pl):
+def _text(en: str, pl: str) -> str:
     import simsight_grid as grid
 
     return grid._text(en, pl)
 
 
-def handles(need):
+def handles(need: Any) -> bool:
     """True when the Build cursor places this requirement experimentally."""
     if need not in SUPPORTED:
         return False
@@ -39,14 +46,14 @@ def handles(need):
     return bool(settings.get(SETTING[need], True))
 
 
-def _cursor_position():
+def _cursor_position() -> Any:
     import simsight_grid as grid
 
     target = grid.cursor()
     return target[0] if target is not None else None
 
 
-def _natural_ground(position, level):
+def _natural_ground(position: Any, level: int) -> bool | None:
     try:
         import build_buy
 
@@ -56,7 +63,7 @@ def _natural_ground(position, level):
         return None
 
 
-def _water_point(position, level):
+def _water_point(position: Any, level: int) -> tuple[Any, float, str]:
     """Return (surface point, depth, kind), or (None, depth, kind)."""
     import sims4.math
 
@@ -85,7 +92,7 @@ def _water_point(position, level):
     return point, depth, 'pool' if pool else ('pond' if pond else 'water')
 
 
-def _ceiling_point(position, level):
+def _ceiling_point(position: Any, level: int) -> Any:
     """The next routing level's plane is the best available ceiling anchor."""
     try:
         import routing
@@ -109,7 +116,7 @@ def _ceiling_point(position, level):
         return None
 
 
-def _fence_point():
+def _fence_point() -> tuple[Frame, int, Any, float] | None:
     """Select an edge geometrically; exact validation proves whether it is a fence."""
     import sims4.math
     import simsight_grid as grid
@@ -135,7 +142,65 @@ def _fence_point():
     return frame, side, point, frame.yaw((side + 2) % 4)
 
 
-def fit_parts(need):
+def _terrain_fit(position: Any, level: int) -> str:
+    if _natural_ground(position, level) is True:
+        return _text(
+            'Experimental bare-ground placement. Natural ground detected; Enter asks the game to validate it. ',
+            'Eksperymentalne umieszczanie na ziemi. Wykryto naturalny teren; Enter prosi grę o sprawdzenie. ',
+        )
+    return _text(
+        'Experimental bare-ground placement. This tile has flooring or is not natural ground. ',
+        'Eksperymentalne umieszczanie na ziemi. To pole ma podłogę albo nie jest naturalnym terenem. ',
+    )
+
+
+def _water_fit(position: Any, level: int) -> str:
+    point, depth, kind = _water_point(position, level)
+    if point is None:
+        return _text(
+            'Experimental water placement. No water surface detected here. ',
+            'Eksperymentalne umieszczanie w wodzie. Nie wykryto tutaj powierzchni wody. ',
+        )
+    return _text(
+        'Experimental water placement. {} detected, depth {:.1f} metres; Enter asks the game to validate it. ',
+        'Eksperymentalne umieszczanie w wodzie. Wykryto {}, głębokość {:.1f} metra; Enter prosi grę o sprawdzenie. ',
+    ).format(kind, depth)
+
+
+def _ceiling_fit(position: Any, level: int) -> str:
+    point = _ceiling_point(position, level)
+    if point is None:
+        return _text(
+            'Experimental ceiling placement. No ceiling anchor could be sampled here. ',
+            'Eksperymentalne umieszczanie na suficie. Nie znaleziono punktu sufitu. ',
+        )
+    return _text(
+        'Experimental ceiling placement. Sampled height {:.1f} metres; Enter asks the game to validate it. ',
+        'Eksperymentalne umieszczanie na suficie. Wysokość {:.1f} metra; Enter prosi grę o sprawdzenie. ',
+    ).format(float(point.y) - float(position.y))
+
+
+def _fence_fit(_position: Any, _level: int) -> str:
+    if _fence_point() is None:
+        return _text(
+            'Experimental fence placement. Selected side has no blocked edge; turn with R. ',
+            'Eksperymentalne umieszczanie na płocie. Po wybranej stronie nie ma krawędzi; obróć R. ',
+        )
+    return _text(
+        'Experimental fence placement. Enter asks the game to validate the selected edge as a fence. ',
+        'Eksperymentalne umieszczanie na płocie. Enter prosi grę o sprawdzenie wybranej krawędzi jako płotu. ',
+    )
+
+
+# What each requirement says on the cursor tile; anything else is a fence.
+_FIT: dict[str, Callable[[Any, int], str]] = {
+    'terrain': _terrain_fit,
+    'water': _water_fit,
+    'ceiling': _ceiling_fit,
+}
+
+
+def fit_parts(need: str) -> list[str]:
     import simsight_grid as grid
 
     position = _cursor_position()
@@ -146,66 +211,54 @@ def fit_parts(need):
                 'Umieszczanie eksperymentalne: nie można sprawdzić pola. ',
             )
         ]
+    return [_FIT.get(need, _fence_fit)(position, grid._level)]
+
+
+def _placement(
+    item: dict[str, Any], need: str, frame: Frame, position: Any
+) -> tuple[Any, float] | None:
+    """(point, angle) to validate for this requirement, or None (said why)."""
+    import simsight_grid as grid
+    import simsight_place as place_mod
+
+    angle, point = frame.yaw(int(grid._facing) % 4), position
     if need == 'terrain':
-        if _natural_ground(position, grid._level) is True:
-            return [
-                _text(
-                    'Experimental bare-ground placement. Natural ground detected; Enter asks the game to validate it. ',
-                    'Eksperymentalne umieszczanie na ziemi. Wykryto naturalny teren; Enter prosi grę o sprawdzenie. ',
-                )
-            ]
-        return [
-            _text(
-                'Experimental bare-ground placement. This tile has flooring or is not natural ground. ',
-                'Eksperymentalne umieszczanie na ziemi. To pole ma podłogę albo nie jest naturalnym terenem. ',
+        if _natural_ground(position, grid._level) is not True:
+            place_mod._say_text(
+                'This object needs natural ground with no floor tiles.',
+                'Ten obiekt wymaga naturalnego terenu bez podłogi.',
             )
-        ]
-    if need == 'water':
+            return None
+    elif need == 'water':
         point, depth, kind = _water_point(position, grid._level)
         if point is None:
-            return [
-                _text(
-                    'Experimental water placement. No water surface detected here. ',
-                    'Eksperymentalne umieszczanie w wodzie. Nie wykryto tutaj powierzchni wody. ',
-                )
-            ]
-        return [
-            _text(
-                'Experimental water placement. {} detected, depth {:.1f} metres; Enter asks the game to validate it. ',
-                'Eksperymentalne umieszczanie w wodzie. Wykryto {}, głębokość {:.1f} metra; Enter prosi grę o sprawdzenie. ',
-            ).format(kind, depth)
-        ]
-    if need == 'ceiling':
+            place_mod._say_text(
+                'This object needs water, and no water surface was detected here.',
+                'Ten obiekt wymaga wody, a tutaj jej nie wykryto.',
+            )
+            return None
+        _log('water product {} kind {} depth {:.2f}'.format(item['id'], kind, depth))
+    elif need == 'ceiling':
         point = _ceiling_point(position, grid._level)
         if point is None:
-            return [
-                _text(
-                    'Experimental ceiling placement. No ceiling anchor could be sampled here. ',
-                    'Eksperymentalne umieszczanie na suficie. Nie znaleziono punktu sufitu. ',
-                )
-            ]
-        return [
-            _text(
-                'Experimental ceiling placement. Sampled height {:.1f} metres; Enter asks the game to validate it. ',
-                'Eksperymentalne umieszczanie na suficie. Wysokość {:.1f} metra; Enter prosi grę o sprawdzenie. ',
-            ).format(float(point.y) - float(position.y))
-        ]
-    if _fence_point() is None:
-        return [
-            _text(
-                'Experimental fence placement. Selected side has no blocked edge; turn with R. ',
-                'Eksperymentalne umieszczanie na płocie. Po wybranej stronie nie ma krawędzi; obróć R. ',
+            place_mod._say_text(
+                'No ceiling anchor could be sampled here.',
+                'Nie znaleziono punktu sufitu w tym miejscu.',
             )
-        ]
-    return [
-        _text(
-            'Experimental fence placement. Enter asks the game to validate the selected edge as a fence. ',
-            'Eksperymentalne umieszczanie na płocie. Enter prosi grę o sprawdzenie wybranej krawędzi jako płotu. ',
-        )
-    ]
+            return None
+    else:
+        selected = _fence_point()
+        if selected is None:
+            place_mod._say_text(
+                'No fence-like edge is selected. Turn with R or move beside a fence.',
+                'Nie wybrano krawędzi płotu. Obróć R albo przejdź obok płotu.',
+            )
+            return None
+        _frame, _side, point, angle = selected
+    return point, angle
 
 
-def place(item, need):
+def place(item: dict[str, Any], need: str) -> bool:
     """Enter with an experimental-surface object chosen."""
     import simsight_grid as grid
     import simsight_place as place_mod
@@ -218,39 +271,9 @@ def place(item, need):
             'Nie można sprawdzić tego pola. Nic nie kupiono.',
         )
         return False
-    angle, point = frame.yaw(int(grid._facing) % 4), position
-    if need == 'terrain':
-        if _natural_ground(position, grid._level) is not True:
-            place_mod._say_text(
-                'This object needs natural ground with no floor tiles.',
-                'Ten obiekt wymaga naturalnego terenu bez podłogi.',
-            )
-            return False
-    elif need == 'water':
-        point, depth, kind = _water_point(position, grid._level)
-        if point is None:
-            place_mod._say_text(
-                'This object needs water, and no water surface was detected here.',
-                'Ten obiekt wymaga wody, a tutaj jej nie wykryto.',
-            )
-            return False
-        _log('water product {} kind {} depth {:.2f}'.format(item['id'], kind, depth))
-    elif need == 'ceiling':
-        point = _ceiling_point(position, grid._level)
-        if point is None:
-            place_mod._say_text(
-                'No ceiling anchor could be sampled here.',
-                'Nie znaleziono punktu sufitu w tym miejscu.',
-            )
-            return False
-    else:
-        selected = _fence_point()
-        if selected is None:
-            place_mod._say_text(
-                'No fence-like edge is selected. Turn with R or move beside a fence.',
-                'Nie wybrano krawędzi płotu. Obróć R albo przejdź obok płotu.',
-            )
-            return False
-        frame, _side, point, angle = selected
+    chosen = _placement(item, need, frame, position)
+    if chosen is None:
+        return False
+    point, angle = chosen
     _log('product {} requirement {} sent to exact validation'.format(item['id'], need))
     return place_mod.place(point, grid._level, grid._surface(), angle=angle, exact=True)
