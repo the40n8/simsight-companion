@@ -3,6 +3,7 @@
 Only reads current state values at announcement time. No interaction tests,
 state writes, scan refreshes, object filtering or cached dirtiness.
 """
+
 from itertools import islice
 import simsight_lang as lang
 import simsight_speech as speech
@@ -16,6 +17,7 @@ def suffix(entry):
         return ''
     try:
         import services
+
         obj = services.object_manager().get(entry.obj_id)
         component = getattr(obj, 'state_component', None)
         if component is None:
@@ -27,7 +29,7 @@ def suffix(entry):
                 current[state_id] = getattr(value, 'guid64', None)
         # DirtyState is the visual state. Prefer it over the linked dirtiness
         # commodity's state when both exist, including transient disagreement.
-        dirty = (current[15129] == 15131 if 15129 in current else current.get(15128) == 15133)
+        dirty = current[15129] == 15131 if 15129 in current else current.get(15128) == 15133
         terms = []
         if dirty:
             terms.append(lang.t('scanner dirty'))
@@ -39,5 +41,7 @@ def suffix(entry):
         # Bound failure logging rather than reporting every repeated keypress.
         if _errors_logged < 5:
             _errors_logged += 1
-            speech.log_line('cleanliness: state read failed for {}: {}'.format(entry.obj_id, type(exc).__name__))
+            speech.log_line(
+                'cleanliness: state read failed for {}: {}'.format(entry.obj_id, type(exc).__name__)
+            )
         return ''

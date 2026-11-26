@@ -14,9 +14,10 @@ speaks (and the game localizes custom holiday names itself). A holiday that
 is already running when a save loads is announced once the loading screen
 is gone. Without Seasons there is no holiday service and nothing happens.
 """
+
 import simsight_speech as speech
 
-_pending_load = []      # holiday ids active at load, announced after it
+_pending_load = []  # holiday ids active at load, announced after it
 
 
 def _log(message):
@@ -29,6 +30,7 @@ def _text(value):
         return None
     try:
         from sims4.localization import LocalizedString
+
         if isinstance(value, LocalizedString):
             return value
     except Exception:
@@ -43,6 +45,7 @@ def _message(holiday_id):
     """(title, text) LocalizedStrings for a holiday, or None."""
     import services
     from sims4.localization import LocalizationHelperTuning as Loc
+
     service = services.holiday_service()
     if service is None:
         return None
@@ -62,7 +65,9 @@ def _message(holiday_id):
             name = description = None
         if name is None:
             continue
-        traditions.append(Loc.get_name_value_pair(name, description) if description is not None else name)
+        traditions.append(
+            Loc.get_name_value_pair(name, description) if description is not None else name
+        )
     if traditions:
         lines.append(Loc.get_raw_text('Traditions:'))
         lines.extend(traditions)
@@ -84,12 +89,14 @@ def announce(holiday_id):
     try:
         import services
         from ui.ui_dialog_notification import UiDialogNotification
+
         message = _message(holiday_id)
         if message is None:
             return False
         title, text = message
         dialog = UiDialogNotification.TunableFactory().default(
-            services.active_sim_info(), text=lambda *a, **k: text, title=lambda *a, **k: title)
+            services.active_sim_info(), text=lambda *a, **k: text, title=lambda *a, **k: title
+        )
         dialog.show_dialog()
         _log('announced holiday {}'.format(holiday_id))
         return True
@@ -101,6 +108,7 @@ def announce(holiday_id):
 def _is_active_household(tracker):
     try:
         import services
+
         household = services.active_household()
         return household is not None and getattr(tracker, '_owner', None) is household
     except Exception:
@@ -109,6 +117,7 @@ def _is_active_household(tracker):
 
 def _install():
     from holidays.holiday_tracker import HolidayTracker
+
     original = HolidayTracker.activate_holiday
     if getattr(original, '_a11y_wrapped', False):
         return
@@ -130,6 +139,7 @@ def _install():
     HolidayTracker.activate_holiday = a11y_activate_holiday
 
     import zone
+
     loaded = zone.Zone.on_loading_screen_animation_finished
 
     def a11y_holidays_on_loading_screen_animation_finished(self, *args, **kwargs):
@@ -138,6 +148,7 @@ def _install():
             # Also catches a holiday already running in a save: the tracker
             # may have been loaded before the household became active.
             import services
+
             household = services.active_household()
             tracker = household.holiday_tracker if household is not None else None
             active = tracker.active_holiday_id if tracker is not None else None
@@ -152,7 +163,9 @@ def _install():
             del _pending_load[:]
         return result
 
-    zone.Zone.on_loading_screen_animation_finished = a11y_holidays_on_loading_screen_animation_finished
+    zone.Zone.on_loading_screen_animation_finished = (
+        a11y_holidays_on_loading_screen_animation_finished
+    )
     _log('holiday announcements installed')
 
 

@@ -35,6 +35,7 @@ Left/Backspace parent, Enter enter a container or open an object's menu.
 The keyboard router provides scanner mode and equivalent Ctrl+Alt chords.
 Native menus own navigation while open.
 """
+
 import math
 import threading
 import time
@@ -54,8 +55,8 @@ import simsight_availability as availability
 REF_OBJECT = 0xA11E5CA1
 REF_SIM = 0xA11E5CA2
 
-MAX_DISTANCE = 40.0        # metres: the default scanner range (RANGES); Sims are always listed
-_LOC_TIMEOUT = 0.6         # seconds to wait for the client before speaking without a name
+MAX_DISTANCE = 40.0  # metres: the default scanner range (RANGES); Sims are always listed
+_LOC_TIMEOUT = 0.6  # seconds to wait for the client before speaking without a name
 
 SIMS = 'SIMS'
 YOURSELF = 'YOURSELF'
@@ -63,45 +64,80 @@ OBJECTS = 'OBJECTS'
 GROUP_TERMS = {YOURSELF: 'yourself', OBJECTS: 'nearby objects'}
 MISC = 'MISC'
 BUILD = 'BUILD'
-_COMPASS = ('north', 'north east', 'east', 'south east',
-            'south', 'south west', 'west', 'north west')
+_COMPASS = (
+    'north',
+    'north east',
+    'east',
+    'south east',
+    'south',
+    'south west',
+    'west',
+    'north west',
+)
 
 # Chords that drive the open pie menu instead of the scanner list.
 MENU_KEYS = {
-    'prev': 'A11yNavPrev', 'next': 'A11yNavNext',
-    'prevcat': 'A11yNavPrev', 'nextcat': 'A11yNavNext',
-    'prevsub': 'A11yNavPrev', 'nextsub': 'A11yNavNext',
-    'open': 'A11yActivate', 'back': 'A11yHidePieMenu',
+    'prev': 'A11yNavPrev',
+    'next': 'A11yNavNext',
+    'prevcat': 'A11yNavPrev',
+    'nextcat': 'A11yNavNext',
+    'prevsub': 'A11yNavPrev',
+    'nextsub': 'A11yNavNext',
+    'open': 'A11yActivate',
+    'back': 'A11yHidePieMenu',
 }
 
 
 class Entry(object):
-    __slots__ = ('obj_id', 'is_sim', 'name', 'name_hash', 'distance',
-                 'bearing', 'level_delta', 'category', 'group', 'first_name', 'availability', 'role')
+    __slots__ = (
+        'obj_id',
+        'is_sim',
+        'name',
+        'name_hash',
+        'distance',
+        'bearing',
+        'level_delta',
+        'category',
+        'group',
+        'first_name',
+        'availability',
+        'role',
+    )
 
-    def __init__(self, obj_id, is_sim, name, name_hash, distance, bearing,
-                 level_delta, category, group, first_name=''):
+    def __init__(
+        self,
+        obj_id,
+        is_sim,
+        name,
+        name_hash,
+        distance,
+        bearing,
+        level_delta,
+        category,
+        group,
+        first_name='',
+    ):
         self.obj_id = obj_id
         self.is_sim = is_sim
-        self.name = name              # plain text when the game has it (Sims)
-        self.name_hash = name_hash    # STBL key when only the client can say it
+        self.name = name  # plain text when the game has it (Sims)
+        self.name_hash = name_hash  # STBL key when only the client can say it
         self.distance = distance
         self.bearing = bearing
         self.level_delta = level_delta
-        self.category = category      # subcategory: a labelled tag name, SIMS or MISC
-        self.group = group            # main scanner group
+        self.category = category  # subcategory: a labelled tag name, SIMS or MISC
+        self.group = group  # main scanner group
         self.first_name = first_name
         self.availability = 'pending'
-        self.role = ''                # Sims: a spoken role such as 'patient, waiting'
+        self.role = ''  # Sims: a spoken role such as 'patient, waiting'
 
 
-_by_group = {}         # main category key -> [Entry], subcategory order then nearest first
-_groups = []           # main category keys present, in the catalog's order
+_by_group = {}  # main category key -> [Entry], subcategory order then nearest first
+_groups = []  # main category keys present, in the catalog's order
 _group_index = 0
 _item_index = 0
 _tree_level = 'groups'  # groups -> subcategories -> items
-_tree_groups = {}      # group -> last selected subcategory
-_tree_items = {}       # (group, subcategory) -> last selected object id
+_tree_groups = {}  # group -> last selected subcategory
+_tree_items = {}  # (group, subcategory) -> last selected object id
 _menu_open = False
 _origin_level = 0
 _last_scan = 0.0
@@ -118,8 +154,16 @@ _CLASS_CACHE_SECONDS = 30.0
 _class_cache = {}
 _availability_revision = 0
 _availability_client = None
-_scan_stats = {'scans': 0, 'total_ms': 0.0, 'last_ms': 0.0, 'max_ms': 0.0,
-               'examined': 0, 'in_range': 0, 'cache_hits': 0, 'cache_misses': 0}
+_scan_stats = {
+    'scans': 0,
+    'total_ms': 0.0,
+    'last_ms': 0.0,
+    'max_ms': 0.0,
+    'examined': 0,
+    'in_range': 0,
+    'cache_hits': 0,
+    'cache_misses': 0,
+}
 
 
 def _touch():
@@ -154,8 +198,8 @@ def enabled():
 
 # --------------------------------------------------------------- loc channel
 
-_loc_cache = {}        # hash -> text
-_loc_waiting = {}      # hash -> [_Pending]
+_loc_cache = {}  # hash -> text
+_loc_waiting = {}  # hash -> [_Pending]
 _loc_lock = threading.Lock()
 _announce_seq = [0]
 
@@ -174,6 +218,7 @@ def _send_ui(name):
     try:
         import distributor.ops
         import distributor.system
+
         op = distributor.ops.SendUIMessage(name)
         distributor.system.Distributor.instance().add_op_with_no_owner(op)
         return True
@@ -190,7 +235,7 @@ def _finish(pending):
         if pending.timer is not None:
             pending.timer.cancel()
         if pending.seq != _announce_seq[0]:
-            return   # superseded by a newer announcement
+            return  # superseded by a newer announcement
         pieces = []
         for part in pending.parts:
             if isinstance(part, tuple):
@@ -231,11 +276,14 @@ def _speak_parts(parts):
         _finish(pending)
 
 
-@sims4.commands.Command('simsight.loc_enc', 'a11y.loc_enc', command_type=sims4.commands.CommandType.Live)
+@sims4.commands.Command(
+    'simsight.loc_enc', 'a11y.loc_enc', command_type=sims4.commands.CommandType.Live
+)
 def a11y_loc_enc(text: str = '', _connection=None):
     """Flash reply: "<hash>|<percent-encoded localized text>"."""
     try:
         from simsight_narrator import _decode_percent
+
         head, _sep, body = text.partition('|')
         key = int(head)
         resolved = _decode_percent(body).strip()
@@ -255,6 +303,7 @@ def a11y_loc_enc(text: str = '', _connection=None):
 
 
 # --------------------------------------------------------------- categories
+
 
 def _tags_with(prefixes):
     return [tag for tag in buycat.ORDER if tag.startswith(prefixes)]
@@ -293,8 +342,7 @@ _TAG_FAMILY = {
     'BuyCatPA_': ('APPLIANCES', 'PLUMBING', 'PETS'),
     'BuyCatLD_': ('DECOR', 'LIGHTING'),
 }
-_BUILD_PREFIXES = ('Build_', 'TerrainManip_', 'TerrainPaint_',
-                   'BuyCat_WaterObjects_BuildMode')
+_BUILD_PREFIXES = ('Build_', 'TerrainManip_', 'TerrainPaint_', 'BuyCat_WaterObjects_BuildMode')
 
 
 def _tag_names(obj):
@@ -308,6 +356,7 @@ def _tag_names(obj):
         if name is None:
             try:
                 from tag import Tag
+
                 name = Tag(tag).name
             except Exception:
                 continue
@@ -327,15 +376,15 @@ def _buy_flags(obj):
     """The client's buy-category bits for the definition (0 when it has none)."""
     try:
         import build_buy
+
         flags = int(build_buy.get_object_buy_category_flags(obj.definition.id))
     except Exception:
         return 0
-    return flags & 0x7FFFFFFF      # drop DEFAULT
+    return flags & 0x7FFFFFFF  # drop DEFAULT
 
 
 def _group_of(flags, sub):
-    candidates = [key for key in buycat.GROUP_ORDER
-                  if flags & buycat.GROUP_FLAG.get(key, 0)]
+    candidates = [key for key in buycat.GROUP_ORDER if flags & buycat.GROUP_FLAG.get(key, 0)]
     if candidates:
         for prefix, family in _TAG_FAMILY.items():
             if sub.startswith(prefix):
@@ -392,11 +441,13 @@ def _label_part(key):
 
 # ------------------------------------------------------------------ scanning
 
+
 def _has_interactions(obj):
     """Objects the player could click on. Reuses the object-names census
     filter (debug/cheat/hidden/universal affordances excluded)."""
     try:
         import simsight_objectnames as objectnames
+
         return objectnames._has_interactions(obj)
     except ImportError:
         pass
@@ -439,9 +490,13 @@ def _sim_name_parts(sim_info):
 # Get to Work hospital patients (PatientSituationBase) by visit stage: the
 # situation's current state class, as EA names them in
 # situations.complex.patient_situation_base and hospital_patient_situation.
-PATIENT_STAGES = {'ArrivingState': 'patient arriving', 'WaitingState': 'patient waiting',
-                  '_AdmittedState': 'patient admitted', '_DiagnosedState': 'patient diagnosed',
-                  'TreatedState': 'patient treated'}
+PATIENT_STAGES = {
+    'ArrivingState': 'patient arriving',
+    'WaitingState': 'patient waiting',
+    '_AdmittedState': 'patient admitted',
+    '_DiagnosedState': 'patient diagnosed',
+    'TreatedState': 'patient treated',
+}
 
 
 def _patient_roles():
@@ -449,6 +504,7 @@ def _patient_roles():
     try:
         import services
         from situations.complex.patient_situation_base import PatientSituationBase
+
         manager = services.get_zone_situation_manager()
         situations = list(manager.values()) if manager is not None else []
     except Exception:
@@ -484,8 +540,9 @@ def _entry_for(obj, origin, origin_level, is_sim, category, group):
             first = str(obj.sim_info.first_name or '')
         except Exception:
             pass
-        return Entry(obj.id, True, name, key, distance, _bearing(dx, dz),
-                     level_delta, category, group, first)
+        return Entry(
+            obj.id, True, name, key, distance, _bearing(dx, dz), level_delta, category, group, first
+        )
     # A player-given name is plain text; otherwise catalog_name is the
     # string-table key itself (an int; EA's own GSI code does hex() on it).
     custom = None
@@ -501,8 +558,9 @@ def _entry_for(obj, origin, origin_level, is_sim, category, group):
             key = int(getattr(raw, 'hash', raw)) & 0xFFFFFFFF
         except Exception:
             key = 0
-    return Entry(obj.id, False, custom, key, distance, _bearing(dx, dz),
-                 level_delta, category, group)
+    return Entry(
+        obj.id, False, custom, key, distance, _bearing(dx, dz), level_delta, category, group
+    )
 
 
 def _subs_in(entries):
@@ -546,6 +604,7 @@ def _range_limit():
 def _object_for_entry(entry):
     try:
         import services
+
         obj = services.object_manager().get(entry.obj_id)
         if obj is not None:
             return obj
@@ -559,6 +618,7 @@ def _object_for_entry(entry):
 def _on_active_lot(obj):
     try:
         import services
+
         return bool(services.active_lot().is_position_on_lot(obj.position))
     except Exception:
         return False
@@ -568,8 +628,10 @@ def _room_id(obj):
     try:
         import build_buy
         import services
-        return build_buy.get_room_id(services.current_zone_id(), obj.position,
-                                     int(getattr(obj, 'level', 0) or 0))
+
+        return build_buy.get_room_id(
+            services.current_zone_id(), obj.position, int(getattr(obj, 'level', 0) or 0)
+        )
     except Exception:
         return None
 
@@ -596,11 +658,12 @@ def _apply_range():
     """Filter the fresh lists to the chosen range, inside _scan, so the
     scanner's own focus restore runs on the filtered lists."""
     if _range()[1] is not None:
-        return      # metre ranges were applied while collecting
+        return  # metre ranges were applied while collecting
     active_room = None
     if _range()[2] == 'room':
         try:
             import services
+
             active_room = _room_id(services.get_active_sim())
         except Exception:
             active_room = None
@@ -621,6 +684,7 @@ def cycle_range(delta):
     speech.log_line('scanner: range {}'.format(name))
     try:
         import services
+
         has_sim = services.get_active_sim() is not None
     except Exception:
         has_sim = False
@@ -643,13 +707,13 @@ def apply_range_setting():
         speech.log_line('scanner: range refresh failed: {!r}'.format(ex))
 
 
-
 def _scan(preserve=False):
     """Rebuild the lists around the active Sim. Simulation thread only."""
     global _by_group, _groups, _group_index, _item_index, _origin_level
     global _last_scan, _last_origin, _last_summary
     global _availability_revision
     import services
+
     started = time.perf_counter()
     previous = _current() if preserve else None
     previous_group = _group_key() if preserve else None
@@ -722,8 +786,12 @@ def _scan(preserve=False):
             continue
     # Eligibility is evaluated incrementally on the simulation pump, never
     # synchronously on a key press. Unknown results remain discoverable.
-    candidates.sort(key=lambda obj: (float(obj.position.x) - float(origin.x)) ** 2
-                    + (float(obj.position.z) - float(origin.z)) ** 2)
+    candidates.sort(
+        key=lambda obj: (
+            (float(obj.position.x) - float(origin.x)) ** 2
+            + (float(obj.position.z) - float(origin.z)) ** 2
+        )
+    )
     availability.begin(sim, candidates)
     _availability_revision = availability.revision()
     for obj in candidates:
@@ -742,23 +810,34 @@ def _scan(preserve=False):
             if not preserve and catalog_group in (MISC, BUILD) and len(notes) < 12:
                 # Diagnostics for the two catch-alls: what did the client
                 # report, and which labelled tags did the definition carry?
-                labelled = sorted(name for name in names
-                                  if name.startswith(('BuyCat', 'Build_', 'Func_')))
-                notes.append('{} {} flags=0x{:X} sub={} tags={}'.format(
-                    catalog_group, getattr(obj.definition, 'name', '?'), flags,
-                    entry.category, ','.join(labelled[:6])))
+                labelled = sorted(
+                    name for name in names if name.startswith(('BuyCat', 'Build_', 'Func_'))
+                )
+                notes.append(
+                    '{} {} flags=0x{:X} sub={} tags={}'.format(
+                        catalog_group,
+                        getattr(obj.definition, 'name', '?'),
+                        flags,
+                        entry.category,
+                        ','.join(labelled[:6]),
+                    )
+                )
         except Exception:
             continue
     for entries in _by_group.values():
         entries.sort(key=lambda e: (_SUB_RANK.get(e.category, 1 << 20), e.distance))
     _apply_range()
     _groups = [key for key in (YOURSELF, SIMS, OBJECTS) if _by_group.get(key)]
-    summary = ' '.join('{}:{}/{}'.format(key, len(_by_group[key]),
-                                         len(_subs_in(_by_group[key])))
-                       for key in _groups)
+    summary = ' '.join(
+        '{}:{}/{}'.format(key, len(_by_group[key]), len(_subs_in(_by_group[key])))
+        for key in _groups
+    )
     if summary != _last_summary or not preserve:
-        speech.log_line('scanner: {} sims, {} objects, {} categories (items/subcategories): {}'.format(
-            len(_by_group.get(SIMS, ())), count, len(_groups), summary))
+        speech.log_line(
+            'scanner: {} sims, {} objects, {} categories (items/subcategories): {}'.format(
+                len(_by_group.get(SIMS, ())), count, len(_groups), summary
+            )
+        )
         _last_summary = summary
     if not preserve:
         for note in notes:
@@ -806,6 +885,7 @@ def _current():
 
 # ------------------------------------------------------- for the menu window
 
+
 def ensure_scan():
     """Scan if nothing is listed yet. Simulation thread."""
     _touch()
@@ -814,8 +894,7 @@ def ensure_scan():
 
 def snapshot():
     """(groups as [(key, [Entry])], current group key, current Entry)."""
-    return ([(key, list(_by_group.get(key, ()))) for key in _groups],
-            _group_key(), _current())
+    return ([(key, list(_by_group.get(key, ()))) for key in _groups], _group_key(), _current())
 
 
 def subs_in(entries):
@@ -863,6 +942,7 @@ def select_item(key, obj_id):
 
 # --------------------------------------------------------------- describing
 
+
 def _name_part(entry):
     if entry.name:
         return entry.name
@@ -876,8 +956,7 @@ def _place_part(entry):
     if metres < 1:
         where = lang.t('here')
     else:
-        where = '{} {} {}'.format(metres, lang.t('meters'),
-                                  lang.t(_COMPASS[entry.bearing]))
+        where = '{} {} {}'.format(metres, lang.t('meters'), lang.t(_COMPASS[entry.bearing]))
     delta = entry.level_delta
     if delta == 1:
         where += ', ' + lang.t('one floor up')
@@ -892,11 +971,15 @@ def _place_part(entry):
 
 def _entry_parts(entry, index, total):
     import simsight_cleanliness as cleanliness
+
     status = ', ' + lang.t('scanner unavailable') if entry.availability == 'locked' else ''
     if entry.role:
         status = ', ' + entry.role + status
-    return [_name_part(entry), cleanliness.suffix(entry) + status + ', ' + _place_part(entry),
-            '. {} {} {}.'.format(index + 1, lang.t('of'), total)]
+    return [
+        _name_part(entry),
+        cleanliness.suffix(entry) + status + ', ' + _place_part(entry),
+        '. {} {} {}.'.format(index + 1, lang.t('of'), total),
+    ]
 
 
 def _sub_label_part(entries, entry):
@@ -919,8 +1002,7 @@ def _group_parts():
     key = _group_key()
     if key is None:
         return [lang.t('nothing nearby')]
-    parts = [_label_part(key),
-             ', {} {}. '.format(len(entries), lang.t('items'))]
+    parts = [_label_part(key), ', {} {}. '.format(len(entries), lang.t('items'))]
     entry = _current()
     if entry is not None:
         sub = _sub_label_part(entries, entry)
@@ -929,7 +1011,14 @@ def _group_parts():
             parts.append(_sub_count_part(entries, entry))
         parts.append(_name_part(entry))
         import simsight_cleanliness as cleanliness
-        parts.append(cleanliness.suffix(entry) + (', ' + entry.role if entry.role else '') + ', ' + _place_part(entry) + '.')
+
+        parts.append(
+            cleanliness.suffix(entry)
+            + (', ' + entry.role if entry.role else '')
+            + ', '
+            + _place_part(entry)
+            + '.'
+        )
     return parts
 
 
@@ -948,13 +1037,21 @@ def _ensure_scan():
     same_origin = True
     try:
         import services
+
         sim = services.get_active_sim()
-        same_origin = sim is not None and _last_origin is not None and (
-            sim.id == _last_origin[0] and int(sim.level) == _origin_level)
+        same_origin = (
+            sim is not None
+            and _last_origin is not None
+            and (sim.id == _last_origin[0] and int(sim.level) == _origin_level)
+        )
     except Exception:
         pass
-    if (_groups and same_origin and availability.revision() == _availability_revision
-            and time.monotonic() - _last_scan < _REFRESH_SECONDS):
+    if (
+        _groups
+        and same_origin
+        and availability.revision() == _availability_revision
+        and time.monotonic() - _last_scan < _REFRESH_SECONDS
+    ):
         return True
     return _scan(preserve=True)
 
@@ -971,6 +1068,7 @@ def _refresh_tick(_handle=None):
         return
     try:
         import simsight_keys as keys
+
         ui_owns_input = keys._modal_active or keys._editing_active
     except Exception:
         ui_owns_input = False
@@ -990,18 +1088,24 @@ def _start_refresh():
     global _refresh_owner, _refresh_handle
     import alarms
     import clock
+
     if _refresh_handle is not None:
         try:
             alarms.cancel_alarm(_refresh_handle)
         except Exception:
             # The previous zone may already have destroyed its timeline.
             pass
+
     class RefreshOwner(object):
         pass
+
     _refresh_owner = RefreshOwner()
     _refresh_handle = alarms.add_alarm_real_time(
-        _refresh_owner, clock.interval_in_real_seconds(_REFRESH_SECONDS),
-        _refresh_tick, repeating=True)
+        _refresh_owner,
+        clock.interval_in_real_seconds(_REFRESH_SECONDS),
+        _refresh_tick,
+        repeating=True,
+    )
 
 
 def _active_sim_changed(old_sim, new_sim):
@@ -1016,6 +1120,7 @@ def _bind_availability_client():
     global _availability_client
     try:
         import services
+
         client = services.client_manager().get_first_client()
         if client is _availability_client:
             return
@@ -1039,6 +1144,7 @@ def _unbind_availability_client():
 
 
 # ------------------------------------------------------------------- intents
+
 
 def _tree_remember():
     entry = _current()
@@ -1085,15 +1191,25 @@ def _tree_parts():
         return [lang.t('nothing nearby')]
     entries = _entries()
     if _tree_level == 'groups':
-        return _kind('scanner category') + [_label_part(_group_key()),
-                ', {} {}. {} {} {}.'.format(len(entries), lang.t('items'),
-                    _group_index + 1, lang.t('of'), len(_groups))]
+        return _kind('scanner category') + [
+            _label_part(_group_key()),
+            ', {} {}. {} {} {}.'.format(
+                len(entries), lang.t('items'), _group_index + 1, lang.t('of'), len(_groups)
+            ),
+        ]
     subs = _subs_in(entries)
     siblings = [e for e in entries if e.category == entry.category]
     if _tree_level == 'subcategories':
-        return _kind('scanner subcategory') + [_label_part(entry.category),
-                ', {} {}. {} {} {}.'.format(len(siblings), lang.t('items'),
-                    subs.index(entry.category) + 1, lang.t('of'), len(subs))]
+        return _kind('scanner subcategory') + [
+            _label_part(entry.category),
+            ', {} {}. {} {} {}.'.format(
+                len(siblings),
+                lang.t('items'),
+                subs.index(entry.category) + 1,
+                lang.t('of'),
+                len(subs),
+            ),
+        ]
     return _entry_parts(entry, siblings.index(entry), len(siblings))
 
 
@@ -1115,11 +1231,13 @@ def resume_mode():
 
 def set_camera_live(live):
     import simsight_camera as camera_follow
+
     camera_follow.set_live(live)
 
 
 def update_camera_follow():
     import simsight_camera as camera_follow
+
     camera_follow.update()
 
 
@@ -1137,8 +1255,7 @@ def _tree_move(step):
         subs = _subs_in(_entries())
         _tree_restore(subs[(subs.index(entry.category) + step) % len(subs)])
     else:
-        indices = [i for i, other in enumerate(_entries())
-                   if other.category == entry.category]
+        indices = [i for i, other in enumerate(_entries()) if other.category == entry.category]
         _item_index = indices[(indices.index(_item_index) + step) % len(indices)]
     _tree_remember()
     _tree_speak()
@@ -1169,6 +1286,7 @@ def _tree_back():
         _tree_level = 'groups'
     _tree_speak()
 
+
 def _do_rescan():
     _class_cache.clear()
     availability.recheck()
@@ -1176,8 +1294,7 @@ def _do_rescan():
         speech.speak(lang.t('nothing nearby'), source='widget')
         return
     total = sum(len(v) for v in _by_group.values())
-    parts = ['{} {}, {} {}. '.format(total, lang.t('items'),
-                                     len(_groups), lang.t('categories'))]
+    parts = ['{} {}, {} {}. '.format(total, lang.t('items'), len(_groups), lang.t('categories'))]
     _speak_parts(parts + _tree_parts())
 
 
@@ -1198,6 +1315,7 @@ def _do_step_sub(step):
 
 def _do_where():
     import services
+
     parts = []
     sim = services.get_active_sim()
     if sim is not None:
@@ -1232,12 +1350,14 @@ def _do_open():
         speech.speak(lang.t('nothing nearby'), source='widget')
         return
     import services
+
     obj = services.object_manager().get(entry.obj_id)
     if obj is None:
         speech.speak(lang.t('no longer here'), source='widget')
         return
     try:
         from server.pick_info import PickType
+
         pick_type = PickType.PICK_SIM if entry.is_sim else PickType.PICK_OBJECT
         pos = obj.position
         try:
@@ -1249,17 +1369,29 @@ def _do_open():
         except Exception:
             lot_id = 0
         first = (entry.first_name or '').replace('|', ' ')
-        sent = _send_ui('A11y|pick|{}|{}|{}|{}|{:.3f}|{:.3f}|{:.3f}|{}'.format(
-            obj.id, int(pick_type), lot_id, first,
-            float(pos.x), float(pos.y), float(pos.z), level))
+        sent = _send_ui(
+            'A11y|pick|{}|{}|{}|{}|{:.3f}|{:.3f}|{:.3f}|{}'.format(
+                obj.id,
+                int(pick_type),
+                lot_id,
+                first,
+                float(pos.x),
+                float(pos.y),
+                float(pos.z),
+                level,
+            )
+        )
     except Exception as ex:
         speech.log_line('scanner: open menu failed: {!r}'.format(ex))
         sent = False
-    speech.log_line('scanner: menu requested for {} (sim={}) sent={}'.format(
-        entry.obj_id, entry.is_sim, sent))
+    speech.log_line(
+        'scanner: menu requested for {} (sim={}) sent={}'.format(entry.obj_id, entry.is_sim, sent)
+    )
 
 
-@sims4.commands.Command('simsight.menuempty', 'a11y.menuempty', command_type=sims4.commands.CommandType.Live)
+@sims4.commands.Command(
+    'simsight.menuempty', 'a11y.menuempty', command_type=sims4.commands.CommandType.Live
+)
 def a11y_menuempty(arg: str = '', _connection=None):
     """Flash: the requested pie menu had no options."""
     speech.speak(lang.t('no options'), source='widget')
@@ -1306,6 +1438,7 @@ def on_key(intent, on_simulation_thread=False):
         return
     if intent == 'help':
         import simsight_shortcuts as shortcuts
+
         shortcuts.speak()
         return
     if _menu_open and intent in MENU_KEYS:
@@ -1313,6 +1446,7 @@ def on_key(intent, on_simulation_thread=False):
         _log_route('sent to the open menu', intent)
         try:
             import simsight_keys as keys
+
             keys._send(MENU_KEYS[intent])
         except Exception as ex:
             speech.log_line('scanner: menu key failed: {!r}'.format(ex))
@@ -1346,7 +1480,9 @@ def note_menu_open():
     availability.pause()
 
 
-@sims4.commands.Command('simsight.menuclosed', 'a11y.menuclosed', command_type=sims4.commands.CommandType.Live)
+@sims4.commands.Command(
+    'simsight.menuclosed', 'a11y.menuclosed', command_type=sims4.commands.CommandType.Live
+)
 def a11y_menuclosed(arg: str = '', _connection=None):
     global _menu_open
     if _menu_open:
@@ -1363,9 +1499,11 @@ def a11y_scan(action: str = 'rescan', _connection=None):
     if action.lower() == 'stats':
         stats = dict(_scan_stats)
         stats['mean_ms'] = stats['total_ms'] / max(1, stats['scans'])
-        text = ('scanner: {scans} scans; last {last_ms:.2f} ms, mean {mean_ms:.2f} ms, '
-                'max {max_ms:.2f} ms; last objects {examined}, in range {in_range}; '
-                'classification hits {cache_hits}, misses {cache_misses}').format(**stats)
+        text = (
+            'scanner: {scans} scans; last {last_ms:.2f} ms, mean {mean_ms:.2f} ms, '
+            'max {max_ms:.2f} ms; last objects {examined}, in range {in_range}; '
+            'classification hits {cache_hits}, misses {cache_misses}'
+        ).format(**stats)
         text += '; refresh {}'.format('active' if _refresh_requested else 'idle')
         output(text)
         speech.log_line(text)
@@ -1374,13 +1512,15 @@ def a11y_scan(action: str = 'rescan', _connection=None):
         output('simsight: scanner is off (cfg [features] scanner)')
         return True
     _dispatch(action.lower())
-    output('simsight: scanner {} -> {} categories, pump {}'.format(
-        action, len(_groups), pump.status()))
+    output(
+        'simsight: scanner {} -> {} categories, pump {}'.format(action, len(_groups), pump.status())
+    )
     return True
 
 
 def _install_zone_hook():
     import zone
+
     original = zone.Zone.on_loading_screen_animation_finished
 
     def a11y_scanner_on_loading_screen_animation_finished(self, *args, **kwargs):
@@ -1396,6 +1536,7 @@ def _install_zone_hook():
         _unbind_availability_client()
         _bind_availability_client()
         import simsight_camera as camera_follow
+
         camera_follow.reset()
         _menu_open = False
         _last_scan = 0.0
@@ -1416,7 +1557,8 @@ def _install_zone_hook():
         return result
 
     zone.Zone.on_loading_screen_animation_finished = (
-        a11y_scanner_on_loading_screen_animation_finished)
+        a11y_scanner_on_loading_screen_animation_finished
+    )
 
 
 try:
@@ -1430,6 +1572,7 @@ except Exception as _zone_ex:
 try:
     import simsight_extensions
     import simsight_plus_core
+
     simsight_plus_core.post(simsight_extensions.install)
 except Exception as _extensions_error:
     speech.log_line('local extensions could not be queued: {!r}'.format(_extensions_error))

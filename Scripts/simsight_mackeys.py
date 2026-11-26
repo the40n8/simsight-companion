@@ -16,6 +16,7 @@ The helper only takes bare keys the mod owns: grab_set() lists them and the
 bridge forwards the list to the helper whenever it changes. Held keys repeat
 with the Windows reader's timing, and a key-up is sent like on Windows.
 """
+
 import time
 
 import simsight_speech as speech
@@ -24,17 +25,39 @@ LEASE_SECONDS = 0.5
 
 # Bare keys the mod may own (Windows VK codes), with Shift variants that
 # have their own meaning (Shift+Tab, Shift+R in the Build cursor).
-_CANDIDATES = [0x09, 0x0D, 0x20, 0x08, 0x1B, 0x25, 0x26, 0x27, 0x28, 0x21, 0x22, 0x24, 0x2E,
-               0x52, 0x4D, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36]
+_CANDIDATES = [
+    0x09,
+    0x0D,
+    0x20,
+    0x08,
+    0x1B,
+    0x25,
+    0x26,
+    0x27,
+    0x28,
+    0x21,
+    0x22,
+    0x24,
+    0x2E,
+    0x52,
+    0x4D,
+    0x31,
+    0x32,
+    0x33,
+    0x34,
+    0x35,
+    0x36,
+]
 _SHIFTED = [0x09, 0x52]
 
-_held = {}          # (family, vk, shift) -> [message or intent, pressed_at, last_fire]
+_held = {}  # (family, vk, shift) -> [message or intent, pressed_at, last_fire]
 _last_lease = -1e9
 _last_grab = None
 
 
 def _keys():
     import simsight_keys as keys
+
     return keys
 
 
@@ -45,6 +68,7 @@ def _log(message):
 def _pump_alive():
     try:
         import simsight_pump as pump
+
         return bool(pump.alive())
     except Exception:
         return False
@@ -74,6 +98,7 @@ def handle(family, vk, down, shift):
         return True
     if family == 'plus':
         import simsight_plus_core as core
+
         entry = core.HOTKEYS.get(vk)
         if entry is None:
             return False
@@ -143,6 +168,7 @@ def tick(send):
             keys._send('A11y|lease')
             try:
                 import simsight_pump as pump
+
                 pump.post(keys._announce_ui_settings)
             except Exception:
                 pass
@@ -155,7 +181,7 @@ def tick(send):
 def focus_lost():
     """The game went to the background: release held keys (like Windows)."""
     keys = _keys()
-    for (family, vk, _shift) in list(_held):
+    for family, vk, _shift in list(_held):
         if family == 'plain':
             keys._send('A11y|keyup|{}'.format(vk))
     _held.clear()

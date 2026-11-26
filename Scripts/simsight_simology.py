@@ -13,6 +13,7 @@ value's range gives at age up, and EA's description.
 
 Everything is read again when a row is chosen; nothing here changes the game.
 """
+
 import simsight_lang as lang
 import simsight_menu as menu
 import simsight_speech as speech
@@ -28,6 +29,7 @@ def _say(term):
 def _pack(name):
     try:
         from sims4.common import Pack, is_available_pack
+
         return bool(is_available_pack(getattr(Pack, name)))
     except Exception:
         return False
@@ -43,18 +45,21 @@ def values_available():
 
 def _active_info():
     import services
+
     client = services.client_manager().get_first_client()
     return getattr(client, 'active_sim_info', None) if client is not None else None
 
 
 def _name(info):
-    return ' '.join(p for p in (getattr(info, 'first_name', ''),
-                                getattr(info, 'last_name', '')) if p)
+    return ' '.join(
+        p for p in (getattr(info, 'first_name', ''), getattr(info, 'last_name', '')) if p
+    )
 
 
 def _lines(*parts):
     """One localized description from EA strings and narration text."""
     from sims4.localization import LocalizationHelperTuning
+
     strings = [menu._raw(p) if isinstance(p, str) else p for p in parts if p]
     if not strings:
         return None
@@ -66,6 +71,7 @@ def _lines(*parts):
 def age_name(age):
     try:
         from sims.sim_info_types import Age
+
         key = Age(age).name
     except Exception:
         key = str(getattr(age, 'name', age))
@@ -76,6 +82,7 @@ def age_name(age):
 
 # ------------------------------------------------------------------ milestones
 
+
 def _tracker(info):
     return getattr(info, 'developmental_milestone_tracker', None) if info is not None else None
 
@@ -83,6 +90,7 @@ def _tracker(info):
 def _milestone_entries(tracker, info):
     """(milestone, data) pairs EA's panel shows, active and archived."""
     from event_testing.resolver import SingleSimResolver
+
     resolver = SingleSimResolver(info)
     entries = []
     for milestone, data in list(tracker._active_milestones_data.items()):
@@ -98,6 +106,7 @@ def _milestone_entries(tracker, info):
 
 def _state(data):
     from developmental_milestones.developmental_milestone_enums import DevelopmentalMilestoneStates
+
     state = getattr(data, 'state', None)
     if state == DevelopmentalMilestoneStates.UNLOCKED:
         return 'reached'
@@ -116,6 +125,7 @@ def _reached_count(milestone, data):
 
 def _category_name(category):
     from developmental_milestones.developmental_milestone import DevelopmentalMilestone
+
     entry = DevelopmentalMilestone.DEVELOPMENTAL_MILESTONE_CATEGORIES.get(category)
     return getattr(entry, 'name', None) if entry is not None else None
 
@@ -159,6 +169,7 @@ def _read(info):
 def milestones_window():
     """Categories for the active Sim; Enter lists that category's milestones."""
     import simsight_hub as hub
+
     info = _active_info()
     if info is None:
         _say('load a household first')
@@ -181,8 +192,9 @@ def milestones_window():
             continue
         reached = sum(1 for m, d in items if _reached_count(m, d))
         detail = lang.t('milestone category detail').format(reached, len(items))
-        rows.append((name, menu._raw(detail),
-                     lambda value=category: milestone_category(sim_id, value)))
+        rows.append(
+            (name, menu._raw(detail), lambda value=category: milestone_category(sim_id, value))
+        )
     if not rows:
         speech.speak(lang.t('no milestones').format(_name(info)), explicit=True)
         return False
@@ -192,6 +204,7 @@ def milestones_window():
 def milestone_category(sim_id, category):
     import services
     import simsight_hub as hub
+
     info = services.sim_info_manager().get(sim_id)
     if info is None:
         _say('sim unavailable')
@@ -213,11 +226,16 @@ def milestone_category(sim_id, category):
     if not rows:
         speech.speak(lang.t('no milestones').format(_name(info)), explicit=True)
         return False
-    return hub._window('milestones', lang.t('milestone list instructions'), rows,
-                       localized_title=_category_name(category))
+    return hub._window(
+        'milestones',
+        lang.t('milestone list instructions'),
+        rows,
+        localized_title=_category_name(category),
+    )
 
 
 # ------------------------------------------------------------ character values
+
 
 def _display(stat_type, attr):
     try:
@@ -228,6 +246,7 @@ def _display(stat_type, attr):
 
 def _life_skills(info):
     from statistics.life_skill_statistic import LifeSkillStatistic
+
     tracker = getattr(info, 'commodity_tracker', None)
     if tracker is None:
         return []
@@ -266,14 +285,19 @@ def value_detail(stat, info):
     parts = [value_text(value, low, high)]
     trait, age = _range_trait(stat_type, value, info)
     if trait is not None:
-        parts.append(lang.t('value heading to at').format(age) if age else lang.t('value heading to'))
+        parts.append(
+            lang.t('value heading to at').format(age) if age else lang.t('value heading to')
+        )
         parts.append(trait)
-    parts.append(_display(stat_type, 'display_description') or _display(stat_type, 'display_tooltip'))
+    parts.append(
+        _display(stat_type, 'display_description') or _display(stat_type, 'display_tooltip')
+    )
     return _lines(*parts)
 
 
 def values_window():
     import simsight_hub as hub
+
     info = _active_info()
     if info is None:
         _say('load a household first')
@@ -299,4 +323,6 @@ def values_window():
     if not rows:
         speech.speak(lang.t('no character values').format(_name(info)), explicit=True)
         return False
-    return hub._window('character values', lang.t('character values instructions').format(_name(info)), rows)
+    return hub._window(
+        'character values', lang.t('character values instructions').format(_name(info)), rows
+    )

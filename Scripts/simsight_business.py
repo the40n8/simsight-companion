@@ -12,6 +12,7 @@ served, markup and revenue, plus the star rating, employees and hourly wages.
 
 Rows only read. Enter opens EA's owned-business panel.
 """
+
 import simsight_lang as lang
 import simsight_menu as menu
 import simsight_speech as speech
@@ -34,6 +35,7 @@ def _signed(amount):
 
 def _managers():
     import services
+
     household = services.active_household()
     if household is None:
         return None
@@ -43,6 +45,7 @@ def _managers():
 
 def business_name(manager):
     import services
+
     try:
         zone = services.get_persistence_service().get_zone_proto_buff(manager.business_zone_id)
         name = str(getattr(zone, 'name', '') or '')
@@ -59,19 +62,26 @@ def _value(read, default=None):
 
 
 def business_lines(manager):
-    lines = [lang.t('business open') if _value(lambda: manager.is_open) else lang.t('business closed')]
+    lines = [
+        lang.t('business open') if _value(lambda: manager.is_open) else lang.t('business closed')
+    ]
     stars = _value(manager.get_star_rating)
     if stars is not None:
         lines.append(lang.t('business stars').format('{:g}'.format(round(float(stars), 1))))
     funds = _value(lambda: manager.funds.money)
     if funds is not None:
         lines.append(lang.t('business funds').format(_money(funds)))
-    lines.append(lang.t('business today').format(
-        _value(lambda: manager.daily_items_sold, 0),
-        _value(lambda: manager._customer_manager.session_customers_served, 0),
-        _money(_value(lambda: manager.daily_revenue, 0)),
-        _money(_value(lambda: manager.get_daily_outgoing_costs(include_employee_wages=False), 0)),
-        _signed(_value(lambda: manager.get_daily_net_profit(include_employee_wages=False), 0))))
+    lines.append(
+        lang.t('business today').format(
+            _value(lambda: manager.daily_items_sold, 0),
+            _value(lambda: manager._customer_manager.session_customers_served, 0),
+            _money(_value(lambda: manager.daily_revenue, 0)),
+            _money(
+                _value(lambda: manager.get_daily_outgoing_costs(include_employee_wages=False), 0)
+            ),
+            _signed(_value(lambda: manager.get_daily_net_profit(include_employee_wages=False), 0)),
+        )
+    )
     markup = _value(lambda: manager.markup_multiplier)
     if markup is not None:
         lines.append(lang.t('business markup').format(int(round((float(markup) - 1.0) * 100))))
@@ -86,12 +96,14 @@ def business_lines(manager):
 
 def _open_panel():
     import simsight_hub as hub
+
     hub._ui('OpenHouseholdInfoVenuePanel')
     return True
 
 
 def businesses_window():
     import simsight_hub as hub
+
     try:
         managers = _managers()
     except Exception as ex:

@@ -40,6 +40,7 @@ command; the setting persists for the session.
 The simsight.objectnames on/off choice persists via the settings file
 (`object_names` key).
 """
+
 import services
 import sims4.commands
 from indexed_manager import CallbackTypes
@@ -58,6 +59,7 @@ def _speech():
     if _speech_mod is None:
         try:
             import simsight_speech as mod
+
             _speech_mod = mod
         except ImportError:
             return None
@@ -84,53 +86,55 @@ _STYLE = ui_protocols.UiObjectMetadata.HOVER_TIP_CONSUMABLE_CRAFTABLE
 # objects that only apply with a special actor (ghost possession/powers, fame
 # perks), a special object state (burnt/scratched replacement), or dev tooling
 # (simRay). Their presence does not make an object "interactive".
-_EXCLUDED_AFFORDANCES = frozenset((
-    74457,    # fire_ReplaceBurntObject
-    102255,   # Ghost_Possess_Repair
-    102258,   # Ghost_Possess
-    102433,   # Ghost_Possess_Break_Electrocution
-    102774,   # Ghost_Possess_Break_Plumbing
-    105971,   # simRay_Frozen_View
-    106094,   # simRay_MindControlReaction_Panicked
-    106095,   # simRay_MindControlReaction_Escape
-    106859,   # simRay_Transform_Object
-    116720,   # simRay_Transform_Object_WallObject
-    121648,   # Ghost_Possess_Bonfire
-    143965,   # Ghost_Possess_BubbleBlower
-    163419,   # scratch_ReplaceScratchedObject
-    168502,   # Ghost_Pet_Possess
-    168664,   # simRay_ChangeClothes_Upgrade_CompletedDisplay
-    168665,   # simRay_Clean_Upgrade_CompletedDisplay
-    168666,   # simRay_Eat_Upgrade_CompletedDisplay
-    168667,   # simRay_Panic_Upgrade_CompletedDisplay
-    168668,   # simRay_Sit_Upgrade_CompletedDisplay
-    168669,   # simRay_Sleep_Upgrade_CompletedDisplay
-    168670,   # simRay_TransformObject_Upgrade_CompletedDisplay
-    168671,   # simRay_TransformSim_Upgrade_CompletedDisplay
-    182291,   # Ghost_Possess_Fire
-    194245,   # famePerks_Influencer_OpenEnvelope
-    194246,   # famePerks_Influencer_OpenPackage
-    196759,   # famePerks_GoodReputation_GivingBack_DonateObject
-    196854,   # famePerks_Influencer_OpenEnvelope_FromWorld
-    196855,   # famePerks_Influencer_OpenPackage_FromWorld
-    260638,   # simRay_Transform_Object_ScientistVenueGrassOnly
-    324988,   # Ghost_Horse_Possess
-    385718,   # ghostPowers_Abilities_Chaos_ProduceMaterial
-    385719,   # ghostPowers_Abilities_Helpful_RemoveMaterial
-    391304,   # ghostPowers_Abilities_Scary_Self_FlickerLights_Room
-    391312,   # ghostPowers_Abilities_Scary_MusicalPossess
-    392250,   # ghostPowers_Abilities_Scary_GhostlyBang_Terrain
-    393624,   # ghostPowers_Abilities_Comfort_ImproveQuality
-    393625,   # ghostPowers_Abilities_Comfort_Unspoil
-    393630,   # ghostPowers_Abilities_Comfort_NurturePlantLife
-    393658,   # ghostPowers_Abilities_Helpful_NoPossess_Instantly_Clean
-    393662,   # ghostPowers_Abilities_Helpful_Instantly_NoPossess_Repair
-    393663,   # ghostPowers_Abilities_Helpful_Instantly_Possess_Repair
-    393664,   # ghostPowers_Abilities_Helpful_Instantly_Possess_Upgrade
-    395021,   # ghostPowers_WellofSouls_AbilityReset
-    395070,   # ghostPowers_Abilities_Helpful_RemoveMaterial_EmptyTrash
-    415212,   # ghostPowers_Abilities_Helpful_RemoveMaterial_Mold
-))
+_EXCLUDED_AFFORDANCES = frozenset(
+    (
+        74457,  # fire_ReplaceBurntObject
+        102255,  # Ghost_Possess_Repair
+        102258,  # Ghost_Possess
+        102433,  # Ghost_Possess_Break_Electrocution
+        102774,  # Ghost_Possess_Break_Plumbing
+        105971,  # simRay_Frozen_View
+        106094,  # simRay_MindControlReaction_Panicked
+        106095,  # simRay_MindControlReaction_Escape
+        106859,  # simRay_Transform_Object
+        116720,  # simRay_Transform_Object_WallObject
+        121648,  # Ghost_Possess_Bonfire
+        143965,  # Ghost_Possess_BubbleBlower
+        163419,  # scratch_ReplaceScratchedObject
+        168502,  # Ghost_Pet_Possess
+        168664,  # simRay_ChangeClothes_Upgrade_CompletedDisplay
+        168665,  # simRay_Clean_Upgrade_CompletedDisplay
+        168666,  # simRay_Eat_Upgrade_CompletedDisplay
+        168667,  # simRay_Panic_Upgrade_CompletedDisplay
+        168668,  # simRay_Sit_Upgrade_CompletedDisplay
+        168669,  # simRay_Sleep_Upgrade_CompletedDisplay
+        168670,  # simRay_TransformObject_Upgrade_CompletedDisplay
+        168671,  # simRay_TransformSim_Upgrade_CompletedDisplay
+        182291,  # Ghost_Possess_Fire
+        194245,  # famePerks_Influencer_OpenEnvelope
+        194246,  # famePerks_Influencer_OpenPackage
+        196759,  # famePerks_GoodReputation_GivingBack_DonateObject
+        196854,  # famePerks_Influencer_OpenEnvelope_FromWorld
+        196855,  # famePerks_Influencer_OpenPackage_FromWorld
+        260638,  # simRay_Transform_Object_ScientistVenueGrassOnly
+        324988,  # Ghost_Horse_Possess
+        385718,  # ghostPowers_Abilities_Chaos_ProduceMaterial
+        385719,  # ghostPowers_Abilities_Helpful_RemoveMaterial
+        391304,  # ghostPowers_Abilities_Scary_Self_FlickerLights_Room
+        391312,  # ghostPowers_Abilities_Scary_MusicalPossess
+        392250,  # ghostPowers_Abilities_Scary_GhostlyBang_Terrain
+        393624,  # ghostPowers_Abilities_Comfort_ImproveQuality
+        393625,  # ghostPowers_Abilities_Comfort_Unspoil
+        393630,  # ghostPowers_Abilities_Comfort_NurturePlantLife
+        393658,  # ghostPowers_Abilities_Helpful_NoPossess_Instantly_Clean
+        393662,  # ghostPowers_Abilities_Helpful_Instantly_NoPossess_Repair
+        393663,  # ghostPowers_Abilities_Helpful_Instantly_Possess_Repair
+        393664,  # ghostPowers_Abilities_Helpful_Instantly_Possess_Upgrade
+        395021,  # ghostPowers_WellofSouls_AbilityReset
+        395070,  # ghostPowers_Abilities_Helpful_RemoveMaterial_EmptyTrash
+        415212,  # ghostPowers_Abilities_Helpful_RemoveMaterial_Mold
+    )
+)
 
 _enabled = bool(settings.get('object_names', True))
 _registered = False
@@ -164,8 +168,7 @@ def _has_interactions(obj):
             if _is_player_affordance(sa):
                 return True
     except Exception as ex:
-        _log('objectnames: affordance check failed on {}: {!r}'.format(
-            getattr(obj, 'id', '?'), ex))
+        _log('objectnames: affordance check failed on {}: {!r}'.format(getattr(obj, 'id', '?'), ex))
     return False
 
 
@@ -186,8 +189,7 @@ def _should_stamp(obj, force=False, inventory=False):
         # A visible inventory item needs a readable name even when its
         # affordances are inventory-only. Hidden storage is not a UI item.
         component = getattr(obj, 'inventoryitem_component', None)
-        return (component is not None and not component.is_hidden
-                and component.is_in_inventory())
+        return component is not None and not component.is_hidden and component.is_in_inventory()
     return _has_interactions(obj)
 
 
@@ -207,8 +209,7 @@ def stamp(obj, force=False, inventory=False):
             # content (assigned-bed tips) never materializes. The style for
             # name-only objects is applied post-rebuild by the
             # update_object_tooltip wrap installed below.
-            obj.update_tooltip_field(TooltipFields.recipe_name, name,
-                                     should_update=True)
+            obj.update_tooltip_field(TooltipFields.recipe_name, name, should_update=True)
         else:
             obj.hover_tip = _STYLE
             obj.add_ui_metadata('recipe_name', name)
@@ -216,8 +217,7 @@ def stamp(obj, force=False, inventory=False):
         _stamped.add(obj.id)
         return True
     except Exception as ex:
-        _log('objectnames: stamp failed on {}: {!r}'.format(
-            getattr(obj, 'id', '?'), ex))
+        _log('objectnames: stamp failed on {}: {!r}'.format(getattr(obj, 'id', '?'), ex))
         return False
 
 
@@ -257,6 +257,7 @@ def stamp_inventory(force=False):
 
 def _install_inventory_hook():
     from objects.components.inventory_item import InventoryItemComponent
+
     original = InventoryItemComponent.on_added_to_inventory
 
     def a11y_on_added_to_inventory(self, *args, **kwargs):
@@ -299,14 +300,20 @@ def _install_tooltip_rebuild_hook():
     external name) but chose no style, give it ours. EA styles always win;
     a rebuild that disabled the tip (no handles) is left disabled."""
     from objects.components.tooltip_component import TooltipComponent
+
     original = TooltipComponent.update_object_tooltip
 
     def a11y_update_object_tooltip(self):
         result = original(self)
         try:
             owner = self.owner
-            if (_enabled and owner is not None and owner.id in _stamped
-                    and not owner.hover_tip and self._ui_metadata_handles):
+            if (
+                _enabled
+                and owner is not None
+                and owner.id in _stamped
+                and not owner.hover_tip
+                and self._ui_metadata_handles
+            ):
                 owner.hover_tip = _STYLE
                 owner.update_ui_metadata()
         except Exception as ex:
@@ -324,6 +331,7 @@ except Exception as _ex:
 
 def _install_zone_hook():
     import zone
+
     original = zone.Zone.on_loading_screen_animation_finished
 
     def a11y_on_loading_screen_animation_finished(self, *args, **kwargs):
@@ -345,7 +353,9 @@ except Exception as _ex:
     _log('objectnames: zone hook install failed: {!r}'.format(_ex))
 
 
-@sims4.commands.Command('simsight.objdiag', 'a11y.objdiag', command_type=sims4.commands.CommandType.Live)
+@sims4.commands.Command(
+    'simsight.objdiag', 'a11y.objdiag', command_type=sims4.commands.CommandType.Live
+)
 def a11y_objdiag(match: str = '', _connection=None):
     """simsight.objdiag <substring of tuning name>: log tooltip state of matching
     objects (e.g. `simsight.objdiag bedDouble`)."""
@@ -365,27 +375,36 @@ def a11y_objdiag(match: str = '', _connection=None):
         if match.lower() not in cls_name.lower():
             continue
         count += 1
-        lines = ['objdiag: {} id={} hover_tip={!r} stamped={} interactive={}'.format(
-            cls_name, obj.id, obj.hover_tip, obj.id in _stamped,
-            _has_interactions(obj))]
+        lines = [
+            'objdiag: {} id={} hover_tip={!r} stamped={} interactive={}'.format(
+                cls_name, obj.id, obj.hover_tip, obj.id in _stamped, _has_interactions(obj)
+            )
+        ]
         comp = obj.get_component(component_types.TOOLTIP_COMPONENT)
         if comp is None:
             lines.append('   no tooltip component')
         else:
-            lines.append('   hovertip_requested={} handles={} external={}'.format(
-                comp.hovertip_requested,
-                sorted(comp._ui_metadata_handles.keys()),
-                sorted(comp._external_field_to_data.keys())))
+            lines.append(
+                '   hovertip_requested={} handles={} external={}'.format(
+                    comp.hovertip_requested,
+                    sorted(comp._ui_metadata_handles.keys()),
+                    sorted(comp._external_field_to_data.keys()),
+                )
+            )
             try:
                 from event_testing.resolver import SingleObjectResolver
+
                 resolver = SingleObjectResolver(obj)
-                lines.append('   tooltip_tests_pass={}'.format(
-                    bool(comp.tooltip_tests.run_tests(resolver))))
+                lines.append(
+                    '   tooltip_tests_pass={}'.format(bool(comp.tooltip_tests.run_tests(resolver)))
+                )
                 for i, tip in enumerate(comp._get_custom_tooltips()):
-                    passed = bool(tip.object_tests) and bool(
-                        tip.object_tests.run_tests(resolver))
-                    lines.append('   custom[{}] style={!r} tests_pass={}'.format(
-                        i, tip.tooltip_style, passed))
+                    passed = bool(tip.object_tests) and bool(tip.object_tests.run_tests(resolver))
+                    lines.append(
+                        '   custom[{}] style={!r} tests_pass={}'.format(
+                            i, tip.tooltip_style, passed
+                        )
+                    )
             except Exception as ex:
                 lines.append('   test eval failed: {!r}'.format(ex))
         for line in lines:
@@ -397,7 +416,9 @@ def a11y_objdiag(match: str = '', _connection=None):
     return True
 
 
-@sims4.commands.Command('simsight.objectnames', 'a11y.objectnames', command_type=sims4.commands.CommandType.Live)
+@sims4.commands.Command(
+    'simsight.objectnames', 'a11y.objectnames', command_type=sims4.commands.CommandType.Live
+)
 def a11y_objectnames(mode: str = 'on', _connection=None):
     output = sims4.commands.CheatOutput(_connection)
     if mode.lower() in ('redo', 'force', 'refresh'):

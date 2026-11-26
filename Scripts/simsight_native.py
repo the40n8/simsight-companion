@@ -8,12 +8,14 @@ turns on the service's automatic answering. A refused interaction reports
 the game's own reason: the client fills the text of a native notification,
 which the notification narration reads.
 """
+
 import simsight_lang as lang
 import simsight_speech as speech
 
 
 def _service():
     import services
+
     return services.ui_dialog_service()
 
 
@@ -37,7 +39,9 @@ def answer_picker(dialog, picked_results):
     pick but refuses OK, the dialog stays open holding that pick."""
     picked = list(picked_results)
     if not dialog_active(dialog):
-        speech.log_line('native: dialog {} is gone; nothing answered'.format(getattr(dialog, 'dialog_id', '?')))
+        speech.log_line(
+            'native: dialog {} is gone; nothing answered'.format(getattr(dialog, 'dialog_id', '?'))
+        )
         return False
     minimum = getattr(dialog, 'min_selectable', 0) or 0
     # EA's max_selectable is a policy object (get_max_selectable); only a
@@ -46,14 +50,20 @@ def answer_picker(dialog, picked_results):
     if not isinstance(maximum, int) or isinstance(maximum, bool):
         maximum = None
     if len(picked) < minimum or (maximum is not None and maximum > 0 and len(picked) > maximum):
-        speech.log_line('native: {} picked is outside dialog {} limits ({} to {})'.format(
-            len(picked), dialog.dialog_id, minimum, maximum))
+        speech.log_line(
+            'native: {} picked is outside dialog {} limits ({} to {})'.format(
+                len(picked), dialog.dialog_id, minimum, maximum
+            )
+        )
         return False
     try:
         from ui.ui_dialog import ButtonType
+
         service = _service()
         if not service.dialog_pick_result(dialog.dialog_id, picked_results=picked):
-            speech.log_line('native: dialog {} refused the pick {}'.format(dialog.dialog_id, picked))
+            speech.log_line(
+                'native: dialog {} refused the pick {}'.format(dialog.dialog_id, picked)
+            )
             return False
         if not service.dialog_respond(dialog.dialog_id, ButtonType.DIALOG_RESPONSE_OK):
             speech.log_line('native: dialog {} refused OK'.format(dialog.dialog_id))
@@ -71,8 +81,10 @@ def show_reason(tooltip, sim):
         return False
     try:
         from ui.ui_dialog_notification import UiDialogNotification
+
         notification = UiDialogNotification.TunableFactory().default(
-            sim, text=lambda *_, **__: tooltip(sim))
+            sim, text=lambda *_, **__: tooltip(sim)
+        )
         notification.show_dialog()
         return True
     except Exception as ex:

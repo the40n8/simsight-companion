@@ -25,14 +25,15 @@ so the caller can tell the player, instead of touching the game from the
 wrong thread. That is the deliberate difference from the mod this was
 adapted from, which fell back to running game code on the key thread.
 """
+
 import threading
 import time
 
 import simsight_speech as speech
 
-_INTERVAL_SECONDS = 0.02   # the game ticks at about 60 Hz; finer buys nothing
-_STALE_SECONDS = 2.0       # silence longer than this means the alarm is gone
-_MAX_QUEUED = 32           # a held key must never build a backlog
+_INTERVAL_SECONDS = 0.02  # the game ticks at about 60 Hz; finer buys nothing
+_STALE_SECONDS = 2.0  # silence longer than this means the alarm is gone
+_MAX_QUEUED = 32  # a held key must never build a backlog
 
 _lock = threading.Lock()
 _queue = []
@@ -75,8 +76,7 @@ def _drain(_alarm_handle=None):
         try:
             fn(*args)
         except Exception as ex:
-            speech.log_line('pump: {} failed: {!r}'.format(
-                getattr(fn, '__name__', fn), ex))
+            speech.log_line('pump: {} failed: {!r}'.format(getattr(fn, '__name__', fn), ex))
 
 
 def start():
@@ -86,30 +86,35 @@ def start():
     try:
         import alarms
         import clock
+
         _owner = _Owner()
         _handle = alarms.add_alarm_real_time(
-            _owner, clock.interval_in_real_seconds(_INTERVAL_SECONDS), _drain,
-            repeating=True)
+            _owner, clock.interval_in_real_seconds(_INTERVAL_SECONDS), _drain, repeating=True
+        )
         _last_drain = time.monotonic()
         speech.log_line('pump: started')
         try:
             import simsight_travel as travel
+
             travel.announce_setting()
             travel.start_lease()
         except Exception as ex:
             speech.log_line('pump: travel readiness start failed: {!r}'.format(ex))
         try:
             import simsight_build as build
+
             build.announce_controls()
         except Exception as ex:
             speech.log_line('pump: build controls notice failed: {!r}'.format(ex))
         try:
             import simsight_narrator as narrator
+
             narrator.push_simplified_menus()
         except Exception as ex:
             speech.log_line('pump: simplified menus notice failed: {!r}'.format(ex))
         try:
             import simsight_keys as keys
+
             keys.scanner_zone_started()
         except Exception as ex:
             speech.log_line('pump: scanner mode notice failed: {!r}'.format(ex))
@@ -126,6 +131,7 @@ def stop():
         return
     try:
         import alarms
+
         alarms.cancel_alarm(_handle)
     except Exception:
         pass
@@ -134,6 +140,7 @@ def stop():
         del _queue[:]
     try:
         import simsight_travel as travel
+
         travel.stop_lease()
     except Exception:
         pass
@@ -147,6 +154,7 @@ def status():
 
 def _install_zone_hook():
     import zone
+
     original = zone.Zone.on_loading_screen_animation_finished
 
     def a11y_pump_on_loading_screen_animation_finished(self, *args, **kwargs):
@@ -157,8 +165,7 @@ def _install_zone_hook():
             speech.log_line('pump: zone start failed: {!r}'.format(ex))
         return result
 
-    zone.Zone.on_loading_screen_animation_finished = (
-        a11y_pump_on_loading_screen_animation_finished)
+    zone.Zone.on_loading_screen_animation_finished = a11y_pump_on_loading_screen_animation_finished
 
 
 try:

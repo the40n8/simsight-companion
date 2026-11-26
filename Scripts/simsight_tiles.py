@@ -20,6 +20,7 @@ Every game call is checked against the 1.128.90 decompile:
 
 Simulation thread only. Unknown answers stay unknown; nothing is invented.
 """
+
 import math
 
 import simsight_lang as lang
@@ -30,8 +31,17 @@ DIRECTIONS = (('north', 'północ'), ('east', 'wschód'), ('south', 'południe')
 STEPS = ((0, 1), (1, 0), (0, -1), (-1, 0))
 # Origins tried inside a tile: centre first, then edges (two-tile objects
 # such as beds sit on a tile edge), then corners.
-OFFSETS = ((0.5, 0.5), (0.5, 1.0), (1.0, 0.5), (0.5, 0.0), (0.0, 0.5),
-           (1.0, 1.0), (1.0, 0.0), (0.0, 0.0), (0.0, 1.0))
+OFFSETS = (
+    (0.5, 0.5),
+    (0.5, 1.0),
+    (1.0, 0.5),
+    (0.5, 0.0),
+    (0.0, 0.5),
+    (1.0, 1.0),
+    (1.0, 0.0),
+    (0.0, 0.0),
+    (0.0, 1.0),
+)
 NEAREST_RADIUS = 5
 NEARBY_RADIUS = 3
 
@@ -75,8 +85,10 @@ class Frame(object):
     def world(self, i, j, du=0.5, dv=0.5):
         """(x, z) of a point in tile (i, j); du, dv run 0..1 across it."""
         u, v = i + du, j + dv
-        return (self.origin[0] + u * self.east[0] + v * self.north[0],
-                self.origin[1] + u * self.east[1] + v * self.north[1])
+        return (
+            self.origin[0] + u * self.east[0] + v * self.north[0],
+            self.origin[1] + u * self.east[1] + v * self.north[1],
+        )
 
     def tile_of(self, x, z):
         dx, dz = float(x) - self.origin[0], float(z) - self.origin[1]
@@ -92,14 +104,20 @@ class Frame(object):
 
     def yaw(self, facing):
         """Yaw angle (sims4.math convention, atan2(x, z)) of a facing index."""
-        vx, vz = ((self.north, self.east, (-self.north[0], -self.north[1]),
-                   (-self.east[0], -self.east[1]))[facing % 4])
+        vx, vz = (
+            self.north,
+            self.east,
+            (-self.north[0], -self.north[1]),
+            (-self.east[0], -self.east[1]),
+        )[facing % 4]
         return math.atan2(vx, vz)
 
     def facing_of(self, angle):
         best, best_gap = 0, None
         for index in range(4):
-            gap = abs(math.atan2(math.sin(angle - self.yaw(index)), math.cos(angle - self.yaw(index))))
+            gap = abs(
+                math.atan2(math.sin(angle - self.yaw(index)), math.cos(angle - self.yaw(index)))
+            )
             if best_gap is None or gap < best_gap:
                 best, best_gap = index, gap
         return best
@@ -110,6 +128,7 @@ def frame():
     global _frame, _frame_zone
     try:
         import services
+
         zone = services.current_zone_id()
         if _frame is not None and zone == _frame_zone:
             return _frame
@@ -132,22 +151,28 @@ def relative(di, dj):
     parts = []
     for amount, positive, negative in ((dj, 0, 2), (di, 1, 3)):
         if amount:
-            parts.append('{} {}'.format(abs(amount), direction_name(positive if amount > 0 else negative)))
+            parts.append(
+                '{} {}'.format(abs(amount), direction_name(positive if amount > 0 else negative))
+            )
     return ', '.join(parts) if parts else text('here', 'tutaj')
 
 
 # ------------------------------------------------------------- game queries
 
+
 def surface(level):
     import routing
     import services
-    return routing.SurfaceIdentifier(services.current_zone_id(), int(level),
-                                     routing.SurfaceType.SURFACETYPE_WORLD)
+
+    return routing.SurfaceIdentifier(
+        services.current_zone_id(), int(level), routing.SurfaceType.SURFACETYPE_WORLD
+    )
 
 
 def position(f, i, j, level, du=0.5, dv=0.5):
     import terrain
     from sims4.math import Vector3
+
     x, z = f.world(i, j, du, dv)
     y = terrain.get_terrain_height(x, z, routing_surface=surface(level))
     if y is None or not math.isfinite(float(y)):
@@ -157,6 +182,7 @@ def position(f, i, j, level, du=0.5, dv=0.5):
 
 def _lot_objects(level):
     import services
+
     lot = services.active_lot()
     for obj in list(services.object_manager().values()):
         try:
@@ -235,6 +261,7 @@ def is_door(obj):
 def _raycast_context():
     try:
         import services
+
         sim = services.get_active_sim()
         return sim.raycast_context() if sim is not None else None
     except Exception as ex:
@@ -250,7 +277,10 @@ def walls(f, i, j, level):
     try:
         import routing
         import sims4.math
-        start = routing.Location(position(f, i, j, level), sims4.math.Quaternion.IDENTITY(), surface(level))
+
+        start = routing.Location(
+            position(f, i, j, level), sims4.math.Quaternion.IDENTITY(), surface(level)
+        )
     except Exception as ex:
         speech.log_line('tiles: wall probe unavailable ({!r})'.format(ex))
         return result
@@ -262,7 +292,9 @@ def walls(f, i, j, level):
         if context is None:
             continue
         try:
-            end = routing.Location(position(f, ni, nj, level), sims4.math.Quaternion.IDENTITY(), surface(level))
+            end = routing.Location(
+                position(f, ni, nj, level), sims4.math.Quaternion.IDENTITY(), surface(level)
+            )
             hit, blocker = routing.ray_test_verbose(start, end, context, return_object_id=True)
             if hit == routing.RAYCAST_HIT_TYPE_IMPASSABLE and not blocker:
                 result[index] = 'wall'
@@ -283,7 +315,7 @@ def doors(f, i, j, level, objects=None):
     """{direction: door object} for doors on this tile's edges. objects is an
     optional snapshot(level) to search instead of listing the lot again."""
     result = {}
-    for obj in (objects if objects is not None else _lot_objects(level)):
+    for obj in objects if objects is not None else _lot_objects(level):
         if not is_door(obj):
             continue
         try:
@@ -302,6 +334,7 @@ def room(f, i, j, level):
     try:
         import build_buy
         import services
+
         point = position(f, i, j, level)
         value = build_buy.get_block_id(services.current_zone_id(), point, int(level))
         return int(value) if value is not None else None
@@ -314,11 +347,15 @@ def ground(f, i, j, level):
     result = {}
     try:
         import build_buy
+
         point = position(f, i, j, level)
     except Exception:
         return result
-    for label, method in (('floor', 'has_floor_at_location'), ('outside', 'is_location_outside'),
-                          ('pool', 'is_location_pool')):
+    for label, method in (
+        ('floor', 'has_floor_at_location'),
+        ('outside', 'is_location_outside'),
+        ('pool', 'is_location_pool'),
+    ):
         try:
             value = getattr(build_buy, method)(point, int(level))
             if value is not None:
@@ -330,13 +367,16 @@ def ground(f, i, j, level):
 
 # ------------------------------------------------------------------- fitting
 
+
 def test_fit(obj, def_id, point, angle, level, ignore=()):
     """(ok, reason): build_buy.test_location_for_object at an exact point."""
     try:
         import build_buy
         import sims4.math
-        location = sims4.math.Location(sims4.math.Transform(point, sims4.math.angle_to_yaw_quaternion(angle)),
-                                       surface(level))
+
+        location = sims4.math.Location(
+            sims4.math.Transform(point, sims4.math.angle_to_yaw_quaternion(angle)), surface(level)
+        )
         result = build_buy.test_location_for_object(obj, def_id, location, list(ignore))
     except Exception as ex:
         speech.log_line('tiles: placement test raised {!r}'.format(ex))
@@ -357,13 +397,18 @@ def test_fit(obj, def_id, point, angle, level, ignore=()):
 def reason(errors):
     """A player-facing reason from EA's placement errors, when one is clear."""
     words = str(errors or '').lower()
-    for needles, en, pl in ((('wall',), 'a wall is in the way', 'przeszkadza ściana'),
-                            (('intersect', 'overlap', 'object', 'footprint'), 'something is in the way',
-                             'coś przeszkadza'),
-                            (('floor',), 'it needs a floor', 'wymaga podłogi'),
-                            (('slope', 'terrain'), 'the ground is not flat enough', 'teren nie jest dość płaski'),
-                            (('pool', 'water'), 'water is in the way', 'przeszkadza woda'),
-                            (('lot', 'bound'), 'it would leave the lot', 'wyszedłby poza parcelę')):
+    for needles, en, pl in (
+        (('wall',), 'a wall is in the way', 'przeszkadza ściana'),
+        (
+            ('intersect', 'overlap', 'object', 'footprint'),
+            'something is in the way',
+            'coś przeszkadza',
+        ),
+        (('floor',), 'it needs a floor', 'wymaga podłogi'),
+        (('slope', 'terrain'), 'the ground is not flat enough', 'teren nie jest dość płaski'),
+        (('pool', 'water'), 'water is in the way', 'przeszkadza woda'),
+        (('lot', 'bound'), 'it would leave the lot', 'wyszedłby poza parcelę'),
+    ):
         if any(needle in words for needle in needles):
             return text(en, pl)
     return text('the game will not allow it here', 'gra nie pozwala na to tutaj')
@@ -424,7 +469,9 @@ def covered_tiles(f, obj, level):
     for di in range(-3, 4):
         for dj in range(-3, 4):
             try:
-                if footprint is not None and footprint.contains(position(f, ci + di, cj + dj, level)):
+                if footprint is not None and footprint.contains(
+                    position(f, ci + di, cj + dj, level)
+                ):
                     tiles.append((ci + di, cj + dj))
             except Exception:
                 continue

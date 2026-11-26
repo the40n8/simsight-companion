@@ -3,6 +3,7 @@
 Prism owns screen-reader detection and communication. Windows fallback speech
 stays in the speech module so existing fallback voice settings still apply.
 """
+
 import ctypes
 import threading
 import time
@@ -15,12 +16,15 @@ class _Result:
         self.done = threading.Event()
         self.value = None
         self.error = None
+
     def set_result(self, value):
         self.value = value
         self.done.set()
+
     def set_exception(self, error):
         self.error = error
         self.done.set()
+
     def result(self):
         self.done.wait()
         if self.error is not None:
@@ -60,7 +64,9 @@ class _NativeReader:
         self.ids = []
         for i in range(self.dll.prism_registry_count(self.context)):
             ident = self.dll.prism_registry_id_at(self.context, i)
-            name = (self.dll.prism_registry_name(self.context, ident) or b'').decode('utf-8', 'replace')
+            name = (self.dll.prism_registry_name(self.context, ident) or b'').decode(
+                'utf-8', 'replace'
+            )
             # UIA can report success without a reader actually speaking.
             if name.lower().replace(' ', '') not in ('sapi', 'onecore', 'uia'):
                 self.ids.append((ident, name))
@@ -93,42 +99,40 @@ class _NativeReader:
 
     def has_braille(self):
         with self.lock:
-            return bool(self.backend and
-                        self.dll.prism_backend_get_features(self.backend) & 16)
+            return bool(self.backend and self.dll.prism_backend_get_features(self.backend) & 16)
 
     def output(self, text, brief, mode, interrupt):
         with self.lock:
             if not self.select():
                 return False
             if mode == 'only':
-                result = self.dll.prism_backend_braille(
-                    self.backend, brief.encode('utf-8'))
+                result = self.dll.prism_backend_braille(self.backend, brief.encode('utf-8'))
                 if result:
                     self.log('Prism braille failed: {}'.format(result))
                 return True  # Never substitute audio for braille-only output.
-            result = self.dll.prism_backend_speak(
-                self.backend, text.encode('utf-8'), interrupt)
+            result = self.dll.prism_backend_speak(self.backend, text.encode('utf-8'), interrupt)
             if result:
                 self.log('Prism speech failed: {} ({})'.format(self.name, result))
                 self._drop()
                 return False
             if mode != 'off' and self.has_braille():
                 self.dll.prism_backend_braille(
-                    self.backend, (text if mode == 'full' else brief).encode('utf-8'))
+                    self.backend, (text if mode == 'full' else brief).encode('utf-8')
+                )
             return True
 
     def stop(self):
         with self.lock:
-            return bool(self.backend and
-                        self.dll.prism_backend_stop(self.backend) == 0)
+            return bool(self.backend and self.dll.prism_backend_stop(self.backend) == 0)
 
 
 class Reader:
     """Own every native call on one thread, including COM initialization.
 
-Speech may arrive from the simulation thread or a deferred speech timer.
-COM readers must never be created on one of these and called on another.
-"""
+    Speech may arrive from the simulation thread or a deferred speech timer.
+    COM readers must never be created on one of these and called on another.
+    """
+
     def __init__(self, path, log):
         self.jobs = queue.Queue()
         self.ready = _Result()
@@ -146,7 +150,9 @@ COM readers must never be created on one of these and called on another.
         while True:
             method, args, kwargs, result = self.jobs.get()
             try:
-                value = native.name if method == 'name' else getattr(native, method)(*args, **kwargs)
+                value = (
+                    native.name if method == 'name' else getattr(native, method)(*args, **kwargs)
+                )
                 result.set_result(value)
             except Exception as ex:
                 result.set_exception(ex)
@@ -157,9 +163,17 @@ COM readers must never be created on one of these and called on another.
         return result.result()
 
     @property
-    def name(self): return self._call('name')
-    def select(self, force=False): return self._call('select', force=force)
-    def has_braille(self): return self._call('has_braille')
+    def name(self):
+        return self._call('name')
+
+    def select(self, force=False):
+        return self._call('select', force=force)
+
+    def has_braille(self):
+        return self._call('has_braille')
+
     def output(self, text, brief, mode, interrupt):
         return self._call('output', text, brief, mode, interrupt)
-    def stop(self): return self._call('stop')
+
+    def stop(self):
+        return self._call('stop')

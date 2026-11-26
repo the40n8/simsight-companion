@@ -1,4 +1,5 @@
 """Load only local extensions not integrated into SimSight itself."""
+
 import sys
 
 import simsight_speech as speech
@@ -9,6 +10,7 @@ WINDOWS_ONLY = {'simsight_build_coordinates', 'simsight_build_helpers'}
 
 _installed = False
 
+
 def install():
     global _installed
     if _installed:
@@ -17,6 +19,7 @@ def install():
     # Scanner ranges, moving furniture, room labels, wall/surface placement
     # and layer keys now belong to the native modules and key loop.
     import importlib
+
     for name, explicit in (
         ('simsight_chair_alignment', False),
         ('simsight_roof_tools', False),
@@ -37,4 +40,3 @@ def install():
         except Exception as exc:
             speech.log_line('local extension {} failed: {!r}'.format(name, exc))
     speech.log_line('local extensions installed')
-

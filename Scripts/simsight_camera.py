@@ -4,6 +4,7 @@ No camera coordinates, input simulation or polling thread. Flash reports Live
 camera eligibility independently of scanner/menu focus. The client callback
 retargets on Sim selection; native camera reports repair a lost follow target.
 """
+
 import time
 import simsight_settings as settings
 import simsight_speech as speech
@@ -19,8 +20,11 @@ _repair_pending = False
 
 
 def _configured():
-    return (settings.get('keyboard', True) and
-            settings.get('scanner', True) and settings.get('scanner_mode', False))
+    return (
+        settings.get('keyboard', True)
+        and settings.get('scanner', True)
+        and settings.get('scanner_mode', False)
+    )
 
 
 def _enabled():
@@ -34,6 +38,7 @@ def _release():
     if _live and _followed is not None and not _was_following:
         try:
             import camera
+
             camera.cancel_focus(object=_followed)
         except Exception as ex:
             speech.log_line('scanner camera: release failed {!r}'.format(ex))
@@ -80,6 +85,7 @@ def _follow(sim, repair=False):
         return
     try:
         import camera
+
         camera.focus_on_sim(sim=sim, follow=True, client=_client)
         _followed = sim
         _last_request = now
@@ -101,6 +107,7 @@ def _install_report_hook(camera):
         if _enabled():
             try:
                 import services
+
                 sim = services.get_active_sim()
                 if sim is not None and (not camera._follow_mode or camera._sim_id != sim.id):
                     _follow(sim, repair=True)
@@ -127,6 +134,7 @@ def update():
     try:
         import camera
         import services
+
         client = services.client_manager().get_first_client()
         if client is None:
             return

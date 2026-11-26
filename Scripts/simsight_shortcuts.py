@@ -3,6 +3,7 @@
 Imported lazily by the hub/scanner: importing help must not start key threads.
 Key combinations live in keys.py; this module supplies their spoken meanings.
 """
+
 import simsight_lang as lang
 import simsight_settings as settings
 import simsight_speech as speech
@@ -48,13 +49,36 @@ CHORD_LABELS = {
     'scannermode': 'scanner mode on or off (saved): plain arrows browse the scanner and never move the camera; Right opens a group, Left or Backspace goes back, Enter acts, Space repeats',
 }
 # Chords that do nothing while Build controls are off.
-BUILD_INTENTS = frozenset(('buildplace', 'sell', 'gridtoggle', 'rotateleft', 'rotateright',
-                           'undo', 'redo', 'buildgrid', 'layerup', 'layerdown', 'roomlabel'))
+BUILD_INTENTS = frozenset(
+    (
+        'buildplace',
+        'sell',
+        'gridtoggle',
+        'rotateleft',
+        'rotateright',
+        'undo',
+        'redo',
+        'buildgrid',
+        'layerup',
+        'layerdown',
+        'roomlabel',
+    )
+)
 EXTRA_LABELS = {'A11yRepeat': 'read again or stop', 'A11yDismiss': 'back or close'}
-KEY_LABELS = {0x08: 'Backspace', 0x09: 'Tab', 0x0D: 'Enter', 0x1B: 'Escape',
-              0x20: 'Space', 0x21: 'Page Up', 0x22: 'Page Down',
-              0xDB: 'left bracket', 0xDD: 'right bracket', 0x6E: 'Numpad decimal',
-              0xBC: 'comma', 0xBE: 'period'}
+KEY_LABELS = {
+    0x08: 'Backspace',
+    0x09: 'Tab',
+    0x0D: 'Enter',
+    0x1B: 'Escape',
+    0x20: 'Space',
+    0x21: 'Page Up',
+    0x22: 'Page Down',
+    0xDB: 'left bracket',
+    0xDD: 'right bracket',
+    0x6E: 'Numpad decimal',
+    0xBC: 'comma',
+    0xBE: 'period',
+}
 
 
 def key_name(vk, keyboard):
@@ -96,16 +120,21 @@ def sections(keyboard=None, numpad=None):
     if settings.get('simplified_menus', True):
         ordinary.append(lang.t('shortcut simplified'))
     ordinary.append(lang.t('shortcut needs'))
-    chords = ['{} + {} + {}: {}'.format(lang.t('Control'), lang.t('Alt'),
-              key_name(vk, keyboard), chord_label(intent))
-              for vk, (intent, _repeat) in keyboard.CHORDS.items()]
-    result = [(lang.t('shortcut controls'), ordinary),
-              (lang.t('shortcut chords'), chords)]
+    chords = [
+        '{} + {} + {}: {}'.format(
+            lang.t('Control'), lang.t('Alt'), key_name(vk, keyboard), chord_label(intent)
+        )
+        for vk, (intent, _repeat) in keyboard.CHORDS.items()
+    ]
+    result = [(lang.t('shortcut controls'), ordinary), (lang.t('shortcut chords'), chords)]
     if numpad:
         rows = []
         for vk, message in keyboard.NUMPAD_BINDINGS.items():
-            label = (keyboard.BINDINGS[message][0] if message in keyboard.BINDINGS
-                     else EXTRA_LABELS.get(message, message))
+            label = (
+                keyboard.BINDINGS[message][0]
+                if message in keyboard.BINDINGS
+                else EXTRA_LABELS.get(message, message)
+            )
             rows.append('{}: {}'.format(key_name(vk, keyboard), lang.t(label)))
         result.append((lang.t('shortcut numpad'), rows))
     return result

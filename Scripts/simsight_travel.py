@@ -33,6 +33,7 @@ open without a window (it is cancelled natively instead); picked results are
 cleared before any cancel, because EA's picker listener acts on results
 without checking the response.
 """
+
 import sims4.commands
 
 import simsight_lang as lang
@@ -46,12 +47,12 @@ _original_sim_distribute = None
 _pending = None
 _window_id = None
 _last_rows = []
-_front_id = None       # the Go alone / Choose who comes window (Simplified menus)
-_alone = None          # our pushed Travel interaction for one Go alone; held
-                       # until EA shows its picker, the interaction ends or a
-                       # new Travel is pushed (a paused game can hold it for
-                       # as long as it likes)
-_alone_push = None     # the Sim id while our own Go alone push is running
+_front_id = None  # the Go alone / Choose who comes window (Simplified menus)
+_alone = None  # our pushed Travel interaction for one Go alone; held
+# until EA shows its picker, the interaction ends or a
+# new Travel is pushed (a paused game can hold it for
+# as long as it likes)
+_alone_push = None  # the Sim id while our own Go alone push is running
 _alone_claimed = False  # the picker was claimed inside that push
 _ALONE, _WITH = 'alone', 'with'
 
@@ -60,16 +61,27 @@ _MAP_ROW = 'map'
 _BACK_ROW = 'back'
 _RESIDENTIAL_BUSINESS_MIN = 1
 _VENUE_BUSINESS_MIN = 2
-_TRAVEL_AFFORDANCE = 423375   # self_SimPicker_TravelWith (Sim menu Travel)
+_TRAVEL_AFFORDANCE = 423375  # self_SimPicker_TravelWith (Sim menu Travel)
 _STAY_ROW = 'stay'
-_MAX_STAY_DAYS = 7            # GERentalPanelTunables.MAX_RENTAL_DAYS
+_MAX_STAY_DAYS = 7  # GERentalPanelTunables.MAX_RENTAL_DAYS
 TRAVEL, VACATION = 'travel', 'vacation'
 
 
 class _Pending(object):
-    __slots__ = ('dialog', 'msg_type', 'dialog_msg', 'kwargs', 'places',
-                 'worlds', 'fallback_used', 'mode', 'party', 'rented',
-                 'generation', 'prices')
+    __slots__ = (
+        'dialog',
+        'msg_type',
+        'dialog_msg',
+        'kwargs',
+        'places',
+        'worlds',
+        'fallback_used',
+        'mode',
+        'party',
+        'rented',
+        'generation',
+        'prices',
+    )
 
     def __init__(self, dialog, msg_type, dialog_msg, kwargs, mode=TRAVEL):
         self.dialog = dialog
@@ -80,16 +92,31 @@ class _Pending(object):
         self.worlds = []
         self.fallback_used = False
         self.mode = mode
-        self.party = []       # sim infos travelling: the actor plus companions
-        self.rented = False   # a vacation was created: no native fallback after this
-        self.generation = 0   # price bridge token: replies for other requests are ignored
-        self.prices = {}      # zone id -> per-day price the client reported for THIS request
+        self.party = []  # sim infos travelling: the actor plus companions
+        self.rented = False  # a vacation was created: no native fallback after this
+        self.generation = 0  # price bridge token: replies for other requests are ignored
+        self.prices = {}  # zone id -> per-day price the client reported for THIS request
 
 
 class _Place(object):
-    __slots__ = ('zone_id', 'name', 'world_key', 'world_name', 'world_label',
-                 'venue', 'household', 'household_id', 'master', 'units',
-                 'residential', 'visible', 'region', 'residents', 'rental', 'price')
+    __slots__ = (
+        'zone_id',
+        'name',
+        'world_key',
+        'world_name',
+        'world_label',
+        'venue',
+        'household',
+        'household_id',
+        'master',
+        'units',
+        'residential',
+        'visible',
+        'region',
+        'residents',
+        'rental',
+        'price',
+    )
 
     def __init__(self, zone_id, name):
         self.zone_id = zone_id
@@ -111,9 +138,21 @@ class _Place(object):
 
     def copy(self):
         other = _Place(self.zone_id, self.name)
-        for slot in ('world_key', 'world_name', 'world_label', 'venue', 'household',
-                     'household_id', 'master', 'residential', 'visible', 'region', 'residents',
-                     'rental', 'price'):
+        for slot in (
+            'world_key',
+            'world_name',
+            'world_label',
+            'venue',
+            'household',
+            'household_id',
+            'master',
+            'residential',
+            'visible',
+            'region',
+            'residents',
+            'rental',
+            'price',
+        ):
             setattr(other, slot, getattr(self, slot))
         return other
 
@@ -169,6 +208,7 @@ def _lot_values(zone_id):
     found = []
     try:
         import services
+
         zone = services.get_zone(zone_id, allow_uninstantiated_zones=True)
         lot = getattr(zone, 'lot', None)
         if lot is not None:
@@ -177,6 +217,7 @@ def _lot_values(zone_id):
         found.append(('zone', 'error {!r}'.format(ex)))
     try:
         import build_buy
+
         found.append(('build_buy', build_buy.get_lot_value(zone_id, True)[0]))
     except Exception as ex:
         found.append(('build_buy', 'error {!r}'.format(ex)))
@@ -193,8 +234,8 @@ def _positive(value):
     return number
 
 
-_price_generation = 0   # grows per vacation request; a reply must carry the current value
-_MAX_DAILY_PRICE = 2 ** 31 - 1   # the client reports an unsigned int; anything larger is not a price
+_price_generation = 0  # grows per vacation request; a reply must carry the current value
+_MAX_DAILY_PRICE = 2**31 - 1  # the client reports an unsigned int; anything larger is not a price
 
 
 def _request_client_price(pending, zone_id):
@@ -216,6 +257,7 @@ def _daily_price(zone_id, pending=None):
             return int(cached)
     try:
         from world.rentable_lot_tuning import RentableZoneTuning
+
         modifiers = RentableZoneTuning.PRICE_MODIFIERS
     except Exception:
         return None
@@ -244,6 +286,7 @@ def _party(dialog):
 def _funds():
     try:
         import services
+
         return int(services.active_household().funds.money)
     except Exception:
         return None
@@ -252,6 +295,7 @@ def _funds():
 def _zone_loaded():
     try:
         import services
+
         return services.current_zone() is not None
     except Exception:
         return False
@@ -259,6 +303,7 @@ def _zone_loaded():
 
 def _service():
     import services
+
     return services.ui_dialog_service()
 
 
@@ -276,11 +321,13 @@ def _dialog_active(dialog):
 
 # ------------------------------------------------------------ zone facts
 
+
 def _venue(zone_id):
     try:
         import build_buy
         import services
         import sims4.resources
+
         venue_id = build_buy.get_current_venue(zone_id)
         return services.get_instance_manager(sims4.resources.Types.VENUE).get(venue_id)
     except Exception:
@@ -305,12 +352,17 @@ def _residents(household_id):
     """Full names of the Sims living in a household, in household order."""
     try:
         import services
+
         household = services.household_manager().get(household_id)
         if household is None:
             return ()
         names = []
         for info in household:
-            full = ' '.join(str(part) for part in (getattr(info, 'first_name', ''), getattr(info, 'last_name', '')) if part)
+            full = ' '.join(
+                str(part)
+                for part in (getattr(info, 'first_name', ''), getattr(info, 'last_name', ''))
+                if part
+            )
             if full:
                 names.append(full)
         return tuple(names)
@@ -325,12 +377,15 @@ def _region_table():
     try:
         from ui.ui_tuning import UiTuning
         from world.region import Region
+
         for pack_data in UiTuning.PACK_SPECIFIC_DATA.values():
             for region_data in getattr(pack_data, 'region_list', ()) or ():
                 instance = Region.REGION_DESCRIPTION_TUNING_MAP.get(region_data.region_resource)
                 if instance is not None:
-                    table[instance] = (bool(getattr(region_data, 'is_player_facing', True)),
-                                       getattr(region_data, 'region_name', None))
+                    table[instance] = (
+                        bool(getattr(region_data, 'is_player_facing', True)),
+                        getattr(region_data, 'region_name', None),
+                    )
     except Exception as ex:
         speech.log_line('travel: region table unavailable ({!r})'.format(ex))
     return table
@@ -339,6 +394,7 @@ def _region_table():
 def _region_of(zone_id):
     try:
         from world import region
+
         return region.get_region_instance_from_zone_id(zone_id)
     except Exception:
         return None
@@ -348,6 +404,7 @@ def _collect(dialog, vacation=False, pending=None):
     """One entry per row of EA's dialog, grouped by world; rows in regions the
     client never draws are dropped."""
     import services
+
     persistence = services.get_persistence_service()
     try:
         plex = services.get_plex_service()
@@ -383,7 +440,11 @@ def _collect(dialog, vacation=False, pending=None):
         if place.world_key not in names:
             label = ''
             try:
-                proto = persistence.get_neighborhood_proto_buff(neighborhood_id) if neighborhood_id else None
+                proto = (
+                    persistence.get_neighborhood_proto_buff(neighborhood_id)
+                    if neighborhood_id
+                    else None
+                )
                 label = str(getattr(proto, 'name', '') or '')
             except Exception:
                 label = ''
@@ -449,7 +510,9 @@ def _buildings(places):
             if not building.units:
                 master = by_master[place.master]
                 if any(p.zone_id == master.zone_id for p in places):
-                    building.units.append(master.copy())   # a plain row, not the building entry itself
+                    building.units.append(
+                        master.copy()
+                    )  # a plain row, not the building entry itself
             building.units.append(place)
     return top
 
@@ -457,6 +520,7 @@ def _buildings(places):
 def _zone_name(zone_id):
     try:
         import services
+
         proto = services.get_persistence_service().get_zone_proto_buff(zone_id)
         return str(getattr(proto, 'name', '') or '')
     except Exception:
@@ -481,6 +545,7 @@ def _find(pending, zone_id):
 
 # --------------------------------------------------- small business gate
 
+
 def _allowed_zones(manager):
     zones = getattr(manager, 'allowed_zone_ids', None)
     if zones is None:
@@ -495,8 +560,11 @@ def _household_trackers(business, owner):
     lookup = getattr(business, 'get_business_trackers_for_household', None)
     found = lookup(owner) if lookup is not None else None
     if found is None:
-        found = [t for t in business.business_trackers_gen()
-                 if getattr(t, 'owner_household_id', None) == owner]
+        found = [
+            t
+            for t in business.business_trackers_gen()
+            if getattr(t, 'owner_household_id', None) == owner
+        ]
     elif isinstance(found, dict):
         found = list(found.values())
     return list(found)
@@ -509,6 +577,7 @@ def _needs_native_map(place):
     map. When the check itself fails for a lot another household owns, the
     native route is kept rather than skipping the business choice."""
     import services
+
     owner = int(place.household_id or 0)
     if not owner:
         return False
@@ -530,16 +599,22 @@ def _needs_native_map(place):
         minimum = _VENUE_BUSINESS_MIN if residential is False else _RESIDENTIAL_BUSINESS_MIN
         return count >= minimum
     except Exception as ex:
-        speech.log_line('travel: small business check failed for zone {} ({!r}); native map kept'.format(place.zone_id, ex))
+        speech.log_line(
+            'travel: small business check failed for zone {} ({!r}); native map kept'.format(
+                place.zone_id, ex
+            )
+        )
         return True
 
 
 # ---------------------------------------------------------------- windows
 
+
 def _icon():
     try:
         import services
         from distributor.shared_messages import IconInfoData
+
         sim = services.get_active_sim()
         if sim is not None:
             return IconInfoData(obj_instance=sim)
@@ -572,6 +647,7 @@ def _open_window(pending, title, text, rows, on_pick):
         return False
     try:
         from ui.ui_dialog_picker import ObjectPickerRow
+
         menu._cancel_dialog(_window_id)
         _window_id = None
         dialog = menu._picker(lang.t(title), lang.t(text))
@@ -579,12 +655,22 @@ def _open_window(pending, title, text, rows, on_pick):
             raise ValueError('no active Sim')
         icon_info = _icon()
         for index, (name, detail, tag) in enumerate(rows):
-            dialog.add_row(ObjectPickerRow(option_id=index, name=name, row_description=detail,
-                                           row_tooltip=None, icon=None, icon_info=icon_info,
-                                           tag=tag, is_selected=False))
+            dialog.add_row(
+                ObjectPickerRow(
+                    option_id=index,
+                    name=name,
+                    row_description=detail,
+                    row_tooltip=None,
+                    icon=None,
+                    icon_info=icon_info,
+                    tag=tag,
+                    is_selected=False,
+                )
+            )
         dialog.add_listener(lambda reply, handler=on_pick, owner=pending: handler(owner, reply))
         try:
             import simsight_keys as keys
+
             keys.fence_opening_input()
         except Exception:
             pass
@@ -624,16 +710,19 @@ def _later(pending, fn, *args):
     scanner keeps quiet meanwhile: our next window is on its way."""
     try:
         import simsight_keys as keys
+
         keys.hold_scanner_resume()
     except Exception:
         pass
+
     def step(owner=pending):
         if _pending is not owner:
             return
         if enabled():
             fn(owner, *args)
         else:
-            _cancel(owner)        # switched off between the reply and this step
+            _cancel(owner)  # switched off between the reply and this step
+
     if not pump.post(step):
         speech.log_line('travel: pump unavailable; request cancelled')
         _cancel(pending)
@@ -642,8 +731,13 @@ def _later(pending, fn, *args):
 def _show_worlds(pending):
     rows = []
     for key, name, count, label in pending.worlds:
-        rows.append((label if label is not None else menu._raw(name),
-                     menu._raw(lang.t('places count').format(count)), (WORLD, key)))
+        rows.append(
+            (
+                label if label is not None else menu._raw(name),
+                menu._raw(lang.t('places count').format(count)),
+                (WORLD, key),
+            )
+        )
     rows.append((menu._raw(lang.t('open the map instead')), None, (_MAP_ROW, 0)))
     return _open_window(pending, 'travel destinations', 'choose a world', rows, _on_world)
 
@@ -715,7 +809,7 @@ def _choose(pending, place):
         return
     if pending.mode == VACATION:
         if place.price is None:
-            place.price = _daily_price(place.zone_id, pending)   # the client answer may have arrived
+            place.price = _daily_price(place.zone_id, pending)  # the client answer may have arrived
         if place.rental is True and place.price is not None:
             _later(pending, _show_stay, place.zone_id)
         else:
@@ -734,14 +828,18 @@ def _choose(pending, place):
 def _show_stay(pending, zone_id):
     place = _find(pending, zone_id)
     if place is not None:
-        place.price = _daily_price(zone_id, pending)   # the client may have answered since
+        place.price = _daily_price(zone_id, pending)  # the client may have answered since
     if place is None or place.price is None:
         return _fallback(pending)
     funds = _funds()
     rows = [(menu._raw(lang.t('back to places')), None, (_BACK_ROW, place.world_key))]
     for days in range(1, _MAX_STAY_DAYS + 1):
         cost = int(place.price * days)
-        label = lang.t('stay one day').format(cost) if days == 1 else lang.t('stay days').format(days, cost)
+        label = (
+            lang.t('stay one day').format(cost)
+            if days == 1
+            else lang.t('stay days').format(days, cost)
+        )
         detail = menu._raw(lang.t('cannot afford')) if funds is not None and cost > funds else None
         rows.append((menu._raw(label), detail, (_STAY_ROW, (zone_id, days, cost))))
     return _open_window(pending, 'travel destinations', 'choose a stay', rows, _on_stay)
@@ -777,6 +875,7 @@ def _created_group(manager, party, zone_id):
         if group is None:
             return None
         from world.street import get_vacation_zone_id
+
         expected = (zone_id, get_vacation_zone_id(zone_id))
         if getattr(group, 'zone_id', None) not in expected:
             return None
@@ -793,7 +892,9 @@ def _rollback_rental(manager, group, household, zone_id, cost):
     group created for this request and return the money to the household
     that paid. Anything unverifiable is reported, never guessed."""
     if group is None:
-        speech.log_line('travel: rental of zone {} could not be identified for rollback'.format(zone_id))
+        speech.log_line(
+            'travel: rental of zone {} could not be identified for rollback'.format(zone_id)
+        )
         return False
     try:
         if not manager.destroy_travel_group_and_release_zone(group):
@@ -801,6 +902,7 @@ def _rollback_rental(manager, group, household, zone_id, cost):
             return False
         if cost:
             from protocolbuffers import Consts_pb2
+
             household.funds.add(cost, Consts_pb2.FUNDS_MONEY_VACATION, count_as_earnings=False)
         speech.log_line('travel: rental of zone {} rolled back, {} returned'.format(zone_id, cost))
         return True
@@ -833,61 +935,94 @@ def _rent_and_commit(pending, zone_id, days, quoted=None):
     if quoted is not None and cost != quoted:
         # The price moved after the stay was quoted: never charge an amount
         # the player has not heard; show the stay window again instead.
-        speech.log_line('travel: quoted {} but current cost {} for zone {}; re-quoting'.format(quoted, cost, zone_id))
+        speech.log_line(
+            'travel: quoted {} but current cost {} for zone {}; re-quoting'.format(
+                quoted, cost, zone_id
+            )
+        )
         _say('price changed')
         return _show_stay(pending, zone_id)
     party = pending.party
     try:
         import services
+
         if not party:
             raise ValueError('no travelling Sims')
         for info in party:
             if _grouped(info):
-                speech.log_line('travel: household of {} already has a travel group; vacation refused'.format(getattr(info, 'sim_id', info)))
+                speech.log_line(
+                    'travel: household of {} already has a travel group; vacation refused'.format(
+                        getattr(info, 'sim_id', info)
+                    )
+                )
                 _say('action unavailable')
                 return _cancel(pending)
         funds = _funds()
         if cost and (funds is None or funds < cost):
-            speech.log_line('travel: vacation cost {} exceeds funds {}; refused'.format(cost, funds))
+            speech.log_line(
+                'travel: vacation cost {} exceeds funds {}; refused'.format(cost, funds)
+            )
             _say('cannot afford')
             return _cancel(pending)
         service = _service()
         if not service.dialog_pick_result(dialog.dialog_id, [zone_id]):
-            speech.log_line('travel: zone {} refused by dialog {} before renting; request cancelled'.format(zone_id, dialog.dialog_id))
+            speech.log_line(
+                'travel: zone {} refused by dialog {} before renting; request cancelled'.format(
+                    zone_id, dialog.dialog_id
+                )
+            )
             _say('action unavailable')
             return _cancel(pending)
         import clock
+
         now = services.time_service().sim_now
         end = now + clock.interval_in_sim_days(days) if days else None
         manager = services.travel_group_manager()
         payer = services.active_household()
         created = manager.create_travel_group_and_rent_zone(
-            sim_infos=list(party), zone_id=zone_id, played=True,
-            create_timestamp=now, end_timestamp=end, cost=cost)
+            sim_infos=list(party),
+            zone_id=zone_id,
+            played=True,
+            create_timestamp=now,
+            end_timestamp=end,
+            cost=cost,
+        )
     except Exception as ex:
         speech.log_line('travel: vacation setup failed ({!r}); request cancelled'.format(ex))
         _say('action unavailable')
         return _cancel(pending)
     if not created:
-        speech.log_line('travel: rental of zone {} refused by the travel group manager'.format(zone_id))
+        speech.log_line(
+            'travel: rental of zone {} refused by the travel group manager'.format(zone_id)
+        )
         _say('action unavailable')
         return _cancel(pending)
     pending.rented = True
     group = _created_group(manager, party, zone_id)
-    speech.log_line('travel: zone {} rented for {} days at {} (group {})'.format(
-        zone_id, days, cost, getattr(group, 'id', 'unverified')))
+    speech.log_line(
+        'travel: zone {} rented for {} days at {} (group {})'.format(
+            zone_id, days, cost, getattr(group, 'id', 'unverified')
+        )
+    )
     _pending = None
     answered = False
     try:
         from ui.ui_dialog import ButtonType
-        answered = _dialog_active(dialog) and bool(service.dialog_respond(dialog.dialog_id, ButtonType.DIALOG_RESPONSE_OK))
+
+        answered = _dialog_active(dialog) and bool(
+            service.dialog_respond(dialog.dialog_id, ButtonType.DIALOG_RESPONSE_OK)
+        )
     except Exception as ex:
         speech.log_line('travel: answering dialog {} failed ({!r})'.format(dialog.dialog_id, ex))
         answered = False
     if answered:
         speech.log_line('travel: dialog {} answered with zone {}'.format(dialog.dialog_id, zone_id))
         return True
-    speech.log_line('travel: dialog {} did not accept OK after the rental; rolling back'.format(dialog.dialog_id))
+    speech.log_line(
+        'travel: dialog {} did not accept OK after the rental; rolling back'.format(
+            dialog.dialog_id
+        )
+    )
     _rollback_rental(manager, group, payer, zone_id, cost)
     _say('action unavailable')
     _cancel_dialog(dialog)
@@ -895,6 +1030,7 @@ def _rent_and_commit(pending, zone_id, days, quoted=None):
 
 
 # ------------------------------------------------------- dialog outcomes
+
 
 def _clear_picks(dialog):
     # EA's picker listener pushes continuations from the picked results
@@ -917,16 +1053,23 @@ def _commit(pending, zone_id):
         _say('action unavailable')
         return False
     from ui.ui_dialog import ButtonType
+
     service = _service()
     if not service.dialog_pick_result(dialog.dialog_id, [zone_id]):
-        speech.log_line('travel: zone {} refused by dialog {}; request cancelled'.format(zone_id, dialog.dialog_id))
+        speech.log_line(
+            'travel: zone {} refused by dialog {}; request cancelled'.format(
+                zone_id, dialog.dialog_id
+            )
+        )
         _say('action unavailable')
         _cancel_dialog(dialog)
         return False
     if service.dialog_respond(dialog.dialog_id, ButtonType.DIALOG_RESPONSE_OK):
         speech.log_line('travel: dialog {} answered with zone {}'.format(dialog.dialog_id, zone_id))
         return True
-    speech.log_line('travel: dialog {} did not accept OK; request cancelled'.format(dialog.dialog_id))
+    speech.log_line(
+        'travel: dialog {} did not accept OK; request cancelled'.format(dialog.dialog_id)
+    )
     _say('action unavailable')
     _cancel_dialog(dialog)
     return False
@@ -939,6 +1082,7 @@ def _cancel_dialog(dialog):
     _clear_picks(dialog)
     try:
         from ui.ui_dialog import ButtonType
+
         return bool(_service().dialog_respond(dialog.dialog_id, ButtonType.DIALOG_RESPONSE_CANCEL))
     except Exception as ex:
         speech.log_line('travel: cancelling dialog {} failed ({!r})'.format(dialog.dialog_id, ex))
@@ -979,15 +1123,23 @@ def _distribute(dialog, msg_type, dialog_msg, **kwargs):
     global _pending, _last_rows, _price_generation
     mode = _request_mode(dialog)
     if not (enabled() and mode is not None and _zone_loaded()):
-        speech.log_line('travel: dialog {} to the native map (list {}, mode {}, zone {})'.format(
-            getattr(dialog, 'dialog_id', '?'), 'on' if enabled() else 'off', mode,
-            'loaded' if _zone_loaded() else 'none'))
+        speech.log_line(
+            'travel: dialog {} to the native map (list {}, mode {}, zone {})'.format(
+                getattr(dialog, 'dialog_id', '?'),
+                'on' if enabled() else 'off',
+                mode,
+                'loaded' if _zone_loaded() else 'none',
+            )
+        )
         return _original_distribute(dialog, msg_type, dialog_msg, **kwargs)
     if _pending is not None:
         # A second request while one list is open: the older one is
         # cancelled natively so no invisible interaction stays behind.
-        speech.log_line('travel: dialog {} superseded by dialog {}'.format(
-            _pending.dialog.dialog_id, dialog.dialog_id))
+        speech.log_line(
+            'travel: dialog {} superseded by dialog {}'.format(
+                _pending.dialog.dialog_id, dialog.dialog_id
+            )
+        )
         _cancel(_pending)
     pending = _Pending(dialog, msg_type, dialog_msg, kwargs, mode)
     try:
@@ -996,6 +1148,7 @@ def _distribute(dialog, msg_type, dialog_msg, **kwargs):
             if not pending.party:
                 raise ValueError('no travelling Sims')
             import services
+
             services.travel_group_manager()
             if _funds() is None:
                 raise ValueError('household funds unavailable')
@@ -1011,8 +1164,10 @@ def _distribute(dialog, msg_type, dialog_msg, **kwargs):
             counts[place.world_key] = counts.get(place.world_key, 0) + 1
             names[place.world_key] = place.world_name
             labels.setdefault(place.world_key, place.world_label)
-        pending.worlds = sorted(((key, names[key], counts[key], labels[key]) for key in counts),
-                                key=lambda item: item[1].lower())
+        pending.worlds = sorted(
+            ((key, names[key], counts[key], labels[key]) for key in counts),
+            key=lambda item: item[1].lower(),
+        )
         if not pending.worlds:
             raise ValueError('no destinations')
     except Exception as ex:
@@ -1020,16 +1175,21 @@ def _distribute(dialog, msg_type, dialog_msg, **kwargs):
         return _original_distribute(dialog, msg_type, dialog_msg, **kwargs)
     _pending = pending
     if _show_worlds(pending):
-        speech.log_line('travel: dialog {} listed as {} places in {} worlds'.format(
-            dialog.dialog_id, len(pending.places), len(pending.worlds)))
+        speech.log_line(
+            'travel: dialog {} listed as {} places in {} worlds'.format(
+                dialog.dialog_id, len(pending.places), len(pending.worlds)
+            )
+        )
     return None
 
 
 # --------------------------------------------------------------- commands
 
+
 def _hidden_flag(zone_id):
     try:
         import services
+
         proto = services.get_persistence_service().get_zone_proto_buff(zone_id)
         world_desc = services.get_world_description_id(proto.world_id)
         return services.get_hide_from_lot_picker(proto.lot_id, world_desc)
@@ -1037,7 +1197,9 @@ def _hidden_flag(zone_id):
         return 'error {!r}'.format(ex)
 
 
-@sims4.commands.Command('simsight.lotprice_enc', 'a11y.lotprice_enc', command_type=sims4.commands.CommandType.Live)
+@sims4.commands.Command(
+    'simsight.lotprice_enc', 'a11y.lotprice_enc', command_type=sims4.commands.CommandType.Live
+)
 def a11y_lotprice_enc(payload: str = '', _connection=None):
     """Client bridge reply: <zone id>|<per-day price>|<generation> as the map
     computes it. Only the open vacation request that asked (same
@@ -1055,7 +1217,9 @@ def a11y_lotprice_enc(payload: str = '', _connection=None):
         value = None
     pending = _pending
     if pending is None or pending.mode != VACATION or generation != pending.generation:
-        speech.log_line('travel: client price for zone {} ignored (generation {})'.format(zone_id, generation))
+        speech.log_line(
+            'travel: client price for zone {} ignored (generation {})'.format(zone_id, generation)
+        )
         return False
     if value is None:
         pending.prices.pop(zone_id, None)
@@ -1065,7 +1229,9 @@ def a11y_lotprice_enc(payload: str = '', _connection=None):
     return True
 
 
-@sims4.commands.Command('simsight.lot_value', 'a11y.lot_value', command_type=sims4.commands.CommandType.Live)
+@sims4.commands.Command(
+    'simsight.lot_value', 'a11y.lot_value', command_type=sims4.commands.CommandType.Live
+)
 def a11y_lot_value(zone: str = '0', _connection=None):
     """Log every lot value source for a zone and the price the list would use."""
     output = sims4.commands.CheatOutput(_connection)
@@ -1074,13 +1240,17 @@ def a11y_lot_value(zone: str = '0', _connection=None):
     except (TypeError, ValueError):
         output('a11y lot value: usage simsight.lot_value <zone id>')
         return False
-    line = 'travel lot value: zone {} sources {} price {}'.format(zone_id, _lot_values(zone_id), _daily_price(zone_id))
+    line = 'travel lot value: zone {} sources {} price {}'.format(
+        zone_id, _lot_values(zone_id), _daily_price(zone_id)
+    )
     speech.log_line(line)
     output(line)
     return True
 
 
-@sims4.commands.Command('simsight.travel_probe', 'a11y.travel_probe', command_type=sims4.commands.CommandType.Live)
+@sims4.commands.Command(
+    'simsight.travel_probe', 'a11y.travel_probe', command_type=sims4.commands.CommandType.Live
+)
 def a11y_travel_probe(_connection=None):
     """Log every row of the last travel request with its region facts."""
     output = sims4.commands.CheatOutput(_connection)
@@ -1089,9 +1259,17 @@ def a11y_travel_probe(_connection=None):
         return True
     for place in _last_rows:
         line = 'travel probe: zone {} name {!r} world {!r} region {!r} facing {} hide {} venue {} residential {} household {!r} master {}'.format(
-            place.zone_id, place.name, place.world_name, place.region, place.visible,
-            _hidden_flag(place.zone_id), place.venue is not None, place.residential,
-            place.household, place.master)
+            place.zone_id,
+            place.name,
+            place.world_name,
+            place.region,
+            place.visible,
+            _hidden_flag(place.zone_id),
+            place.venue is not None,
+            place.residential,
+            place.household,
+            place.master,
+        )
         speech.log_line(line)
     output('a11y travel probe: {} rows logged'.format(len(_last_rows)))
     return True
@@ -1102,8 +1280,10 @@ def _ui(message):
     try:
         import distributor.ops
         import distributor.system
+
         distributor.system.Distributor.instance().add_op_with_no_owner(
-            distributor.ops.SendUIMessage(message))
+            distributor.ops.SendUIMessage(message)
+        )
         return True
     except Exception as ex:
         speech.log_line('travel: ui message failed ({!r})'.format(ex))
@@ -1122,7 +1302,7 @@ _epoch = 0
 _lease_sent = 0.0
 _lease_running = False
 _lease_generation = 0  # bumped by every start and stop; retires queued heartbeats
-_requests = []        # [(epoch, request id), state, ingress time], newest last
+_requests = []  # [(epoch, request id), state, ingress time], newest last
 
 
 def announce_setting():
@@ -1158,6 +1338,7 @@ def _refresh_lease(generation, force=False):
     if generation != _lease_generation:
         return False
     import time
+
     now = time.monotonic()
     if force or now - _lease_sent >= _LEASE_INTERVAL:
         _publish_lease()
@@ -1249,13 +1430,18 @@ def open_travel(request=0, epoch=0):
     and spoken."""
     import services
     import time
+
     entry = _entry((epoch, request))
     if entry is None:
         return _result(request, 'refused', 'stale', epoch)
     if entry[1] != 'pending':
-        return False                     # settled already (cancelled, stale or answered)
+        return False  # settled already (cancelled, stale or answered)
     if epoch != _epoch or time.monotonic() - entry[2] > _REQUEST_DEADLINE:
-        speech.log_line('travel: keyboard entry request {} expired (epoch {} vs {})'.format(request, epoch, _epoch))
+        speech.log_line(
+            'travel: keyboard entry request {} expired (epoch {} vs {})'.format(
+                request, epoch, _epoch
+            )
+        )
         return _result(request, 'refused', 'stale', epoch)
     if not enabled() or not _zone_loaded():
         _say('action unavailable')
@@ -1274,14 +1460,19 @@ def open_travel(request=0, epoch=0):
         # The request is answered once our window is up; the choice pushes
         # EA's Travel on its own, like a second press of M would.
         if _show_front(sim):
-            speech.log_line('travel: keyboard entry for sim {} offers alone or with others (request {})'.format(
-                sim.sim_id, request))
+            speech.log_line(
+                'travel: keyboard entry for sim {} offers alone or with others (request {})'.format(
+                    sim.sim_id, request
+                )
+            )
             return _result(request, 'ok', '', epoch)
         _say('action unavailable')
         return _result(request, 'refused', 'error', epoch)
     outcome = _push_travel(sim)
     if outcome == 'ok':
-        speech.log_line('travel: keyboard entry pushed for sim {} (request {})'.format(sim.sim_id, request))
+        speech.log_line(
+            'travel: keyboard entry pushed for sim {} (request {})'.format(sim.sim_id, request)
+        )
         return _result(request, 'ok', '', epoch)
     return _result(request, 'refused', outcome, epoch)
 
@@ -1292,17 +1483,23 @@ def _push_travel(sim, alone=False):
     when its test gives one."""
     global _alone, _alone_push, _alone_claimed
     import services
-    _alone = None                        # a new Travel replaces any earlier Go alone
+
+    _alone = None  # a new Travel replaces any earlier Go alone
     _alone_claimed = False
     try:
         import sims4.resources
         from interactions.context import InteractionContext
         from interactions.priority import Priority
-        affordance = services.get_instance_manager(sims4.resources.Types.INTERACTION).get(_TRAVEL_AFFORDANCE)
+
+        affordance = services.get_instance_manager(sims4.resources.Types.INTERACTION).get(
+            _TRAVEL_AFFORDANCE
+        )
         if affordance is None:
             raise ValueError('travel affordance missing')
         client = services.client_manager().get_first_client()
-        context = InteractionContext(sim, InteractionContext.SOURCE_PIE_MENU, Priority.High, client=client, pick=None)
+        context = InteractionContext(
+            sim, InteractionContext.SOURCE_PIE_MENU, Priority.High, client=client, pick=None
+        )
         # 423375 is an ImmediateSuperInteraction: it runs, and EA shows its
         # companion picker, inside this push (2026-09-26 live, BFF household:
         # the picker appeared before the push returned and was not claimed).
@@ -1324,9 +1521,9 @@ def _push_travel(sim, alone=False):
             # a picker. Otherwise its picker is shown and answered below.
             interaction = getattr(result, 'interaction', None)
             if _alone_claimed:
-                pass                         # already claimed inside the push
+                pass  # already claimed inside the push
             elif interaction is not None:
-                _alone = interaction         # a queued Travel shows its picker later
+                _alone = interaction  # a queued Travel shows its picker later
             else:
                 speech.log_line('travel: no interaction to match; the companion picker will show')
         return 'ok'
@@ -1340,6 +1537,7 @@ def _say_refusal(result, sim):
     """The game's own reason for a refused Travel (for example a social
     event in progress), after the spoken line."""
     import simsight_native as native
+
     return native.say_refusal(result, sim)
 
 
@@ -1349,18 +1547,30 @@ def _show_front(sim):
     global _front_id
     try:
         from ui.ui_dialog_picker import ObjectPickerRow
+
         menu._cancel_dialog(_front_id)
         _front_id = None
         dialog = menu._picker(lang.t('travel'), lang.t('travel front instructions'))
         if dialog is None:
             return False
         icon_info = _icon()
-        rows = (('travel alone', 'travel alone detail', _ALONE),
-                ('travel with others', 'travel with others detail', _WITH))
+        rows = (
+            ('travel alone', 'travel alone detail', _ALONE),
+            ('travel with others', 'travel with others detail', _WITH),
+        )
         for index, (name, detail, tag) in enumerate(rows):
-            dialog.add_row(ObjectPickerRow(option_id=index, name=menu._raw(lang.t(name)),
-                                           row_description=menu._raw(lang.t(detail)), row_tooltip=None,
-                                           icon=None, icon_info=icon_info, tag=tag, is_selected=False))
+            dialog.add_row(
+                ObjectPickerRow(
+                    option_id=index,
+                    name=menu._raw(lang.t(name)),
+                    row_description=menu._raw(lang.t(detail)),
+                    row_tooltip=None,
+                    icon=None,
+                    icon_info=icon_info,
+                    tag=tag,
+                    is_selected=False,
+                )
+            )
         sim_id = sim.sim_id
 
         def picked(reply):
@@ -1383,6 +1593,7 @@ def _show_front(sim):
         dialog.add_listener(picked)
         try:
             import simsight_keys as keys
+
             keys.fence_opening_input()
         except Exception:
             pass
@@ -1397,6 +1608,7 @@ def _show_front(sim):
 def _front_chosen(sim_id, alone):
     """Pump: the same checks as the M entry, then EA's Travel."""
     import services
+
     if not enabled() or not _zone_loaded():
         _say('action unavailable')
         return False
@@ -1411,7 +1623,9 @@ def _front_chosen(sim_id, alone):
     except Exception:
         pass
     outcome = _push_travel(sim, alone=alone)
-    speech.log_line('travel: {} chosen, Travel {}'.format('alone' if alone else 'with others', outcome))
+    speech.log_line(
+        'travel: {} chosen, Travel {}'.format('alone' if alone else 'with others', outcome)
+    )
     return outcome == 'ok'
 
 
@@ -1453,7 +1667,9 @@ def _claims(dialog):
     interaction = _alone
     if interaction is None:
         return False
-    if getattr(interaction, 'is_finishing', False) or getattr(interaction, 'has_been_canceled', False):
+    if getattr(interaction, 'is_finishing', False) or getattr(
+        interaction, 'has_been_canceled', False
+    ):
         _alone = None
         speech.log_line('travel: Go alone ended before the companion picker')
         return False
@@ -1473,9 +1689,13 @@ def _sim_distribute(dialog, msg_type, dialog_msg, **kwargs):
         minimum = getattr(dialog, 'min_selectable', None)
         if minimum == 0 and enabled() and simplified():
             if pump.post(_answer_alone, dialog, msg_type, dialog_msg, kwargs):
-                speech.log_line('travel: companion picker {} queued for nobody'.format(dialog.dialog_id))
+                speech.log_line(
+                    'travel: companion picker {} queued for nobody'.format(dialog.dialog_id)
+                )
                 return None
-        speech.log_line('travel: companion picker {} shown (minimum {})'.format(dialog.dialog_id, minimum))
+        speech.log_line(
+            'travel: companion picker {} shown (minimum {})'.format(dialog.dialog_id, minimum)
+        )
     return _original_sim_distribute(dialog, msg_type, dialog_msg, **kwargs)
 
 
@@ -1484,23 +1704,29 @@ def _answer_alone(dialog, msg_type, dialog_msg, kwargs):
     validation and listener). If EA does not take it, the picker is shown
     after all, so no invisible dialog stays behind."""
     import simsight_native as native
+
     if not _dialog_active(dialog):
         speech.log_line('travel: companion picker {} already gone'.format(dialog.dialog_id))
         return False
     if native.answer_picker(dialog, []):
         speech.log_line('travel: companion picker {} answered: nobody'.format(dialog.dialog_id))
         return True
-    speech.log_line('travel: companion picker {} did not take nobody; shown'.format(dialog.dialog_id))
+    speech.log_line(
+        'travel: companion picker {} did not take nobody; shown'.format(dialog.dialog_id)
+    )
     if _dialog_active(dialog):
         _original_sim_distribute(dialog, msg_type, dialog_msg, **kwargs)
     return False
 
 
-@sims4.commands.Command('simsight.travel', 'a11y.travel', command_type=sims4.commands.CommandType.Live)
+@sims4.commands.Command(
+    'simsight.travel', 'a11y.travel', command_type=sims4.commands.CommandType.Live
+)
 def a11y_travel(lease: str = '0', request: str = '0', _connection=None):
     """Flash posts simsight.travel <epoch> <request> after its native guards.
     Refusals here happen at ingress, before anything is queued."""
     import time
+
     try:
         epoch = int(lease)
         request_id = int(request)
@@ -1510,8 +1736,8 @@ def a11y_travel(lease: str = '0', request: str = '0', _connection=None):
     entry = _entry(key)
     if entry is not None:
         if entry[1] == 'pending':
-            return False                 # still queued: only its eventual outcome may answer
-        _resend(entry)                   # cancelled tombstone or a lost reply
+            return False  # still queued: only its eventual outcome may answer
+        _resend(entry)  # cancelled tombstone or a lost reply
         return False
     if epoch != _epoch or not _lease_running:
         _remember(key, 'pending', time.monotonic())
@@ -1526,7 +1752,9 @@ def a11y_travel(lease: str = '0', request: str = '0', _connection=None):
     return True
 
 
-@sims4.commands.Command('simsight.travel_cancel', 'a11y.travel_cancel', command_type=sims4.commands.CommandType.Live)
+@sims4.commands.Command(
+    'simsight.travel_cancel', 'a11y.travel_cancel', command_type=sims4.commands.CommandType.Live
+)
 def a11y_travel_cancel(request: str = '0', lease: str = '', _connection=None):
     """Flash invalidates one exact request (another M, Escape, zone change,
     its bounded timeout). Applied at ingress, never queued, so it always
@@ -1538,6 +1766,7 @@ def a11y_travel_cancel(request: str = '0', lease: str = '', _connection=None):
     except (TypeError, ValueError):
         return False
     import time
+
     key = (epoch, request_id)
     entry = _entry(key)
     if entry is None:
@@ -1551,7 +1780,7 @@ def a11y_travel_cancel(request: str = '0', lease: str = '', _connection=None):
         speech.log_line('travel: keyboard entry request {} cancelled'.format(request_id))
         _ui('A11y|travelresult|{}|{}|refused|cancelled'.format(epoch, request_id))
         return True
-    _resend(entry)                       # duplicate cancel or a finished request: answer again
+    _resend(entry)  # duplicate cancel or a finished request: answer again
     return True
 
 
@@ -1560,6 +1789,7 @@ def install():
     if _original_distribute is not None:
         return True
     from ui.ui_dialog_picker import UiMapViewPicker
+
     _original_distribute = UiMapViewPicker.distribute_dialog
 
     def a11y_travel_distribute_dialog(self, msg_type, dialog_msg, **kwargs):
@@ -1568,6 +1798,7 @@ def install():
     UiMapViewPicker.distribute_dialog = a11y_travel_distribute_dialog
     try:
         from ui.ui_dialog_picker import UiSimPicker
+
         _original_sim_distribute = UiSimPicker.distribute_dialog
 
         def a11y_travel_sim_distribute_dialog(self, msg_type, dialog_msg, **kwargs):

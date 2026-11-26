@@ -15,6 +15,7 @@ simulation thread. No threads: the Mac game crashes when a background
 thread imports a module from a zip while the simulation runs Python.
 Message format: companion/proto/simsight/v1/pipe.proto (protobuf JSON).
 """
+
 import json
 import os
 import re
@@ -32,16 +33,16 @@ import simsight_speech as speech
 IS_MAC = sys.platform == 'darwin'
 IS_WINDOWS = sys.platform == 'win32'
 BRIDGE = 'simsight-bridge.exe' if IS_WINDOWS else 'simsight-bridge'
-CREATE_NO_WINDOW = 0x08000000   # Windows: no console window for the bridge
+CREATE_NO_WINDOW = 0x08000000  # Windows: no console window for the bridge
 SPEAKER = 'simsight-say'
-STATE_INTERVAL = 1.0      # seconds between state snapshots (sent only if changed)
-POLL_INTERVAL = 0.1       # seconds between command polls
-LOC_PER_TICK = 20         # string-table keys requested from the UI per poll
+STATE_INTERVAL = 1.0  # seconds between state snapshots (sent only if changed)
+POLL_INTERVAL = 0.1  # seconds between command polls
+LOC_PER_TICK = 20  # string-table keys requested from the UI per poll
 
 _proc = None
-_voice = None             # last voice settings, re-sent to a restarted bridge
+_voice = None  # last voice settings, re-sent to a restarted bridge
 _last_spawn = 0.0
-RESPAWN_DELAY = 2.0       # seconds before restarting a bridge that exited
+RESPAWN_DELAY = 2.0  # seconds before restarting a bridge that exited
 _write_lock = threading.Lock()
 _read_buf = b''
 _last_state_json = None
@@ -55,6 +56,7 @@ def log(message):
 
 
 # ---------------------------------------------------------------- process
+
 
 def _find(name):
     for folder in (speech.MODS_FOLDER, os.path.join(speech._mods_root(), 'SimSight')):
@@ -77,7 +79,7 @@ def start():
         log('restarting (previous one exited with {})'.format(_proc.returncode))
         _proc = None
         _read_buf = b''
-        _last_state_json = None   # the new bridge needs a full state
+        _last_state_json = None  # the new bridge needs a full state
     _last_spawn = time.monotonic()
     path = _find(BRIDGE)
     if not (IS_MAC or IS_WINDOWS) or subprocess is None or path is None:
@@ -93,8 +95,14 @@ def start():
         if speaker:
             args += ['--speaker', speaker]
     try:
-        _proc = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                 stderr=subprocess.DEVNULL, close_fds=True, **extra)
+        _proc = subprocess.Popen(
+            args,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            close_fds=True,
+            **extra,
+        )
         if not IS_WINDOWS:
             os.set_blocking(_proc.stdout.fileno(), False)
     except Exception as ex:
@@ -102,7 +110,14 @@ def start():
         _proc = None
         return False
     log('started (pid {})'.format(_proc.pid))
-    send({'hello': {'modVersion': 'windows' if IS_WINDOWS else 'mac', 'gameVersion': _game_version()}})
+    send(
+        {
+            'hello': {
+                'modVersion': 'windows' if IS_WINDOWS else 'mac',
+                'gameVersion': _game_version(),
+            }
+        }
+    )
     if _voice is not None:
         send({'voice': _voice})
     return True
@@ -127,7 +142,9 @@ def write_line(data):
 
 
 def send(message):
-    return write_line(json.dumps(message, separators=(',', ':'), ensure_ascii=False).encode('utf-8'))
+    return write_line(
+        json.dumps(message, separators=(',', ':'), ensure_ascii=False).encode('utf-8')
+    )
 
 
 def mirror(text, interrupt):
@@ -135,6 +152,7 @@ def mirror(text, interrupt):
     if not alive():
         return False
     from urllib.parse import quote
+
     return write_line((('I' if interrupt else 'Q') + quote(text)).encode('ascii'))
 
 
@@ -173,12 +191,14 @@ class SpeechPipe(object):
 def _game_version():
     try:
         import sims4.common
+
         return str(sims4.common.get_version() if hasattr(sims4.common, 'get_version') else '')
     except Exception:
         return ''
 
 
 # ---------------------------------------------------------------- tick
+
 
 def _tick():
     """Runs on the game's tick (simulation thread), every frame."""
@@ -204,6 +224,7 @@ def _tick():
 
 def _install_tick():
     import sims4.core_services as core
+
     original = core.on_tick
     if getattr(original, '_simsight_bridge', False):
         return
@@ -225,9 +246,10 @@ def _waiting_bytes():
     (PeekNamedPipe), so reading never blocks the game's tick."""
     handle = _msvcrt.get_osfhandle(_proc.stdout.fileno())
     avail = _ctypes.c_ulong(0)
-    if not _ctypes.windll.kernel32.PeekNamedPipe(_ctypes.c_void_p(handle), None, 0, None,
-                                                  _ctypes.byref(avail), None):
-        return 0   # closed: the bridge exited (alive() notices)
+    if not _ctypes.windll.kernel32.PeekNamedPipe(
+        _ctypes.c_void_p(handle), None, 0, None, _ctypes.byref(avail), None
+    ):
+        return 0  # closed: the bridge exited (alive() notices)
     return avail.value
 
 
@@ -282,12 +304,21 @@ def _handle(line):
 
 def _in_game():
     import services
+
     zone = services.current_zone()
-    return (zone is not None and getattr(zone, 'is_zone_running', False)
-            and services.active_household() is not None)
+    return (
+        zone is not None
+        and getattr(zone, 'is_zone_running', False)
+        and services.active_household() is not None
+    )
 
 
-_SPEEDS = {'SPEED_PAUSED': 'paused', 'SPEED_NORMAL': 'one', 'SPEED_FAST': 'two', 'SPEED_ULTRA': 'three'}
+_SPEEDS = {
+    'SPEED_PAUSED': 'paused',
+    'SPEED_NORMAL': 'one',
+    'SPEED_FAST': 'two',
+    'SPEED_ULTRA': 'three',
+}
 
 
 def _run(cmd):
@@ -295,6 +326,7 @@ def _run(cmd):
         narration = cmd['setNarration'].get('narration', {})
         speech.set_mode('hover' if narration.get('macVoice') else 'off')
         import simsight_settings as settings
+
         settings.set('sim_actions', bool(narration.get('simActions')))
         return True, ''
     if 'say' in cmd:
@@ -302,7 +334,9 @@ def _run(cmd):
         # screen reader (the Mac bridge has its own voice).
         text = cmd['say'].get('text', '')
         if text:
-            speech.speak(text, interrupt=bool(cmd['say'].get('interrupt')), source='event', explicit=True)
+            speech.speak(
+                text, interrupt=bool(cmd['say'].get('interrupt')), source='event', explicit=True
+            )
         return True, ''
     if not _in_game():
         return False, 'not_in_game'
@@ -313,6 +347,7 @@ def _run(cmd):
         return _set_speed(name), 'error'
     if 'selectSim' in cmd:
         import simsight_hub as hub
+
         return hub.select_sim(int(cmd['selectSim'].get('simId', '0'))), 'sim_unavailable'
     if 'listTargets' in cmd:
         return True, '', {'targets': list_targets()}
@@ -324,8 +359,9 @@ def _run(cmd):
         if k.get('family') == 'focus':
             _mackeys.focus_lost()
             return True, ''
-        return _mackeys.handle(k.get('family', ''), int(k.get('vk', 0)), bool(k.get('down')),
-                               bool(k.get('shift'))), 'not_owned'
+        return _mackeys.handle(
+            k.get('family', ''), int(k.get('vk', 0)), bool(k.get('down')), bool(k.get('shift'))
+        ), 'not_owned'
     if 'listInventory' in cmd:
         return list_inventory()
     if 'moveItem' in cmd:
@@ -338,15 +374,19 @@ def _run(cmd):
         if _dialogs is None:
             return False, 'error'
         c = cmd['respondDialog']
-        return _dialogs.respond(c.get('dialogId', ''), c.get('choiceId', 0), c.get('rowIds', []), c.get('text', ''))
+        return _dialogs.respond(
+            c.get('dialogId', ''), c.get('choiceId', 0), c.get('rowIds', []), c.get('text', '')
+        )
     if 'openMenu' in cmd:
         if cmd['openMenu'].get('menu') != 'hub':
             return False, 'unknown_command'
         import simsight_hub as hub
+
         hub.open_hub()
         return True, ''
     if 'getHouseMap' in cmd:
         import simsight_housemap as housemap
+
         misses = _loc_misses
         house = housemap.build()
         if house is None:
@@ -362,6 +402,7 @@ def _run(cmd):
     if 'cancelAction' in cmd:
         import services
         import simsight_hub as hub
+
         c = cmd['cancelAction']
         sim = services.get_active_sim()
         if sim is None or str(sim.id) != c.get('simId'):
@@ -374,14 +415,20 @@ def _set_speed(name):
     """Through the game's own clock.setspeed command, like the speed buttons."""
     try:
         from server_commands import clock_commands
+
         clock_commands.set_speed(name)
         return True
     except Exception as ex:
         log('clock.setspeed failed, using the clock directly: {!r}'.format(ex))
     import services
     from clock import ClockSpeedMode, GameSpeedChangeSource
-    mode = {'paused': ClockSpeedMode.PAUSED, 'one': ClockSpeedMode.NORMAL,
-            'two': ClockSpeedMode.SPEED2, 'three': ClockSpeedMode.SPEED3}[name]
+
+    mode = {
+        'paused': ClockSpeedMode.PAUSED,
+        'one': ClockSpeedMode.NORMAL,
+        'two': ClockSpeedMode.SPEED2,
+        'three': ClockSpeedMode.SPEED3,
+    }[name]
     services.game_clock_service().set_clock_speed(mode, source=GameSpeedChangeSource.GAMEPLAY)
     return True
 
@@ -431,6 +478,7 @@ _FIELD = re.compile(r'\{(\d+)\.(\w+)\}')
 
 def _fill_tokens(template, tokens):
     """Fill the common Sims placeholders: {0.SimFirstName}, {M0.he}{F0.she}..."""
+
     def token(i):
         return tokens[i] if 0 <= i < len(tokens) else None
 
@@ -479,7 +527,7 @@ def _token_text(t):
     return _loc_key_text(key) if key else ''
 
 
-_loc_misses = 0   # game strings asked for but not known yet (names still loading)
+_loc_misses = 0  # game strings asked for but not known yet (names still loading)
 
 
 def text_of(value, fallback=''):
@@ -508,15 +556,21 @@ def _pretty(tuning_name, prefixes=()):
     name = tuning_name or ''
     for p in prefixes:
         if name.lower().startswith(p):
-            name = name[len(p):]
+            name = name[len(p) :]
     name = re.sub(r'([a-z])([A-Z])', r'\1 \2', name.replace('_', ' ').replace('-', ' '))
     return ' '.join(w.capitalize() if w.islower() else w for w in name.split())
 
 
 # ---------------------------------------------------------------- state
 
-_NEEDS = (('hunger', 'motive_hunger'), ('bladder', 'motive_bladder'), ('energy', 'motive_energy'),
-          ('hygiene', 'motive_hygiene'), ('fun', 'motive_fun'), ('social', 'motive_social'))
+_NEEDS = (
+    ('hunger', 'motive_hunger'),
+    ('bladder', 'motive_bladder'),
+    ('energy', 'motive_energy'),
+    ('hygiene', 'motive_hygiene'),
+    ('fun', 'motive_fun'),
+    ('social', 'motive_social'),
+)
 
 
 def _need_level(p):
@@ -531,6 +585,7 @@ def _need_level(p):
 
 def _needs(info):
     import simsight_plus_needs as needs
+
     out = []
     for key, stat in _NEEDS:
         p = needs.percent(info, stat)
@@ -567,6 +622,7 @@ def _mood(info):
 
 def _moodlets(info):
     import services
+
     buffs = getattr(info, 'Buffs', None)
     if buffs is None:
         return []
@@ -605,33 +661,48 @@ def _moodlets(info):
 
 def _actions(sim):
     import simsight_hub as hub
+
     out = []
     for info, interaction, state in hub._queue_entries(sim):
         fallback = ''
         if interaction is not None and hasattr(interaction, 'affordance'):
-            fallback = _pretty(getattr(interaction.affordance, '__name__', ''), ('sim-', 'si_', 'mixer_'))
+            fallback = _pretty(
+                getattr(interaction.affordance, '__name__', ''), ('sim-', 'si_', 'mixer_')
+            )
         name = text_of(getattr(info, 'display_name', None), fallback)
         if not name:
             continue
-        out.append({'id': str(info.interaction_id), 'name': name,
-                    'state': 'ACTION_STATE_RUNNING' if state == 'running' else 'ACTION_STATE_QUEUED',
-                    'cancelable': bool(getattr(info, 'user_cancelable', False))})
+        out.append(
+            {
+                'id': str(info.interaction_id),
+                'name': name,
+                'state': 'ACTION_STATE_RUNNING' if state == 'running' else 'ACTION_STATE_QUEUED',
+                'cancelable': bool(getattr(info, 'user_cancelable', False)),
+            }
+        )
     return out
 
 
 def _speed():
     import services
     from clock import ClockSpeedMode
+
     speed = services.game_clock_service().clock_speed
-    return {ClockSpeedMode.PAUSED: 'SPEED_PAUSED', ClockSpeedMode.SPEED2: 'SPEED_FAST',
-            ClockSpeedMode.SPEED3: 'SPEED_ULTRA', ClockSpeedMode.SUPER_SPEED3: 'SPEED_SUPER'}.get(speed, 'SPEED_NORMAL')
+    return {
+        ClockSpeedMode.PAUSED: 'SPEED_PAUSED',
+        ClockSpeedMode.SPEED2: 'SPEED_FAST',
+        ClockSpeedMode.SPEED3: 'SPEED_ULTRA',
+        ClockSpeedMode.SUPER_SPEED3: 'SPEED_SUPER',
+    }.get(speed, 'SPEED_NORMAL')
 
 
 def _clock():
     import services
+
     clock = {'speed': _speed()}
     try:
         import simsight_plus_time as t
+
         now = services.time_service().sim_now
         clock['day'] = t.day_text(now)
         clock['time'] = t.clock_text(now)
@@ -644,6 +715,7 @@ def _career(info, entry):
     """Job or school, whether the Sim is there now, until when, next shift."""
     import services
     import simsight_plus_time as t
+
     tracker = getattr(info, 'career_tracker', None)
     if tracker is None:
         return
@@ -684,9 +756,12 @@ def _career(info, entry):
 # Aspiration milestone, wants and fears, work tasks and promotion steps.
 # Read only; every part is optional (packs and ages differ).
 
+
 def _done(tracker, key, kind):
     try:
-        check = getattr(tracker, 'objective_completed' if kind == 'objective' else 'milestone_completed')
+        check = getattr(
+            tracker, 'objective_completed' if kind == 'objective' else 'milestone_completed'
+        )
         return bool(check(key))
     except Exception:
         return False
@@ -740,9 +815,15 @@ def _goals(info):
             try:
                 level = career.current_level_tuning
                 tasks = []
-                for metric in list(getattr(level.performance_metrics, 'statistic_metrics', None) or ()):
+                for metric in list(
+                    getattr(level.performance_metrics, 'statistic_metrics', None) or ()
+                ):
                     tip = getattr(metric, 'tooltip_text', None)
-                    name = text_of(getattr(tip, 'general_description', None), '') if tip is not None else ''
+                    name = (
+                        text_of(getattr(tip, 'general_description', None), '')
+                        if tip is not None
+                        else ''
+                    )
                     if name:
                         tasks.append({'name': name, 'done': False})
                 if tasks:
@@ -775,6 +856,7 @@ def _bit_label(bit, other, info):
 def _relationships(info):
     """Strongest relationships first: friendship, romance and the game's labels."""
     from relationships.relationship_track import RelationshipTrack
+
     tracker = info.relationship_tracker
     friendship = getattr(RelationshipTrack, 'FRIENDSHIP_TRACK', None)
     romance = getattr(RelationshipTrack, 'ROMANCE_TRACK', None)
@@ -789,8 +871,16 @@ def _relationships(info):
             pass
         f = r = 0
         try:
-            f = int(round(tracker.get_relationship_score(other.sim_id, friendship) or 0)) if friendship else 0
-            r = int(round(tracker.get_relationship_score(other.sim_id, romance) or 0)) if romance else 0
+            f = (
+                int(round(tracker.get_relationship_score(other.sim_id, friendship) or 0))
+                if friendship
+                else 0
+            )
+            r = (
+                int(round(tracker.get_relationship_score(other.sim_id, romance) or 0))
+                if romance
+                else 0
+            )
         except Exception:
             pass
         labels = []
@@ -803,9 +893,18 @@ def _relationships(info):
                     labels.append(label)
         except Exception:
             pass
-        rows.append((max(abs(f), abs(r)) + (100 if labels else 0),
-                     {'simId': str(other.sim_id), 'name': '{} {}'.format(other.first_name, other.last_name).strip(),
-                      'friendship': f, 'romance': r, 'labels': labels}))
+        rows.append(
+            (
+                max(abs(f), abs(r)) + (100 if labels else 0),
+                {
+                    'simId': str(other.sim_id),
+                    'name': '{} {}'.format(other.first_name, other.last_name).strip(),
+                    'friendship': f,
+                    'romance': r,
+                    'labels': labels,
+                },
+            )
+        )
     rows.sort(key=lambda pair: -pair[0])
     return [row for _score, row in rows[:MAX_RELATIONSHIPS]]
 
@@ -820,10 +919,25 @@ def _skills(info):
             if level < 1:
                 continue
             name = type(skill).__name__
-            out.append({'key': name, 'name': text_of(getattr(skill, 'stat_name', None),
-                                                    _pretty(name, ('statistic_skill_adultmajor_', 'statistic_skill_',
-                                                                   'skill_', 'adultmajor_'))),
-                        'level': level, 'maxLevel': int(getattr(skill, 'max_level', 10) or 10)})
+            out.append(
+                {
+                    'key': name,
+                    'name': text_of(
+                        getattr(skill, 'stat_name', None),
+                        _pretty(
+                            name,
+                            (
+                                'statistic_skill_adultmajor_',
+                                'statistic_skill_',
+                                'skill_',
+                                'adultmajor_',
+                            ),
+                        ),
+                    ),
+                    'level': level,
+                    'maxLevel': int(getattr(skill, 'max_level', 10) or 10),
+                }
+            )
         except Exception:
             continue
     out.sort(key=lambda s: (-s['level'], s['name']))
@@ -845,24 +959,36 @@ def _performance(career):
 def _sim(info, client):
     sim = info.get_sim_instance()
     room = _room_ref(sim) if sim is not None else None
-    entry = {'id': str(info.sim_id), 'firstName': info.first_name or '', 'lastName': info.last_name or '',
-             'active': client is not None and client.active_sim_info is info, 'here': sim is not None}
+    entry = {
+        'id': str(info.sim_id),
+        'firstName': info.first_name or '',
+        'lastName': info.last_name or '',
+        'active': client is not None and client.active_sim_info is info,
+        'here': sim is not None,
+    }
     if room is not None:
         entry['room'] = room
     try:
         _career(info, entry)
     except Exception as ex:
         log('career of {} unavailable: {!r}'.format(info.first_name, ex))
-    for key, fn in (('relationships', lambda: _relationships(info)), ('skills', lambda: _skills(info)),
-                    ('goals', lambda: _goals(info))):
+    for key, fn in (
+        ('relationships', lambda: _relationships(info)),
+        ('skills', lambda: _skills(info)),
+        ('goals', lambda: _goals(info)),
+    ):
         try:
             value = fn()
             if value:
                 entry[key] = value
         except Exception as ex:
             log('{} of {} unavailable: {!r}'.format(key, info.first_name, ex))
-    for key, fn in (('mood', lambda: _mood(info)), ('needs', lambda: _needs(info)),
-                    ('moodlets', lambda: _moodlets(info)), ('actions', lambda: _actions(sim) if sim else [])):
+    for key, fn in (
+        ('mood', lambda: _mood(info)),
+        ('needs', lambda: _needs(info)),
+        ('moodlets', lambda: _moodlets(info)),
+        ('actions', lambda: _actions(sim) if sim else []),
+    ):
         if key != 'mood' and sim is None:
             continue
         try:
@@ -877,13 +1003,18 @@ def _sim(info, client):
 def _narration():
     try:
         import simsight_settings as settings
-        return {'macVoice': speech.speech_mode == 'hover', 'simActions': bool(settings.get('sim_actions'))}
+
+        return {
+            'macVoice': speech.speech_mode == 'hover',
+            'simActions': bool(settings.get('sim_actions')),
+        }
     except Exception:
         return {}
 
 
 def build_state():
     import services
+
     if not _in_game():
         return {'inGame': False, 'narration': _narration()}
     household = services.active_household()
@@ -917,6 +1048,7 @@ def _house():
         _house_cache['at'] = now
         try:
             import simsight_housemap as housemap
+
             house = housemap.build()
             _house_cache['map'] = house
             _house_cache['rooms'] = dict((r['id'], r) for r in (house or {}).get('rooms', []))
@@ -933,6 +1065,7 @@ def _room_ref(obj):
         return None
     try:
         import simsight_plus_rooms as plus_rooms
+
         on_lot = getattr(obj, 'is_on_active_lot', None)
         if on_lot is not None and not on_lot():
             return None
@@ -943,13 +1076,19 @@ def _room_ref(obj):
         return None
     if room is None:
         return None
-    return {'id': room['id'], 'kind': room['kind'], 'number': room.get('number', 0),
-            'customName': room.get('customName', ''), 'floor': room.get('floor', 0)}
+    return {
+        'id': room['id'],
+        'kind': room['kind'],
+        'number': room.get('number', 0),
+        'customName': room.get('customName', ''),
+        'floor': room.get('floor', 0),
+    }
 
 
 def _visitors(household):
     """Sims on the lot who are not in the household."""
     import services
+
     out = []
     members = set(info.sim_id for info in household.sim_info_gen())
     for sim in services.sim_info_manager().instanced_sims_gen():
@@ -959,8 +1098,10 @@ def _visitors(household):
             on_lot = getattr(sim, 'is_on_active_lot', None)
             if on_lot is None or not on_lot():
                 continue
-            entry = {'simId': str(sim.sim_info.sim_id),
-                     'name': '{} {}'.format(sim.sim_info.first_name, sim.sim_info.last_name).strip()}
+            entry = {
+                'simId': str(sim.sim_info.sim_id),
+                'name': '{} {}'.format(sim.sim_info.first_name, sim.sim_info.last_name).strip(),
+            }
             room = _room_ref(sim)
             if room is not None:
                 entry['room'] = room
@@ -982,6 +1123,7 @@ def _bills_owed(household):
 def _camera_follows():
     try:
         import camera
+
         if getattr(camera, '_follow_mode', False) and getattr(camera, '_sim_id', None):
             return str(camera._sim_id)
     except Exception:
@@ -993,6 +1135,7 @@ def _set_camera(sim_id, mode):
     """Follow a Sim with the game camera, close up, or let it go."""
     import camera
     import services
+
     _sim_unused, client = _sim_and_client()
     try:
         info = services.sim_info_manager().get(int(sim_id))
@@ -1007,9 +1150,12 @@ def _set_camera(sim_id, mode):
     if mode == 'CAMERA_MODE_CLOSE':
         try:
             import sims4.math
+
             pos, fwd = sim.position, sim.forward
             eye = sims4.math.Vector3(pos.x + fwd.x * 3.0, pos.y + 1.6, pos.z + fwd.z * 3.0)
-            camera.focus_on_object_from_position(obj_position=pos, camera_position=eye, client=client)
+            camera.focus_on_object_from_position(
+                obj_position=pos, camera_position=eye, client=client
+            )
         except Exception as ex:
             log('close camera failed: {!r}'.format(ex))
     camera.focus_on_sim(sim=sim, follow=True, client=client)
@@ -1051,8 +1197,15 @@ def _destinations(sim, item, holders):
         try:
             if holder.inventory_component.can_add(item):
                 group, kind, _keywords = _classify(holder)
-                out.append({'id': str(holder.id), 'name': _object_name(holder), 'group': group, 'kind': kind,
-                            'distance': int(round(d))})
+                out.append(
+                    {
+                        'id': str(holder.id),
+                        'name': _object_name(holder),
+                        'group': group,
+                        'kind': kind,
+                        'distance': int(round(d)),
+                    }
+                )
         except Exception:
             continue
         if len(out) >= MAX_DESTINATIONS:
@@ -1062,18 +1215,25 @@ def _destinations(sim, item, holders):
 
 def list_inventory():
     import services
+
     sim, _client = _sim_and_client()
     if sim is None or getattr(sim, 'inventory_component', None) is None:
         return False, 'sim_unavailable'
     holders = []
     for obj in services.object_manager().get_valid_objects_gen():
         try:
-            if getattr(obj, 'is_sim', False) or obj.is_hidden() or getattr(obj, 'inventory_component', None) is None:
+            if (
+                getattr(obj, 'is_sim', False)
+                or obj.is_hidden()
+                or getattr(obj, 'inventory_component', None) is None
+            ):
                 continue
             on_lot = getattr(obj, 'is_on_active_lot', None)
             if on_lot is not None and not on_lot():
                 continue
-            d = ((obj.position.x - sim.position.x) ** 2 + (obj.position.z - sim.position.z) ** 2) ** 0.5
+            d = (
+                (obj.position.x - sim.position.x) ** 2 + (obj.position.z - sim.position.z) ** 2
+            ) ** 0.5
             holders.append((d, obj))
         except Exception:
             continue
@@ -1082,8 +1242,18 @@ def list_inventory():
     for item in _inventory_items(sim):
         try:
             group, kind, _keywords = _classify(item)
-            items.append({'item': {'id': str(item.id), 'name': _object_name(item), 'group': group, 'kind': kind},
-                          'count': _stack_count(item), 'destinations': _destinations(sim, item, holders)})
+            items.append(
+                {
+                    'item': {
+                        'id': str(item.id),
+                        'name': _object_name(item),
+                        'group': group,
+                        'kind': kind,
+                    },
+                    'count': _stack_count(item),
+                    'destinations': _destinations(sim, item, holders),
+                }
+            )
         except Exception as ex:
             log('inventory item skipped: {!r}'.format(ex))
     return True, '', {'inventory': items}
@@ -1091,6 +1261,7 @@ def list_inventory():
 
 def move_item(item_id, destination_id):
     import services
+
     sim, _client = _sim_and_client()
     if sim is None:
         return False, 'sim_unavailable'
@@ -1122,11 +1293,12 @@ def move_item(item_id, destination_id):
 # "blocked" bubble. interactions.utils.route_fail.route_failure plays it:
 # report it to the phone and the Mac voice with the game's reason.
 
-_route_seen = {}     # (sim id, action) -> monotonic time, to skip repeats
+_route_seen = {}  # (sim id, action) -> monotonic time, to skip repeats
 
 
 def _install_route_fail():
     import interactions.utils.route_fail as route_fail
+
     original = route_fail.route_failure
     if getattr(original, '_simsight_phone', False):
         return
@@ -1144,6 +1316,7 @@ def _install_route_fail():
 
 def _report_route_fail(sim, interaction, failure_reason, failure_object_id):
     import services
+
     household = services.active_household()
     info = getattr(sim, 'sim_info', None)
     if info is None or household is None or info.household is not household:
@@ -1154,7 +1327,9 @@ def _report_route_fail(sim, interaction, failure_reason, failure_object_id):
     except Exception:
         pass
     if not action:
-        action = _pretty(getattr(getattr(interaction, 'affordance', None), '__name__', ''), ('sim-', 'si_'))
+        action = _pretty(
+            getattr(getattr(interaction, 'affordance', None), '__name__', ''), ('sim-', 'si_')
+        )
     now = time.monotonic()
     key = (info.sim_id, action)
     if now - _route_seen.get(key, -1e9) < 10.0:
@@ -1169,8 +1344,18 @@ def _report_route_fail(sim, interaction, failure_reason, failure_object_id):
         elif obj is not None:
             obj_name = '{} {}'.format(obj.sim_info.first_name, obj.sim_info.last_name).strip()
     log('route failure: {} {} ({}, {})'.format(info.first_name, action, reason, obj_name))
-    send({'event': {'kind': 'EVENT_KIND_ROUTE_FAIL', 'simId': str(info.sim_id), 'simName': info.first_name,
-                    'subject': action, 'detail': reason, 'objectName': obj_name}})
+    send(
+        {
+            'event': {
+                'kind': 'EVENT_KIND_ROUTE_FAIL',
+                'simId': str(info.sim_id),
+                'simName': info.first_name,
+                'subject': action,
+                'detail': reason,
+                'objectName': obj_name,
+            }
+        }
+    )
 
 
 # ---------------------------------------------------------------- things to deal with
@@ -1197,6 +1382,7 @@ def _problems():
 
 def _scan_problems():
     import services
+
     sim = services.get_active_sim()
     try:
         from objects.puddles.puddle import Puddle
@@ -1208,18 +1394,24 @@ def _scan_problems():
         Fire = None
     try:
         from objects.components.state import StateComponent
+
         broken_states = tuple(StateComponent.BROKEN_STATE_SET or ())
     except Exception:
         broken_states = ()
     try:
         from crafting.crafting_tunable import CraftingTuning
+
         spoiled = CraftingTuning.SPOILED_STATE_VALUE
     except Exception:
         spoiled = None
 
     def has(obj, value):
         try:
-            return value is not None and obj.has_state(value.state) and obj.get_state(value.state) is value
+            return (
+                value is not None
+                and obj.has_state(value.state)
+                and obj.get_state(value.state) is value
+            )
         except Exception:
             return False
 
@@ -1246,14 +1438,21 @@ def _scan_problems():
             elif getattr(obj, 'consumable_component', None) is not None:
                 parent = getattr(obj, 'parent', None)
                 if parent is not None and getattr(parent, 'is_sim', False):
-                    continue        # in a Sim's hands: being eaten
+                    continue  # in a Sim's hands: being eaten
                 kind = 'FOOD'
             if kind is None:
                 continue
             entry = {'kind': kind, 'targetId': str(obj.id), 'name': _object_name(obj)}
             if sim is not None:
-                entry['distance'] = int(round(((obj.position.x - sim.position.x) ** 2 +
-                                               (obj.position.z - sim.position.z) ** 2) ** 0.5))
+                entry['distance'] = int(
+                    round(
+                        (
+                            (obj.position.x - sim.position.x) ** 2
+                            + (obj.position.z - sim.position.z) ** 2
+                        )
+                        ** 0.5
+                    )
+                )
             out.append(entry)
         except Exception:
             continue
@@ -1304,14 +1503,15 @@ def _publish_state():
 # same tests, visibility, names, greyed reasons, social sub-menus), and the
 # chosen row run with test_and_execute, like the mod's phone list.
 
-MAX_OBJECTS = 600         # nearest objects listed (a big house has a few hundred)
-MAX_DISTANCE = 60.0       # metres
-_menus = {}               # target id -> {option id: (aop, context)}
-PHONE_ID = 'phone'        # the controlled Sim's phone, a target of its own
+MAX_OBJECTS = 600  # nearest objects listed (a big house has a few hundred)
+MAX_DISTANCE = 60.0  # metres
+_menus = {}  # target id -> {option id: (aop, context)}
+PHONE_ID = 'phone'  # the controlled Sim's phone, a target of its own
 
 
 def _sim_and_client():
     import services
+
     sim = services.get_active_sim()
     client = services.client_manager().get_first_client()
     return sim, client
@@ -1375,6 +1575,7 @@ def _classify(obj):
 
 def list_targets():
     import services
+
     sim, _client = _sim_and_client()
     if sim is None:
         return []
@@ -1382,11 +1583,21 @@ def list_targets():
 
     def distance(obj):
         pos = obj.position
-        return ((float(pos.x) - float(origin.x)) ** 2 + (float(pos.z) - float(origin.z)) ** 2) ** 0.5
+        return (
+            (float(pos.x) - float(origin.x)) ** 2 + (float(pos.z) - float(origin.z)) ** 2
+        ) ** 0.5
 
-    targets = [{'id': str(sim.id), 'name': '{} {}'.format(sim.sim_info.first_name, sim.sim_info.last_name).strip(),
-                'isSim': True, 'isSelf': True, 'group': 'SIMS', 'distance': 0},
-               {'id': PHONE_ID, 'name': 'Phone', 'group': 'PHONE'}]
+    targets = [
+        {
+            'id': str(sim.id),
+            'name': '{} {}'.format(sim.sim_info.first_name, sim.sim_info.last_name).strip(),
+            'isSim': True,
+            'isSelf': True,
+            'group': 'SIMS',
+            'distance': 0,
+        },
+        {'id': PHONE_ID, 'name': 'Phone', 'group': 'PHONE'},
+    ]
     others = []
     for other in services.sim_info_manager().instanced_sims_gen():
         if other is sim:
@@ -1397,12 +1608,23 @@ def list_targets():
             continue
     for d, other in sorted(others, key=lambda pair: pair[0]):
         info = other.sim_info
-        targets.append({'id': str(other.id), 'name': '{} {}'.format(info.first_name, info.last_name).strip(),
-                        'isSim': True, 'group': 'SIMS', 'distance': int(round(d))})
+        targets.append(
+            {
+                'id': str(other.id),
+                'name': '{} {}'.format(info.first_name, info.last_name).strip(),
+                'isSim': True,
+                'group': 'SIMS',
+                'distance': int(round(d)),
+            }
+        )
     objects = []
     for obj in services.object_manager().get_valid_objects_gen():
         try:
-            if getattr(obj, 'is_sim', False) or getattr(obj, 'is_terrain', False) or obj.is_hidden():
+            if (
+                getattr(obj, 'is_sim', False)
+                or getattr(obj, 'is_terrain', False)
+                or obj.is_hidden()
+            ):
                 continue
             checker = getattr(obj, 'is_in_inventory', None)
             if checker is not None and checker():
@@ -1418,8 +1640,16 @@ def list_targets():
     for d, obj in objects[:MAX_OBJECTS]:
         try:
             group, kind, keywords = _classify(obj)
-            targets.append({'id': str(obj.id), 'name': _object_name(obj), 'group': group,
-                            'kind': kind, 'keywords': keywords, 'distance': int(round(d))})
+            targets.append(
+                {
+                    'id': str(obj.id),
+                    'name': _object_name(obj),
+                    'group': group,
+                    'kind': kind,
+                    'keywords': keywords,
+                    'distance': int(round(d)),
+                }
+            )
         except Exception:
             continue
     return targets
@@ -1427,6 +1657,7 @@ def list_targets():
 
 def _target(target_id, sim):
     import services
+
     try:
         key = int(target_id)
     except ValueError:
@@ -1449,6 +1680,7 @@ def get_interactions(target_id):
     import sims4.resources
     from interactions.choices import ChoiceMenu
     from server.pick_info import PickInfo, PickType
+
     sim, client = _sim_and_client()
     if sim is None or client is None:
         return False, 'sim_unavailable'
@@ -1471,13 +1703,25 @@ def get_interactions(target_id):
     except Exception:
         level = 0
     pick_type = PickType.PICK_SIM if getattr(obj, 'is_sim', False) else PickType.PICK_OBJECT
-    targets = [obj] + [t for t in (getattr(obj, 'forwarded_pick_targets', None) or ()) if t is not None and t is not obj]
+    targets = [obj] + [
+        t
+        for t in (getattr(obj, 'forwarded_pick_targets', None) or ())
+        if t is not None and t is not obj
+    ]
     for target in targets:
-        pick = PickInfo(pick_type=pick_type, target=target, location=obj.position,
-                        routing_surface=obj.routing_surface, lot_id=lot_id, level=level)
+        pick = PickInfo(
+            pick_type=pick_type,
+            target=target,
+            location=obj.position,
+            routing_surface=obj.routing_surface,
+            lot_id=lot_id,
+            level=level,
+        )
         context = client.create_interaction_context(sim, pick=pick)
         context.add_preferred_objects((obj,))
-        menu.add_potential_aops(target, context, target.potential_interactions(context, **parameters), None)
+        menu.add_potential_aops(
+            target, context, target.potential_interactions(context, **parameters), None
+        )
         if getattr(target, 'is_sim', False) and target is not sim:
             try:
                 sim.fill_choices_menu_with_si_state_aops(target, context, menu, None)
@@ -1490,6 +1734,7 @@ def _menu_rows(target_id, sim, menu):
     """Rows of a ChoiceMenu as the game shows them (visible, named, greyed reasons)."""
     import services
     import sims4.resources
+
     categories = services.get_instance_manager(sims4.resources.Types.PIE_MENU_CATEGORY)
     tutorial = services.get_tutorial_service()
     rows, options = [], {}
@@ -1506,22 +1751,37 @@ def _menu_rows(target_id, sim, menu):
                 continue
             modifier_tooltip = sim.apply_forbid_by_object_tags_pie_menu_modifiers(aop)
             fallback = _pretty(getattr(affordance, '__name__', ''), ('sim-', 'si_', 'mixer_'))
-            name = text_of(affordance.get_name(aop.target, item.context, **aop.interaction_parameters), '')
+            name = text_of(
+                affordance.get_name(aop.target, item.context, **aop.interaction_parameters), ''
+            )
             pending = pending or not name
             tooltip = modifier_tooltip or item.result.tooltip
             reason = ''
             if tooltip is not None:
-                reason = text_of(affordance.create_localized_string(
-                    tooltip, context=item.context, target=aop.target, **aop.interaction_parameters))
+                reason = text_of(
+                    affordance.create_localized_string(
+                        tooltip,
+                        context=item.context,
+                        target=aop.target,
+                        **aop.interaction_parameters,
+                    )
+                )
             category = categories.get(item.category_key) if item.category_key else None
             root = _category_root(category)
             category_name = text_of(root._display_name(sim)) if root is not None else ''
-            rows.append({'id': str(option_id), 'name': name or fallback, 'category': category_name,
-                         'enabled': bool(item.result) and not modifier_tooltip, 'reason': reason})
+            rows.append(
+                {
+                    'id': str(option_id),
+                    'name': name or fallback,
+                    'category': category_name,
+                    'enabled': bool(item.result) and not modifier_tooltip,
+                    'reason': reason,
+                }
+            )
             options[str(option_id)] = (aop, item.context)
         except Exception as ex:
             log('menu row skipped: {!r}'.format(ex))
-    _menus.clear()            # only the latest menu can be run
+    _menus.clear()  # only the latest menu can be run
     _menus[str(target_id)] = options
     return True, '', {'interactions': rows, 'namesPending': pending or _loc_misses != misses}
 
@@ -1554,8 +1814,12 @@ def _open_on_mac(url, said):
         if IS_WINDOWS:
             os.startfile(url)
         elif IS_MAC and subprocess is not None:
-            subprocess.Popen(['/usr/bin/open', url], stdout=subprocess.DEVNULL,
-                             stderr=subprocess.DEVNULL, close_fds=True)
+            subprocess.Popen(
+                ['/usr/bin/open', url],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                close_fds=True,
+            )
         else:
             return False
         speech.speak(said, explicit=True)
@@ -1578,7 +1842,9 @@ def open_setup_page():
 try:
     import sims4.commands
 
-    @sims4.commands.Command('simsight.companion', 'a11y.companion', command_type=sims4.commands.CommandType.Live)
+    @sims4.commands.Command(
+        'simsight.companion', 'a11y.companion', command_type=sims4.commands.CommandType.Live
+    )
     def a11y_companion(_connection=None):
         """Open the phone companion's QR code on the Mac."""
         return open_pairing_page()
@@ -1601,7 +1867,7 @@ if IS_WINDOWS:
         import msvcrt as _msvcrt
         import ctypes as _ctypes
     except Exception as _ex:
-        IS_WINDOWS = False   # no way to read the pipe without blocking: no companion
+        IS_WINDOWS = False  # no way to read the pipe without blocking: no companion
         log('companion unavailable on Windows: {!r}'.format(_ex))
 if IS_MAC:
     try:
@@ -1616,6 +1882,7 @@ if IS_MAC or IS_WINDOWS:
         log('route failure hook unavailable: {!r}'.format(_ex))
     try:
         import simsight_dialogs as _dialogs
+
         _dialogs.install()
     except Exception as _ex:
         _dialogs = None

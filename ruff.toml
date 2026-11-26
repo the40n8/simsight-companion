@@ -1,0 +1,36 @@
+# Lint and format rules for the mod's Python (Scripts/) and its tools.
+# The game runs Python 3.7: target-version keeps newer syntax out.
+target-version = "py37"
+line-length = 100
+extend-exclude = ["Scripts/ctypes", "companion", "dist", "site"]
+
+[format]
+quote-style = "single"
+line-ending = "lf"
+
+[lint]
+select = [
+  "E", "W", "F",   # pycodestyle, pyflakes
+  "B",             # bugbear: likely bugs
+  "C90",           # complexity
+  "SIM",           # simpler code
+  "PL",            # pylint
+  "UP",            # modern syntax (for 3.7)
+  "RET", "PIE", "C4", "ISC", "PERF",
+]
+ignore = [
+  # Game modules are imported where they are used: some do not exist yet when
+  # the mod loads, and each import costs load time.
+  "PLC0415",
+  "PLR2004",  # numbers in comparisons: the game's own constants
+  "E501",     # the formatter decides line length
+]
+
+[lint.mccabe]
+max-complexity = 12
+
+[lint.pylint]
+max-args = 6
+max-branches = 14
+max-returns = 8
+max-statements = 50

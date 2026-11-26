@@ -17,6 +17,7 @@ key. The log's existing "UI owner:" and "SPEAK" lines show what the client
 opened and what was read, so the two together show which windows need work.
 Nothing is spoken and nothing changes the game.
 """
+
 import sys
 
 import simsight_speech as speech
@@ -37,8 +38,11 @@ def _source():
     while frame is not None:
         module = frame.f_globals.get('__name__', '') or ''
         filename = frame.f_code.co_filename or ''
-        if not filename.startswith(EA_PREFIXES) and not module.startswith('simsight') \
-                and module not in ('sims4.commands', __name__):
+        if (
+            not filename.startswith(EA_PREFIXES)
+            and not module.startswith('simsight')
+            and module not in ('sims4.commands', __name__)
+        ):
             return module, filename
         frame = frame.f_back
     return None, None
@@ -79,7 +83,11 @@ def describe(dialog, msg):
     parts = [type(dialog).__name__]
     for field in ('title', 'text'):
         try:
-            text = ls_text(getattr(msg, field, None)) if msg is not None and msg.HasField(field) else ''
+            text = (
+                ls_text(getattr(msg, field, None))
+                if msg is not None and msg.HasField(field)
+                else ''
+            )
         except Exception:
             text = ''
         if text:
@@ -105,6 +113,7 @@ def install():
         return True
     _installed = True
     from ui.ui_dialog import UiDialog
+
     original = UiDialog.build_msg
 
     def build_msg(self, *args, **kwargs):
@@ -117,6 +126,7 @@ def install():
             except Exception as ex:
                 _log('census failed: {!r}'.format(ex))
         return msg
+
     build_msg.__name__ = original.__name__
     UiDialog.build_msg = build_msg
     return True

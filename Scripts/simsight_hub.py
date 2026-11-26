@@ -3,6 +3,7 @@
 All callbacks run on the simulation thread. Rows retain real Sim ids and are
 revalidated on selection; closing a window never selects a default action.
 """
+
 import sims4.commands
 import simsight_lang as lang
 import simsight_menu as menu
@@ -36,20 +37,24 @@ def _say(term):
 
 
 def _name(info):
-    return ' '.join(p for p in (getattr(info, 'first_name', ''),
-                                getattr(info, 'last_name', '')) if p)
+    return ' '.join(
+        p for p in (getattr(info, 'first_name', ''), getattr(info, 'last_name', '')) if p
+    )
 
 
 def _client():
     import services
+
     return services.client_manager().get_first_client()
 
 
 def _ui(message):
     import distributor.ops
     import distributor.system
+
     distributor.system.Distributor.instance().add_op_with_no_owner(
-        distributor.ops.SendUIMessage(message))
+        distributor.ops.SendUIMessage(message)
+    )
 
 
 def _window(title, description, rows, localized_title=None):
@@ -57,6 +62,7 @@ def _window(title, description, rows, localized_title=None):
     global _dialog_id
     import services
     from ui.ui_dialog_picker import ObjectPickerRow
+
     menu._cancel_dialog(_dialog_id)
     _dialog_id = None
     dialog = menu._picker(lang.t(title), lang.t(description), localized_title=localized_title)
@@ -69,6 +75,7 @@ def _window(title, description, rows, localized_title=None):
     icon_info = None
     try:
         from distributor.shared_messages import IconInfoData
+
         sim = services.get_active_sim()
         if sim is not None:
             icon_info = IconInfoData(obj_instance=sim)
@@ -77,10 +84,18 @@ def _window(title, description, rows, localized_title=None):
     callbacks = {}
     for index, (name, detail, callback) in enumerate(rows):
         callbacks[index] = callback
-        dialog.add_row(ObjectPickerRow(option_id=index, name=name,
-                                         row_description=detail, row_tooltip=None,
-                                         icon=None, icon_info=icon_info, tag=index,
-                                         is_selected=False))
+        dialog.add_row(
+            ObjectPickerRow(
+                option_id=index,
+                name=name,
+                row_description=detail,
+                row_tooltip=None,
+                icon=None,
+                icon_info=icon_info,
+                tag=index,
+                is_selected=False,
+            )
+        )
 
     def selected(reply):
         global _dialog_id
@@ -102,6 +117,7 @@ def _window(title, description, rows, localized_title=None):
     # The console Enter that opened this menu belongs to the console.
     # Retire queued activations before the new picker can receive them.
     import simsight_keys as keys
+
     keys.fence_opening_input()
     dialog.show_dialog()
     return True
@@ -109,6 +125,7 @@ def _window(title, description, rows, localized_title=None):
 
 def select_sim(sim_id):
     import services
+
     client = _client()
     info = services.sim_info_manager().get(sim_id)
     if client is None or info is None or info not in client.selectable_sims:
@@ -123,6 +140,7 @@ def select_sim(sim_id):
 
 def away_actions():
     import simsight_away as away
+
     return away.open_away_actions()
 
 
@@ -140,8 +158,13 @@ def household():
     for info in client.selectable_sims:
         sim_id = info.sim_id
         detail = 'active sim' if info is client.active_sim_info else 'select this sim'
-        rows.append((menu._raw(_name(info)), menu._raw(lang.t(detail)),
-                     lambda ident=sim_id: select_sim(ident)))
+        rows.append(
+            (
+                menu._raw(_name(info)),
+                menu._raw(lang.t(detail)),
+                lambda ident=sim_id: select_sim(ident),
+            )
+        )
     if not rows:
         _say('load a household first')
         return False
@@ -152,15 +175,18 @@ def funds_text(household=None):
     """'Household funds: 12,345 simoleons' for the active household."""
     if household is None:
         import services
+
         household = services.active_household()
     if household is None:
         return ''
-    return '{}: {:,} {}'.format(lang.t('household funds'),
-                                household.funds.money, lang.t('simoleons'))
+    return '{}: {:,} {}'.format(
+        lang.t('household funds'), household.funds.money, lang.t('simoleons')
+    )
 
 
 def funds():
     import services
+
     household = services.active_household()
     if household is None:
         _say('load a household first')
@@ -173,23 +199,27 @@ def read_clock():
     """The client's clock text, the same request as Control Alt C. The hub
     picker has already closed when a row callback runs."""
     import simsight_keys as keys
+
     return keys.request_clock()
 
 
 def scanner_help():
     # Retain the callback name for callers of older hub versions.
     import simsight_shortcuts as shortcuts
+
     return shortcuts.speak()
 
 
 def floor_interactions():
     import simsight_ground as ground
+
     return ground.open_floor_menu()
 
 
 def self_interactions():
     import services
     import simsight_scanner as scanner
+
     sim = services.get_active_sim()
     if sim is None or not scanner.enabled() or not scanner._scan():
         _say('action unavailable')
@@ -206,6 +236,7 @@ def _queue_entries(sim):
     the client draws: running (super, group and posture) first, then queued
     in order. Each is (info, interaction or None, state)."""
     from protocolbuffers import Sims_pb2
+
     infos = [info for info in sim.ui_manager.get_interactions_gen() if not info.canceled]
     running = [info for info in infos if info.ui_state != Sims_pb2.IQ_QUEUED]
     queued = [info for info in infos if info.ui_state == Sims_pb2.IQ_QUEUED]
@@ -234,7 +265,9 @@ def _queue_detail(info, interaction, state, position, total):
         parts.append(lang.t('queue autonomous'))
     elif interaction is not None and interaction.is_user_directed:
         parts.append(lang.t('queue chosen by you'))
-    parts.append(lang.t('queue enter cancels') if info.user_cancelable else lang.t('queue cannot cancel'))
+    parts.append(
+        lang.t('queue enter cancels') if info.user_cancelable else lang.t('queue cannot cancel')
+    )
     return '. '.join(parts)
 
 
@@ -243,6 +276,7 @@ def action_queue():
     queue as a native picker. Enter on a row cancels that action the way
     clicking its queue icon does."""
     import services
+
     sim = services.get_active_sim()
     if sim is None:
         _say('load a household first')
@@ -257,8 +291,13 @@ def action_queue():
     rows = []
     cancelable = [info.interaction_id for info, _i, _s in entries if info.user_cancelable]
     if len(cancelable) > 1:
-        rows.append((menu._raw(lang.t('cancel all actions')), None,
-                     lambda ids=tuple(cancelable): cancel_actions(sim_id, ids)))
+        rows.append(
+            (
+                menu._raw(lang.t('cancel all actions')),
+                None,
+                lambda ids=tuple(cancelable): cancel_actions(sim_id, ids),
+            )
+        )
     queued_total = sum(1 for _info, _i, state in entries if state == 'queued')
     position = 0
     for info, interaction, state in entries:
@@ -270,7 +309,9 @@ def action_queue():
         if name is None:
             continue
         detail = menu._raw(_queue_detail(info, interaction, state, position, queued_total))
-        rows.append((name, detail, lambda value=info.interaction_id: cancel_actions(sim_id, (value,))))
+        rows.append(
+            (name, detail, lambda value=info.interaction_id: cancel_actions(sim_id, (value,)))
+        )
     if not rows:
         rows.append((menu._raw(lang.t('queue empty')), None, open_hub))
     return _window('action queue', 'action queue instructions', rows)
@@ -280,6 +321,7 @@ def cancel_actions(sim_id, interaction_ids):
     """Cancel on the simulation thread after the picker closes. Everything is
     looked up again: the Sim or the action may have changed meanwhile."""
     import services
+
     sim = services.get_active_sim()
     if sim is None or sim.id != sim_id:
         _say('sim unavailable')
@@ -290,7 +332,8 @@ def cancel_actions(sim_id, interaction_ids):
         if interaction is None:
             continue
         if interaction.user_cancelable and interaction.cancel_user(
-                cancel_reason_msg='SimSight action queue'):
+            cancel_reason_msg='SimSight action queue'
+        ):
             canceled += 1
         else:
             refused += 1
@@ -316,6 +359,7 @@ def _currency():
     """GameplayStateData.CurrentRegionCurrencyBucksType on the server side:
     the region's bucks type; INVALID (0) means simoleons."""
     import services
+
     region = services.current_region()
     return int(getattr(region, 'region_currency_bucks_type', 0) or 0) if region is not None else 0
 
@@ -326,6 +370,7 @@ def _price_text(amount, currency):
     else:
         try:
             from bucks.bucks_enums import BucksType
+
             name = BucksType(currency).name.lower()
         except Exception:
             name = ''
@@ -336,6 +381,7 @@ def _price_text(amount, currency):
 def _inventory_item(obj_id):
     """(active Sim, object) when the object is in that Sim's own inventory."""
     import services
+
     sim = services.get_active_sim()
     obj = services.inventory_manager().get(obj_id)
     inventory = sim.inventory_component if sim is not None else None
@@ -366,6 +412,7 @@ def inventory_item_menu(obj_id):
         _ui('A11yInvItemActions')
         return False
     from sims4.localization import LocalizationHelperTuning
+
     sim_id = sim.id
     rows = [(menu._raw(lang.t('item actions')), None, lambda: _ui('A11yInvItemActions'))]
     if _sellable(obj):
@@ -373,20 +420,44 @@ def inventory_item_menu(obj_id):
         currency = _currency()
         one = _price_text(_sell_price(sim, obj, 1), currency)
         if count <= 1:
-            rows.append((menu._raw(lang.t('sell for').format(one)), None,
-                         lambda: sell_inventory_item(sim_id, obj_id, 1)))
+            rows.append(
+                (
+                    menu._raw(lang.t('sell for').format(one)),
+                    None,
+                    lambda: sell_inventory_item(sim_id, obj_id, 1),
+                )
+            )
         else:
             every = _price_text(_sell_price(sim, obj, count), currency)
-            rows.append((menu._raw(lang.t('sell one for').format(one)), None,
-                         lambda: sell_inventory_item(sim_id, obj_id, 1)))
-            rows.append((menu._raw(lang.t('sell all for').format(count, every)), None,
-                         lambda: confirm_sell_all(sim_id, obj_id)))
-            rows.append((menu._raw(lang.t('choose how many to sell')), None,
-                         lambda: sell_window(sim_id, obj_id)))
+            rows.append(
+                (
+                    menu._raw(lang.t('sell one for').format(one)),
+                    None,
+                    lambda: sell_inventory_item(sim_id, obj_id, 1),
+                )
+            )
+            rows.append(
+                (
+                    menu._raw(lang.t('sell all for').format(count, every)),
+                    None,
+                    lambda: confirm_sell_all(sim_id, obj_id),
+                )
+            )
+            rows.append(
+                (
+                    menu._raw(lang.t('choose how many to sell')),
+                    None,
+                    lambda: sell_window(sim_id, obj_id),
+                )
+            )
     else:
         rows.append((menu._raw(lang.t('cannot be sold')), None, lambda: _say('cannot be sold')))
-    return _window('inventory item', 'inventory item instructions', rows,
-                   localized_title=LocalizationHelperTuning.get_object_name(obj))
+    return _window(
+        'inventory item',
+        'inventory item instructions',
+        rows,
+        localized_title=LocalizationHelperTuning.get_object_name(obj),
+    )
 
 
 def _checked_item(sim_id, obj_id):
@@ -409,18 +480,28 @@ def confirm_sell_all(sim_id, obj_id):
     if obj is None:
         return False
     from sims4.localization import LocalizationHelperTuning
+
     count = obj.stack_count()
     every = _price_text(_sell_price(sim, obj, count), _currency())
-    return _window('inventory item', 'sell all instructions', [
-        (menu._raw(lang.t('yes sell all').format(count, every)), None,
-         lambda: sell_inventory_item(sim_id, obj_id, count)),
-        (menu._raw(lang.t('no keep them')), None, lambda: _say('nothing sold'))],
-        localized_title=LocalizationHelperTuning.get_object_name(obj))
+    return _window(
+        'inventory item',
+        'sell all instructions',
+        [
+            (
+                menu._raw(lang.t('yes sell all').format(count, every)),
+                None,
+                lambda: sell_inventory_item(sim_id, obj_id, count),
+            ),
+            (menu._raw(lang.t('no keep them')), None, lambda: _say('nothing sold')),
+        ],
+        localized_title=LocalizationHelperTuning.get_object_name(obj),
+    )
 
 
 def sell_inventory_item(sim_id, obj_id, count):
     """EA's inventory panel sell request for count items of one object."""
     import services
+
     sim, obj = _checked_item(sim_id, obj_id)
     if obj is None:
         return False
@@ -435,6 +516,7 @@ def sell_inventory_item(sim_id, obj_id, count):
     from google.protobuf import text_format
     from protocolbuffers import UI_pb2
     from server_commands import inventory_commands
+
     request = UI_pb2.InventorySellRequest()
     request.sim_id = sim.id
     request.currency_type = currency
@@ -442,8 +524,9 @@ def sell_inventory_item(sim_id, obj_id, count):
     item.id = obj.id
     item.count = count
     client = services.client_manager().get_first_client()
-    inventory_commands.sim_inventory_sell_multiple(text_format.MessageToString(request),
-                                                   _connection=client.id if client is not None else None)
+    inventory_commands.sim_inventory_sell_multiple(
+        text_format.MessageToString(request), _connection=client.id if client is not None else None
+    )
     if before is not None and household.funds.money <= before:
         _say('sale failed')
         return False
@@ -460,22 +543,33 @@ def sell_window(sim_id, obj_id):
     global _sell_factory
     import services
     import simsight_keys as keys
+
     sim, obj = _checked_item(sim_id, obj_id)
     if obj is None:
         return False
     from sims4.localization import LocalizationHelperTuning
     from ui.ui_dialog_picker import UiSellPicker, PurchasePickerRow
+
     if _sell_factory is None:
         _sell_factory = UiSellPicker.TunableFactory()
     name = LocalizationHelperTuning.get_object_name(obj)
-    dialog = _sell_factory.default(sim, title=lambda *args, **kwargs: name,
-                                   text=lambda *args, **kwargs: menu._raw(lang.t('sell window instructions')))
+    dialog = _sell_factory.default(
+        sim,
+        title=lambda *args, **kwargs: name,
+        text=lambda *args, **kwargs: menu._raw(lang.t('sell window instructions')),
+    )
     dialog.inventory_object_id = sim.id
     dialog.use_dialog_pick_response = False
-    dialog.add_row(PurchasePickerRow(def_id=obj.definition.id, is_enable=True,
-                                     num_available=obj.stack_count(),
-                                     tags=obj.definition.build_buy_tags,
-                                     custom_price=_sell_price(sim, obj, 1), objects={obj}))
+    dialog.add_row(
+        PurchasePickerRow(
+            def_id=obj.definition.id,
+            is_enable=True,
+            num_available=obj.stack_count(),
+            tags=obj.definition.build_buy_tags,
+            custom_price=_sell_price(sim, obj, 1),
+            objects={obj},
+        )
+    )
     currency = _currency()
 
     def sold(reply):
@@ -518,8 +612,10 @@ def sell_window(sim_id, obj_id):
 # Household Sims are never sent away. Everything is looked up again when a
 # row is chosen: the event may have ended meanwhile.
 
+
 def _situation_manager():
     import services
+
     return services.get_zone_situation_manager()
 
 
@@ -531,6 +627,7 @@ def _events():
 def _guests(situation):
     """Sims in the event who are not in the active household."""
     import services
+
     household = services.active_household()
     home = getattr(household, 'id', None)
     guests = []
@@ -572,8 +669,13 @@ def events_window():
         name = getattr(situation, 'display_name', None)
         if name is None:
             continue
-        rows.append((name, menu._raw(_event_detail(situation)),
-                     lambda value=situation.id: event_actions(value)))
+        rows.append(
+            (
+                name,
+                menu._raw(_event_detail(situation)),
+                lambda value=situation.id: event_actions(value),
+            )
+        )
     if not rows:
         _say('no events')
         return False
@@ -593,20 +695,35 @@ def event_actions(situation_id):
     manager, situation = _event(situation_id)
     if situation is None:
         return False
-    rows = [(menu._raw(lang.t('current event goals')), None,
-             lambda: event_goals(situation_id)),
-            (menu._raw(lang.t('send guests home and end event')), None,
-             lambda: end_event(situation_id, send_home=True, end=True)),
-            (menu._raw(lang.t('end event')), None,
-             lambda: end_event(situation_id, send_home=False, end=True)),
-            (menu._raw(lang.t('send guests home')), None,
-             lambda: end_event(situation_id, send_home=True, end=False))]
-    return _window('events', 'event actions instructions', rows,
-                   localized_title=getattr(situation, 'display_name', None))
+    rows = [
+        (menu._raw(lang.t('current event goals')), None, lambda: event_goals(situation_id)),
+        (
+            menu._raw(lang.t('send guests home and end event')),
+            None,
+            lambda: end_event(situation_id, send_home=True, end=True),
+        ),
+        (
+            menu._raw(lang.t('end event')),
+            None,
+            lambda: end_event(situation_id, send_home=False, end=True),
+        ),
+        (
+            menu._raw(lang.t('send guests home')),
+            None,
+            lambda: end_event(situation_id, send_home=True, end=False),
+        ),
+    ]
+    return _window(
+        'events',
+        'event actions instructions',
+        rows,
+        localized_title=getattr(situation, 'display_name', None),
+    )
 
 
 def event_goals(situation_id):
     import simsight_event_goals as goals
+
     return goals.open_goals(situation_id)
 
 
@@ -639,12 +756,16 @@ def end_event(situation_id, send_home, end):
     return ended or sent > 0
 
 
-@sims4.commands.Command('simsight.events', 'a11y.events', command_type=sims4.commands.CommandType.Live)
+@sims4.commands.Command(
+    'simsight.events', 'a11y.events', command_type=sims4.commands.CommandType.Live
+)
 def a11y_events(_connection=None):
     return events_window()
 
 
-@sims4.commands.Command('simsight.invitem_enc', 'a11y.invitem_enc', command_type=sims4.commands.CommandType.Live)
+@sims4.commands.Command(
+    'simsight.invitem_enc', 'a11y.invitem_enc', command_type=sims4.commands.CommandType.Live
+)
 def a11y_invitem_enc(text: str = '', _connection=None):
     try:
         obj_id = int(text.strip())
@@ -660,20 +781,29 @@ def a11y_invitem_enc(text: str = '', _connection=None):
 # redo and the grid aim are the ordinary requests. Native feedback is what
 # the player hears.
 BUILD_ACTIONS = (
-    ('build cursor on', 'on'), ('build cursor off', 'off'),
-    ('move left', 'menu:left'), ('move right', 'menu:right'),
-    ('move up', 'menu:up'), ('move down', 'menu:down'),
-    ('fine step', 'menu:fine'), ('coarse step', 'menu:coarse'),
-    ('center cursor', 'menu:center'), ('aim at grid point', 'grid'),
-    ('select or place', 'menu:click'), ('cancel tool', 'menu:cancel'),
-    ('rotate left', 'menu:rotateleft'), ('rotate right', 'menu:rotateright'),
-    ('undo', 'undo'), ('redo', 'redo'),
+    ('build cursor on', 'on'),
+    ('build cursor off', 'off'),
+    ('move left', 'menu:left'),
+    ('move right', 'menu:right'),
+    ('move up', 'menu:up'),
+    ('move down', 'menu:down'),
+    ('fine step', 'menu:fine'),
+    ('coarse step', 'menu:coarse'),
+    ('center cursor', 'menu:center'),
+    ('aim at grid point', 'grid'),
+    ('select or place', 'menu:click'),
+    ('cancel tool', 'menu:cancel'),
+    ('rotate left', 'menu:rotateleft'),
+    ('rotate right', 'menu:rotateright'),
+    ('undo', 'undo'),
+    ('redo', 'redo'),
     ('cursor status', 'menu:status'),
 )
 
 
 def _build_action(action):
     import simsight_build as build
+
     if action.startswith('menu:'):
         return build.request_menu(action[5:])
     return build.request(action)
@@ -681,6 +811,7 @@ def _build_action(action):
 
 def build_actions():
     import simsight_build as build
+
     if not build.controls_enabled():
         return build.refuse_disabled()
     if build._zone() is None:
@@ -688,8 +819,7 @@ def build_actions():
         return False
     rows = []
     for label, action in BUILD_ACTIONS:
-        rows.append((menu._raw(lang.t(label)), None,
-                     lambda value=action: _build_action(value)))
+        rows.append((menu._raw(lang.t(label)), None, lambda value=action: _build_action(value)))
     return _window('build actions', 'build actions instructions', rows)
 
 
@@ -699,13 +829,18 @@ def _rows(actions):
 
 def _group(title, actions):
     def open_group():
-        return _window(title, 'accessibility menu instructions',
-                       _rows(actions + (('back to accessibility menu', open_hub),)))
+        return _window(
+            title,
+            'accessibility menu instructions',
+            _rows(actions + (('back to accessibility menu', open_hub),)),
+        )
+
     return title, open_group
 
 
 def _nearby_objects():
     import simsight_scanner as scanner
+
     if scanner.enabled():
         return menu._show_scanner_window(group=scanner.OBJECTS)
     _say('enable the scanner first')
@@ -715,6 +850,7 @@ def _nearby_objects():
 def _travel():
     import services
     import simsight_travel as travel
+
     sim = services.get_active_sim()
     if sim is None or sim.zone_id != services.current_zone_id():
         _say('sim unavailable')
@@ -749,52 +885,88 @@ def open_hub():
     panels = {label: (lambda value=message: _ui(value)) for label, message in PANELS}
     building = place.in_build_mode()
     build_tools = ()
-    lot_tools = (('household funds', funds), ('owned businesses', panels['owned businesses']),
-                 ('businesses', business.businesses_window), ('Floor actions here', floor_interactions))
+    lot_tools = (
+        ('household funds', funds),
+        ('owned businesses', panels['owned businesses']),
+        ('businesses', business.businesses_window),
+        ('Floor actions here', floor_interactions),
+    )
     if build.controls_enabled():
         if building:
-            build_tools = (('guided placement', place.guided_placement),
-                           ('build placement', grid.placement_toggle),
-                           ('undo last accessible placement', place.undo))
+            build_tools = (
+                ('guided placement', place.guided_placement),
+                ('build placement', grid.placement_toggle),
+                ('undo last accessible placement', place.undo),
+            )
         else:
             lot_tools += (('read-only lot grid', grid.toggle),)
     groups = (
-        _group('yourself', (('self interactions', self_interactions),
-                            ('simology', panels['simology'])) + pack_rows),
+        _group(
+            'yourself',
+            (('self interactions', self_interactions), ('simology', panels['simology']))
+            + pack_rows,
+        ),
         ('needs', panels['needs']),
         ('mood and moodlets', panels['mood and moodlets']),
-        _group('Sims', (('household sims', household), ('away actions', away_actions),
-                        ('known contacts', contacts.open_contacts))),
+        _group(
+            'Sims',
+            (
+                ('household sims', household),
+                ('away actions', away_actions),
+                ('known contacts', contacts.open_contacts),
+            ),
+        ),
         ('nearby objects', _nearby_objects),
         ('inventory', panels['inventory']),
-        _group('places', (('travel', _travel), ('calendar', panels['calendar']), ('events', events_window))),
+        _group(
+            'places',
+            (('travel', _travel), ('calendar', panels['calendar']), ('events', events_window)),
+        ),
         _group('home and lot', lot_tools),
         ('skills', panels['skills']),
-        _group('wishes and aspirations', (('wants and fears', panels['wants and fears']),
-                                          ('aspirations', panels['aspirations']))),
-        _group('relationships', (('relationships', panels['relationships']),
-                                 ('social groups', panels['social groups']))),
+        _group(
+            'wishes and aspirations',
+            (
+                ('wants and fears', panels['wants and fears']),
+                ('aspirations', panels['aspirations']),
+            ),
+        ),
+        _group(
+            'relationships',
+            (
+                ('relationships', panels['relationships']),
+                ('social groups', panels['social groups']),
+            ),
+        ),
         ('career', panels['career']),
         _group('now', (('action queue', action_queue), ('day and time', read_clock))),
     )
-    other = (('waiting call or text', phone.open_waiting),
-             ('photography controls', panels['photography controls']))
+    other = (
+        ('waiting call or text', phone.open_waiting),
+        ('photography controls', panels['photography controls']),
+    )
     if phone.simplified():
         other += (('phone', phone.open_list),)
     other += (('keyboard shortcuts', scanner_help), ('settings menu', menu._show_settings_window))
     # Mac: the phone companion first, the row people come here for most.
-    return _window('accessibility menu', 'accessibility menu instructions',
-                   _rows(_companion_rows() + build_tools + groups + other))
+    return _window(
+        'accessibility menu',
+        'accessibility menu instructions',
+        _rows(_companion_rows() + build_tools + groups + other),
+    )
 
 
 def _companion_rows():
     """The phone companion's QR code page and the setup page (macOS, Windows)."""
     import sys
+
     bridge = sys.modules.get('simsight_bridge')
     if sys.platform not in ('darwin', 'win32') or bridge is None:
         return ()
-    return (('phone companion', bridge.open_pairing_page),
-            ('companion setup', bridge.open_setup_page))
+    return (
+        ('phone companion', bridge.open_pairing_page),
+        ('companion setup', bridge.open_setup_page),
+    )
 
 
 @sims4.commands.Command('simsight.hub', 'a11y.hub', command_type=sims4.commands.CommandType.Live)
@@ -802,16 +974,22 @@ def a11y_hub(_connection=None):
     return open_hub()
 
 
-@sims4.commands.Command('simsight.buildmenu', 'a11y.buildmenu', command_type=sims4.commands.CommandType.Live)
+@sims4.commands.Command(
+    'simsight.buildmenu', 'a11y.buildmenu', command_type=sims4.commands.CommandType.Live
+)
 def a11y_buildmenu(_connection=None):
     return build_actions()
 
 
-@sims4.commands.Command('simsight.household', 'a11y.household', command_type=sims4.commands.CommandType.Live)
+@sims4.commands.Command(
+    'simsight.household', 'a11y.household', command_type=sims4.commands.CommandType.Live
+)
 def a11y_household(_connection=None):
     return household()
 
 
-@sims4.commands.Command('simsight.funds', 'a11y.funds', command_type=sims4.commands.CommandType.Live)
+@sims4.commands.Command(
+    'simsight.funds', 'a11y.funds', command_type=sims4.commands.CommandType.Live
+)
 def a11y_funds(_connection=None):
     return funds()

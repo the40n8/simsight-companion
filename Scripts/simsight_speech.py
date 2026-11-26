@@ -1,6 +1,8 @@
 """Screen-reader output through Prism, with configurable Windows speech fallback."""
+
 import os
 import sys
+
 try:
     import atexit
 except ImportError:
@@ -30,7 +32,7 @@ def _mods_folder():
     lower = path.lower()
     marker = '.ts4script'
     if marker in lower:
-        zip_path = path[:lower.index(marker) + len(marker)]
+        zip_path = path[: lower.index(marker) + len(marker)]
         return os.path.dirname(zip_path)
     return os.path.dirname(path)
 
@@ -58,9 +60,11 @@ def _mods_root():
 
 def _prism_path():
     pack = 'SimSight_SpeechPack'
-    candidates = [os.path.join(MODS_FOLDER, pack, 'prism.dll'),
-                  os.path.join(MODS_FOLDER, 'prism.dll'),
-                  os.path.join(_mods_root(), pack, 'prism.dll')]
+    candidates = [
+        os.path.join(MODS_FOLDER, pack, 'prism.dll'),
+        os.path.join(MODS_FOLDER, 'prism.dll'),
+        os.path.join(_mods_root(), pack, 'prism.dll'),
+    ]
     return next((p for p in candidates if os.path.isfile(p)), candidates[0])
 
 
@@ -95,6 +99,7 @@ speech_mode = 'hover'
 
 try:
     import simsight_settings as _settings
+
     log_enabled = bool(_settings.get('logging'))
     _stored_braille = str(_settings.get('braille_mode', braille_mode))
     if _stored_braille in ('concise', 'full', 'only', 'off'):
@@ -122,6 +127,7 @@ def _try_init_prism():
         return False
     try:
         from simsight_prism import Reader
+
         _prism = Reader(PRISM_DLL_PATH, log_line)
         log_line('Prism loaded from {}'.format(PRISM_DLL_PATH))
         return True
@@ -156,46 +162,52 @@ def _sapi_script():
     own screen reader settings."""
     try:
         import simsight_settings as _s
+
         rate = max(-10, min(10, int(_s.get('sapi_rate'))))
         volume = max(0, min(100, int(_s.get('sapi_volume'))))
         voice = str(_s.get('sapi_voice') or '')
     except Exception:
         rate, volume, voice = 3, 70, 'zira'
     script = (
-        "Add-Type -AssemblyName System.Speech; "
-        "$sp = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
-        "$sp.Rate = {}; $sp.Volume = {}; ".format(rate, volume))
+        'Add-Type -AssemblyName System.Speech; '
+        '$sp = New-Object System.Speech.Synthesis.SpeechSynthesizer; '
+        '$sp.Rate = {}; $sp.Volume = {}; '.format(rate, volume)
+    )
     if voice:
         # Case-insensitive partial match, so "david"/"zira"/"hazel" work
         # without the full "Microsoft ... Desktop" name.
         script += (
             "$want = '{}'.ToLower(); "
-            "foreach($iv in $sp.GetInstalledVoices()) {{ "
-            "if($iv.VoiceInfo.Name.ToLower().Contains($want)) {{ "
-            "try {{ $sp.SelectVoice($iv.VoiceInfo.Name) }} catch {{}}; break }} }}; "
+            'foreach($iv in $sp.GetInstalledVoices()) {{ '
+            'if($iv.VoiceInfo.Name.ToLower().Contains($want)) {{ '
+            'try {{ $sp.SelectVoice($iv.VoiceInfo.Name) }} catch {{}}; break }} }}; '
         ).format(voice.replace("'", "''"))
     script += (
-        "while ($true) { "
-        "$l = [Console]::In.ReadLine(); "
-        "if ($null -eq $l) { break }; "
-        "if ($l.Length -lt 1) { continue }; "
+        'while ($true) { '
+        '$l = [Console]::In.ReadLine(); '
+        'if ($null -eq $l) { break }; '
+        'if ($l.Length -lt 1) { continue }; '
         "if ($l[0] -ne 'Q') { $sp.SpeakAsyncCancelAll() }; "
-        "if ($l.Length -lt 2) { continue }; "
-        "$t = [System.Uri]::UnescapeDataString($l.Substring(1)); "
-        "[void]$sp.SpeakAsync($t) }")
+        'if ($l.Length -lt 2) { continue }; '
+        '$t = [System.Uri]::UnescapeDataString($l.Substring(1)); '
+        '[void]$sp.SpeakAsync($t) }'
+    )
     return script
 
 
 def _mac_say_path():
-    candidates = [os.path.join(MODS_FOLDER, 'simsight-say'),
-                  os.path.join(MODS_FOLDER, 'SimSight_Mac', 'simsight-say'),
-                  os.path.join(_mods_root(), 'SimSight_Mac', 'simsight-say')]
+    candidates = [
+        os.path.join(MODS_FOLDER, 'simsight-say'),
+        os.path.join(MODS_FOLDER, 'SimSight_Mac', 'simsight-say'),
+        os.path.join(_mods_root(), 'SimSight_Mac', 'simsight-say'),
+    ]
     return next((p for p in candidates if os.path.isfile(p)), None)
 
 
 def _mac_lang():
     try:
         import simsight_lang as _lang
+
         code = getattr(_lang, '_locale_lang', None)  # only once the client locale is known
     except Exception:
         code = None
@@ -206,12 +218,13 @@ def _try_init_mac_say():
     global _sapi_proc
     try:
         import simsight_settings as _s
+
         rate = max(-10, min(10, int(_s.get('sapi_rate'))))
         volume = max(0, min(100, int(_s.get('sapi_volume'))))
         voice = str(_s.get('sapi_voice') or '')
     except Exception:
         rate, volume, voice = 3, 70, ''
-    if voice.lower() == 'zira':   # the Windows default voice
+    if voice.lower() == 'zira':  # the Windows default voice
         voice = ''
     lang = _mac_lang()
     # Through the companion bridge when it runs (phone app); the game already
@@ -233,8 +246,12 @@ def _try_init_mac_say():
         args += ['--lang', lang]
     try:
         _sapi_proc = subprocess.Popen(
-            args, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL, close_fds=True)
+            args,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=True,
+        )
         log_line('macOS speech companion started: {}'.format(' '.join(args[1:])))
         return True
     except Exception as ex:
@@ -278,12 +295,16 @@ def _try_init_sapi():
         job = proc = None
         try:
             from simsight_speech_process import SpeechJob
+
             job = SpeechJob()
             proc = subprocess.Popen(
                 ['powershell', '-NoProfile', '-NonInteractive', '-Command', _sapi_script()],
-                stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL, creationflags=0x08000000,
-                close_fds=True)
+                stdin=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=0x08000000,
+                close_fds=True,
+            )
             job.assign(proc)
             _sapi_proc, _sapi_job = proc, job
             return True
@@ -327,22 +348,36 @@ def list_voices():
         if path is None:
             return []
         try:
-            out = subprocess.run([path, '--list-voices'], stdout=subprocess.PIPE,
-                                 stderr=subprocess.DEVNULL, timeout=10)
-            return [line.split('\t')[1] for line in
-                    out.stdout.decode('utf-8', 'replace').splitlines()
-                    if line.count('\t') >= 2]
+            out = subprocess.run(
+                [path, '--list-voices'],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                timeout=10,
+            )
+            return [
+                line.split('\t')[1]
+                for line in out.stdout.decode('utf-8', 'replace').splitlines()
+                if line.count('\t') >= 2
+            ]
         except Exception as ex:
             log_line('voice list failed: {!r}'.format(ex))
             return []
     try:
         out = subprocess.run(
-            ['powershell', '-NoProfile', '-NonInteractive', '-Command',
-             "Add-Type -AssemblyName System.Speech; "
-             "(New-Object System.Speech.Synthesis.SpeechSynthesizer)"
-             ".GetInstalledVoices() | ForEach-Object { $_.VoiceInfo.Name }"],
-            capture_output=True, text=True, timeout=10,
-            creationflags=0x08000000)
+            [
+                'powershell',
+                '-NoProfile',
+                '-NonInteractive',
+                '-Command',
+                'Add-Type -AssemblyName System.Speech; '
+                '(New-Object System.Speech.Synthesis.SpeechSynthesizer)'
+                '.GetInstalledVoices() | ForEach-Object { $_.VoiceInfo.Name }',
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            creationflags=0x08000000,
+        )
         return [line.strip() for line in out.stdout.splitlines() if line.strip()]
     except Exception as ex:
         log_line('voice list failed: {!r}'.format(ex))
@@ -423,14 +458,18 @@ def _beep():
     def _play():
         try:
             if IS_MAC:
-                subprocess.Popen(['/usr/bin/afplay', '-v', '0.4',
-                                  '/System/Library/Sounds/Tink.aiff'],
-                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.Popen(
+                    ['/usr/bin/afplay', '-v', '0.4', '/System/Library/Sounds/Tink.aiff'],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
                 return
             import ctypes
+
             ctypes.windll.kernel32.Beep(1150, 45)
         except Exception:
             pass
+
     threading.Thread(target=_play, daemon=True).start()
 
 
@@ -441,13 +480,20 @@ def set_mode(mode):
     speech_mode = mode
     try:
         import simsight_settings as _s
+
         _s.set('speech_mode', mode)
     except Exception:
         pass
     log_line('speech mode -> {}'.format(mode))
-    _speak_now({'hover': 'Speech on.', 'manual': 'Speech manual.',
-                'beeps': 'Speech beeps.', 'off': 'Speech off.'}[mode],
-               source='widget')
+    _speak_now(
+        {
+            'hover': 'Speech on.',
+            'manual': 'Speech manual.',
+            'beeps': 'Speech beeps.',
+            'off': 'Speech off.',
+        }[mode],
+        source='widget',
+    )
     return True
 
 
@@ -488,7 +534,7 @@ def speak_progressive(head, body, source='tooltip', delay=1.2, head_spoken=False
     _captured_text = full
     _captured_time = time.monotonic()
     if not body or speech_mode != 'hover':
-        return          # other modes never auto-speak, so nothing to defer
+        return  # other modes never auto-speak, so nothing to defer
     # The head is playing right now and the body is on its way, so the user
     # is hearing this capture: the read key must STOP. speak() armed the key
     # with the head alone, which broke the stop-equality and made the key
@@ -507,7 +553,7 @@ def _flush_deferred(body, source):
     _deferred_timer = None
     if speech_mode != 'hover':
         return
-    _last_repeated = _captured_text     # heard in full: 8 now stops
+    _last_repeated = _captured_text  # heard in full: 8 now stops
     _speak_now(body, source)
 
 
@@ -569,19 +615,21 @@ def speak(text, interrupt=True, source='tooltip', explicit=False):
     if not text:
         return
     init()
-    _cancel_deferred()   # a new utterance drops any held-back tooltip body
+    _cancel_deferred()  # a new utterance drops any held-back tooltip body
     now = time.monotonic()
     if not explicit:
         # Command confirmations are not "what the pointer is on", so they
         # never become the capture the read-current key repeats. A bare
         # label re-announcing a fresh richer capture of the same control
         # keeps the richer line for the read key.
-        keep_richer = (_captured_text is not None
-                       and now - _captured_time < _QUEUE_AFTER_WIDGET_WINDOW
-                       and _adds_nothing(text, _captured_text))
+        keep_richer = (
+            _captured_text is not None
+            and now - _captured_time < _QUEUE_AFTER_WIDGET_WINDOW
+            and _adds_nothing(text, _captured_text)
+        )
         if not keep_richer:
             if text != _captured_text:
-                _last_repeated = None   # new capture re-arms the read key
+                _last_repeated = None  # new capture re-arms the read key
             _captured_text = text
         _captured_time = now
     # Speech modes: automatic narration is suppressed in manual (captured
@@ -589,8 +637,7 @@ def speak(text, interrupt=True, source='tooltip', explicit=False):
     # off. Explicit speech (command feedback, read-current) always talks.
     # Deafblind exception: in braille-only mode the braille stream keeps
     # flowing regardless of speech mode.
-    if (not explicit and speech_mode != 'hover'
-            and not (braille_mode == 'only' and has_braille())):
+    if not explicit and speech_mode != 'hover' and not (braille_mode == 'only' and has_braille()):
         log_line('CAPTURE[{}/{}]: {}'.format(speech_mode, source[0], text))
         if speech_mode == 'beeps':
             _beep()
@@ -674,8 +721,7 @@ def request_hush(grace=0.8):
     with _speech_lock:
         if _pending.get('widget') is not None:
             return
-    if (_last_source == 'widget' and _last_text is not None
-            and (now - _last_time) < grace):
+    if _last_source == 'widget' and _last_text is not None and (now - _last_time) < grace:
         return
     stop()
 
@@ -702,15 +748,19 @@ _CAPTION_MAX_CHARS = 480
 def _send_caption(text):
     """Simulation thread only; recheck the toggle for queued utterances."""
     import simsight_settings as settings
+
     if text and not settings.get('captions', False):
         return
     import distributor.ops
     import distributor.system
+
     # Same UTF-8 percent encoding as Flash encodeURIComponent. Escape all
     # bytes outside the unreserved ASCII set, including pipes and percent.
     safe = b'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.~'
-    encoded = ''.join(chr(byte) if byte in safe else '%{:02X}'.format(byte)
-                      for byte in text.encode('utf-8', errors='replace'))
+    encoded = ''.join(
+        chr(byte) if byte in safe else '%{:02X}'.format(byte)
+        for byte in text.encode('utf-8', errors='replace')
+    )
     op = distributor.ops.SendUIMessage('A11y|cap|' + encoded)
     distributor.system.Distributor.instance().add_op_with_no_owner(op)
 
@@ -718,11 +768,13 @@ def _send_caption(text):
 def _post_caption(text):
     try:
         import simsight_settings as settings
+
         if text and not settings.get('captions', False):
             return
         import simsight_pump as pump
+
         if len(text) > _CAPTION_MAX_CHARS:
-            text = text[:_CAPTION_MAX_CHARS - 1] + '\u2026'
+            text = text[: _CAPTION_MAX_CHARS - 1] + '\u2026'
         pump.post(_send_caption, text)
     except Exception as ex:
         log_line('caption: post failed: {!r}'.format(ex))
@@ -737,9 +789,13 @@ def _speak_now(text, source='tooltip'):
     now = time.monotonic()
     if text == _last_text and (now - _last_time) < 1.0:
         return
-    if (source == 'widget' and _last_source == 'widget' and _last_text
-            and (now - _last_time) < _QUEUE_AFTER_WIDGET_WINDOW
-            and _adds_nothing(text, _last_text)):
+    if (
+        source == 'widget'
+        and _last_source == 'widget'
+        and _last_text
+        and (now - _last_time) < _QUEUE_AFTER_WIDGET_WINDOW
+        and _adds_nothing(text, _last_text)
+    ):
         # A bare label re-announcing the control whose richer line is still
         # playing ("Hunger" cutting off "Hunger. 80%"): information-free,
         # and widget-over-widget interrupts, so speaking it truncated the
@@ -759,8 +815,11 @@ def _speak_now(text, source='tooltip'):
             return
         text = '. '.join(segs)
     interrupt = True
-    if (source == 'tooltip' and _last_source == 'widget'
-            and (now - _last_time) < _QUEUE_AFTER_WIDGET_WINDOW):
+    if (
+        source == 'tooltip'
+        and _last_source == 'widget'
+        and (now - _last_time) < _QUEUE_AFTER_WIDGET_WINDOW
+    ):
         interrupt = False
     if source == 'event':
         # Ambient narration (e.g. "what is my sim doing") never cuts off
@@ -797,5 +856,6 @@ def _speak_now(text, source='tooltip'):
             # No available screen reader; use the configured Windows voice.
             _try_init_sapi()
     from urllib.parse import quote
+
     line = ('I' if interrupt else 'Q') + quote(text) + '\n'
     _write_sapi(line.encode('ascii'), 'speak')

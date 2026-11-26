@@ -19,6 +19,7 @@ can be built from what a sighted player is actually shown:
 The log names hidden answers (the sickness, correct treatments) on purpose:
 it is research data for the developers, never narration.
 """
+
 import simsight_speech as speech
 
 _installed = False
@@ -33,14 +34,19 @@ def _name(obj):
 def _sim_info(target):
     if target is None:
         return None
-    return getattr(target, 'sim_info', None) or (target if hasattr(target, 'sickness_tracker') else None)
+    return getattr(target, 'sim_info', None) or (
+        target if hasattr(target, 'sickness_tracker') else None
+    )
 
 
 def _sick(target):
     info = _sim_info(target)
     try:
-        return info is not None and info.sickness_tracker is not None and \
-            info.sickness_tracker.current_sickness is not None
+        return (
+            info is not None
+            and info.sickness_tracker is not None
+            and info.sickness_tracker.current_sickness is not None
+        )
     except Exception:
         return False
 
@@ -49,8 +55,11 @@ def _who(target):
     info = _sim_info(target)
     if info is None:
         return repr(target)
-    return '{} {} ({})'.format(getattr(info, 'first_name', ''), getattr(info, 'last_name', ''),
-                               getattr(info, 'sim_id', '?'))
+    return '{} {} ({})'.format(
+        getattr(info, 'first_name', ''),
+        getattr(info, 'last_name', ''),
+        getattr(info, 'sim_id', '?'),
+    )
 
 
 def _log(text):
@@ -60,8 +69,16 @@ def _log(text):
 
 def _buff_fields(buff):
     parts = []
-    for field in ('visible', 'vfx', 'cas_vfx', 'appearance_modifier', 'walkstyle', 'audio_sting_on_add',
-                  'voice_pitch_modifier', 'mood_type'):
+    for field in (
+        'visible',
+        'vfx',
+        'cas_vfx',
+        'appearance_modifier',
+        'walkstyle',
+        'audio_sting_on_add',
+        'voice_pitch_modifier',
+        'mood_type',
+    ):
         value = getattr(buff, field, None)
         if value:
             parts.append('{}={}'.format(field, _short(value)))
@@ -99,6 +116,7 @@ def _wrap_method(cls, name, after):
         except Exception as ex:
             _log('{}.{} log failed: {!r}'.format(cls.__name__, name, ex))
         return result
+
     wrapper.__name__ = original.__name__
     setattr(cls, name, wrapper)
 
@@ -113,6 +131,7 @@ def _wrap_classmethod(cls, name, after):
         except Exception as ex:
             _log('{}.{} log failed: {!r}'.format(cls.__name__, name, ex))
         return result
+
     wrapper.__name__ = original.__name__
     setattr(cls, name, classmethod(wrapper))
 
@@ -125,8 +144,11 @@ def _install_sickness():
         info = args[0] if args else kwargs.get('sim_info')
         if not speech.log_enabled:
             return
-        _log('sickness {} applied to {} (from_load={})'.format(_name(klass), _who(info),
-                                                                  kwargs.get('from_load', args[1:2])))
+        _log(
+            'sickness {} applied to {} (from_load={})'.format(
+                _name(klass), _who(info), kwargs.get('from_load', args[1:2])
+            )
+        )
         for symptom in getattr(klass, 'symptoms', ()) or ():
             _log('  symptom {}'.format(_name(symptom)))
             for line in _describe_symptom(symptom):
@@ -140,7 +162,12 @@ def _install_sickness():
             _log('  discovery order {}'.format(order))
         except Exception:
             pass
-        _log('  correct treatments {}'.format([_name(a) for a in getattr(klass, 'correct_treatments', ()) or ()]))
+        _log(
+            '  correct treatments {}'.format(
+                [_name(a) for a in getattr(klass, 'correct_treatments', ()) or ()]
+            )
+        )
+
     _wrap_classmethod(Sickness, 'apply_to_sim_info', applied)
 
     def tracker_event(label):
@@ -148,13 +175,17 @@ def _install_sickness():
             value = args[0] if args else None
             shown = _short(value) if isinstance(value, (int, float)) else _name(value)
             _log('{} {}: {}'.format(_who(getattr(tracker, '_sim_info', None)), label, shown))
+
         return after
-    for method, label in (('discover_symptom', 'symptom discovered'),
-                          ('discover_sickness', 'sickness discovered'),
-                          ('track_examination', 'exam done'),
-                          ('track_treatment', 'treatment done'),
-                          ('rule_out_treatment', 'treatment ruled out'),
-                          ('record_last_progress', 'diagnosis progress')):
+
+    for method, label in (
+        ('discover_symptom', 'symptom discovered'),
+        ('discover_sickness', 'sickness discovered'),
+        ('track_examination', 'exam done'),
+        ('track_treatment', 'treatment done'),
+        ('rule_out_treatment', 'treatment ruled out'),
+        ('record_last_progress', 'diagnosis progress'),
+    ):
         _wrap_method(SicknessTracker, method, tracker_event(label))
 
 
@@ -166,25 +197,41 @@ def _install_cues():
     def balloon(request, args, kwargs):
         sim = request._sim
         if _sick(sim):
-            _log('balloon on {}: icon={} overlay={} type={} category_icon={} icon_info={}'.format(
-                _who(sim), _short(getattr(request, 'icon', None)), _short(getattr(request, 'overlay', None)),
-                getattr(request, 'balloon_type', None), _short(getattr(request, 'category_icon', None)),
-                _short(getattr(request, 'icon_info', None))))
+            _log(
+                'balloon on {}: icon={} overlay={} type={} category_icon={} icon_info={}'.format(
+                    _who(sim),
+                    _short(getattr(request, 'icon', None)),
+                    _short(getattr(request, 'overlay', None)),
+                    getattr(request, 'balloon_type', None),
+                    _short(getattr(request, 'category_icon', None)),
+                    _short(getattr(request, 'icon_info', None)),
+                )
+            )
+
     _wrap_method(BalloonRequest, 'distribute', balloon)
 
     def headline(klass, args, kwargs):
         info = args[0] if args else kwargs.get('sim_info')
         if _sick(info):
             _log('headline {} on {}: value={}'.format(_name(klass), _who(info), args[1:2]))
+
     _wrap_classmethod(Headline, 'send_headline_message', headline)
 
     def effect(label):
         def after(play, args, kwargs):
             target = getattr(play, 'target', None)
             if _sick(target):
-                _log('vfx {} on {}: {} joint={}'.format(label, _who(target), getattr(play, 'effect_name', '?'),
-                                                       getattr(play, 'joint_name', None)))
+                _log(
+                    'vfx {} on {}: {} joint={}'.format(
+                        label,
+                        _who(target),
+                        getattr(play, 'effect_name', '?'),
+                        getattr(play, 'joint_name', None),
+                    )
+                )
+
         return after
+
     _wrap_method(PlayEffect, 'start', effect('start'))
     _wrap_method(PlayEffect, 'start_one_shot', effect('one shot'))
 
@@ -195,8 +242,14 @@ def _install_patients():
     def changed(situation, args, kwargs):
         state = args[0] if args else None
         patient = situation.get_patient() if hasattr(situation, 'get_patient') else None
-        _log('patient situation {} for {}: state {}'.format(_name(type(situation)), _who(patient),
-                                                            _name(type(state)) if state is not None else None))
+        _log(
+            'patient situation {} for {}: state {}'.format(
+                _name(type(situation)),
+                _who(patient),
+                _name(type(state)) if state is not None else None,
+            )
+        )
+
     _wrap_method(PatientSituationBase, '_change_state', changed)
 
 

@@ -1,4 +1,5 @@
 """Explicit native floor pick; never choose or enqueue a cleaning action."""
+
 import math
 import simsight_speech as speech
 
@@ -11,6 +12,7 @@ def open_floor_menu():
     import simsight_place as place
     import simsight_scanner as scanner
     from server.pick_info import PickType
+
     try:
         sim, lot = services.get_active_sim(), services.active_lot()
         if sim is None or lot is None or place.in_build_mode():
@@ -28,10 +30,11 @@ def open_floor_menu():
             raise ValueError('invalid lot ID')
         # The existing Flash bridge carries a uint. Native floor resolution
         # accepts zero as the current-lot sentinel; never truncate a wider ID.
-        if lot_id > 0xffffffff:
+        if lot_id > 0xFFFFFFFF:
             lot_id = 0
-        surface = routing.SurfaceIdentifier(services.current_zone_id(), level,
-                                            routing.SurfaceType.SURFACETYPE_WORLD)
+        surface = routing.SurfaceIdentifier(
+            services.current_zone_id(), level, routing.SurfaceType.SURFACETYPE_WORLD
+        )
         # Read the actual floor height, including foundations/platforms;
         # the Sim may currently be sitting above it on furniture.
         y = float(terrain.get_terrain_height(x, z, routing_surface=surface))
@@ -40,10 +43,16 @@ def open_floor_menu():
         # A zero target is a native surface pick, not an object pick. The
         # game creates TerrainPoint on this world's routing surface/level.
         # Reuse the client's request counter and normal pie-menu lifecycle.
-        sent = scanner._send_ui('A11y|pick|0|{}|{}||{:.3f}|{:.3f}|{:.3f}|{}'.format(
-            int(PickType.PICK_FLOOR), lot_id, x, y, z, level))
-        speech.log_line('floor actions: sim={} zone={} lot={} level={} point=({:.3f},{:.3f},{:.3f}) sent={}'.format(
-            sim.id, services.current_zone_id(), lot_id, level, x, y, z, sent))
+        sent = scanner._send_ui(
+            'A11y|pick|0|{}|{}||{:.3f}|{:.3f}|{:.3f}|{}'.format(
+                int(PickType.PICK_FLOOR), lot_id, x, y, z, level
+            )
+        )
+        speech.log_line(
+            'floor actions: sim={} zone={} lot={} level={} point=({:.3f},{:.3f},{:.3f}) sent={}'.format(
+                sim.id, services.current_zone_id(), lot_id, level, x, y, z, sent
+            )
+        )
         if not sent:
             speech.speak('The floor menu could not be requested.', explicit=True)
         return bool(sent)

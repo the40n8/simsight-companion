@@ -12,6 +12,7 @@ own hotkeys never see the keys pressed in it. Item lists and selection use the
 SimSight Plus catalog bridge in TooltipManager (A11yCatalogBrowse for lists
 and searches, A11yPlusSelect to pick up), and its replies (a11yplus.flash).
 """
+
 import threading
 from urllib.parse import quote
 
@@ -19,21 +20,26 @@ import simsight_catalogtree as tree
 
 _TAG = 'catalogtree'
 _TIMEOUT = 5.0
-_HINT = 'Press Ctrl+Alt+B to place it with the Build cursor, or Ctrl+Alt+O to choose something else.'
+_HINT = (
+    'Press Ctrl+Alt+B to place it with the Build cursor, or Ctrl+Alt+O to choose something else.'
+)
 
 
 def _core():
     import simsight_plus_core as core
+
     return core
 
 
 def _build():
     import simsight_plus_build as build
+
     return build
 
 
 def _label(key):
     import simsight_menu as menu
+
     return menu._ls_hash(key)
 
 
@@ -49,31 +55,59 @@ def _ready():
 def open_tree():
     if not _ready():
         return False
-    rows = [('Search the catalog', 'Type a word, such as bed or fridge, and choose from what matches.', ('find',)),
-            ('By room', 'Kitchen, bathroom, bedroom and other rooms, then what goes in them.', ('group', 'room')),
-            ('By function', 'Comfort, surfaces, plumbing, lighting and other kinds of object.', ('group', 'function'))]
+    rows = [
+        (
+            'Search the catalog',
+            'Type a word, such as bed or fridge, and choose from what matches.',
+            ('find',),
+        ),
+        (
+            'By room',
+            'Kitchen, bathroom, bedroom and other rooms, then what goes in them.',
+            ('group', 'room'),
+        ),
+        (
+            'By function',
+            'Comfort, surfaces, plumbing, lighting and other kinds of object.',
+            ('group', 'function'),
+        ),
+    ]
 
     def picked(value):
         if value[0] == 'find':
             find()
         else:
             _groups(value[1])
-    return _core().choose('Catalog', 'Choose how to look, or search. Escape closes.', rows, picked, tag=_TAG)
+
+    return _core().choose(
+        'Catalog', 'Choose how to look, or search. Escape closes.', rows, picked, tag=_TAG
+    )
 
 
 def _groups(kind):
     groups = tree.ROOMS if kind == 'room' else tree.FUNCTIONS
     rows = [(_label(label), None, i) for (i, (label, _subs)) in enumerate(groups)]
-    _core().choose('By room' if kind == 'room' else 'By function', 'Choose one. Escape goes back.', rows,
-                   lambda i: _subcategories(kind, i), tag=_TAG, on_cancel=open_tree)
+    _core().choose(
+        'By room' if kind == 'room' else 'By function',
+        'Choose one. Escape goes back.',
+        rows,
+        lambda i: _subcategories(kind, i),
+        tag=_TAG,
+        on_cancel=open_tree,
+    )
 
 
 def _subcategories(kind, index):
     (label, subs) = (tree.ROOMS if kind == 'room' else tree.FUNCTIONS)[index]
     rows = [(_label(sub[0]), None, j) for (j, sub) in enumerate(subs)]
-    _core().choose(_label(label), 'Choose a kind of item. Escape goes back.', rows,
-                   lambda j: _browse(subs[j], back=lambda: _subcategories(kind, index)),
-                   tag=_TAG, on_cancel=lambda: _groups(kind))
+    _core().choose(
+        _label(label),
+        'Choose a kind of item. Escape goes back.',
+        rows,
+        lambda j: _browse(subs[j], back=lambda: _subcategories(kind, index)),
+        tag=_TAG,
+        on_cancel=lambda: _groups(kind),
+    )
 
 
 class _Arrived(object):
@@ -96,12 +130,17 @@ def _request(product_type, tags, priority, search, on_done):
     serial = build._cat['serial']
     arrived = _Arrived(lambda: on_done(list(build._cat['items'])))
     build._cat.update(items=[], total=0, name='', next='tree', quiet=arrived)
-    build._send_ui('A11y|plus|browse|{}|{}|{}|{}|{}'.format(product_type, tags, priority, serial, quote(search, safe='')))
+    build._send_ui(
+        'A11y|plus|browse|{}|{}|{}|{}|{}'.format(
+            product_type, tags, priority, serial, quote(search, safe='')
+        )
+    )
 
     def timeout():
         if not arrived.done and build._cat['serial'] == serial:
             arrived.done = True
             _core().speak('The catalog did not answer. Open Build mode with F2 and try again.')
+
     threading.Timer(_TIMEOUT, lambda: _core().post(timeout)).start()
 
 
@@ -114,6 +153,7 @@ def _browse(sub, back):
             back()
             return
         _items(_label(label), items, back)
+
     _core().speak('Loading.')
     _request(product_type, tags, priority, '', arrived)
 
@@ -126,9 +166,17 @@ def _describe(price, colours):
 
 
 def _items(title, items, back):
-    rows = [(name, _describe(price, colours), i) for (i, (name, price, colours)) in enumerate(items)]
-    _core().choose(title, '{} items. Enter picks one up to place. Escape goes back.'.format(len(items)), rows,
-                   _pick, tag=_TAG, on_cancel=back)
+    rows = [
+        (name, _describe(price, colours), i) for (i, (name, price, colours)) in enumerate(items)
+    ]
+    _core().choose(
+        title,
+        '{} items. Enter picks one up to place. Escape goes back.'.format(len(items)),
+        rows,
+        _pick,
+        tag=_TAG,
+        on_cancel=back,
+    )
 
 
 def _pick(index):
@@ -149,7 +197,13 @@ def find():
             open_tree()
             return
         search(text)
-    return _core().ask_text('Search the catalog', 'Type what you are looking for, for example bed, fridge or lamp.', '', typed)
+
+    return _core().ask_text(
+        'Search the catalog',
+        'Type what you are looking for, for example bed, fridge or lamp.',
+        '',
+        typed,
+    )
 
 
 def search(text):
@@ -159,5 +213,6 @@ def search(text):
             find()
             return
         _items('Results for {}'.format(text), items, open_tree)
+
     _core().speak('Searching.')
     _request(2, '', '', text, arrived)

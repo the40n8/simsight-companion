@@ -17,6 +17,7 @@ object. Nothing here builds a ChoiceMenu or touches the client's choices.
 A verdict that keeps coming back the same is checked less often, and an
 object whose checks are slow waits longer still, up to MAX_RECHECK_SECONDS.
 """
+
 import sys
 import time
 
@@ -31,24 +32,24 @@ USABLE = 'usable'
 LOCKED = 'locked'
 EMPTY = 'empty'
 
-RECHECK_SECONDS = 10.0     # first recheck; doubles while the verdict holds
+RECHECK_SECONDS = 10.0  # first recheck; doubles while the verdict holds
 MAX_RECHECK_SECONDS = 60.0
-SLOW_STEP_MS = 16.0        # one native step at least this long is a hitch
-BUDGET_SECONDS = 0.004     # per pump tick; at least one step always runs
-MAX_STEPS = 400            # rows one object may cost before it stays listed
-_REARM_SECONDS = 0.5       # the pump drops its oldest entry when full
-_LOG_SECONDS = 30.0        # unchanged run summaries are logged this often
-_VERDICT_LIMIT = 2000      # verdicts kept for objects out of the scan, oldest dropped
+SLOW_STEP_MS = 16.0  # one native step at least this long is a hitch
+BUDGET_SECONDS = 0.004  # per pump tick; at least one step always runs
+MAX_STEPS = 400  # rows one object may cost before it stays listed
+_REARM_SECONDS = 0.5  # the pump drops its oldest entry when full
+_LOG_SECONDS = 30.0  # unchanged run summaries are logged this often
+_VERDICT_LIMIT = 2000  # verdicts kept for objects out of the scan, oldest dropped
 
 _sim_id = None
-_token = 0                 # only the most recently posted tick does work
+_token = 0  # only the most recently posted tick does work
 # obj_id -> (state, checked_at, why, failed, streak, due, cost_ms)
 _verdicts = {}
 _queue = []
-_in_scan = set()           # ids in the latest begin(); counts cover these only
-_current = None            # the _Check in progress, resumable across ticks
+_in_scan = set()  # ids in the latest begin(); counts cover these only
+_current = None  # the _Check in progress, resumable across ticks
 _revision = 0
-_scheduled_at = None       # when the pending tick was posted, None if idle
+_scheduled_at = None  # when the pending tick was posted, None if idle
 _errors_logged = set()
 _last_tick_ms = 0.0
 _run = {}
@@ -135,7 +136,9 @@ def _ui_busy():
     # cannot be preempted, so the worker steps aside until the next scan.
     # Looked up, not imported: keys and scanner import this module.
     keys = sys.modules.get('simsight_keys')
-    if keys is not None and (getattr(keys, '_modal_active', False) or getattr(keys, '_editing_active', False)):
+    if keys is not None and (
+        getattr(keys, '_modal_active', False) or getattr(keys, '_editing_active', False)
+    ):
         return True
     scanner = sys.modules.get('simsight_scanner')
     return bool(scanner is not None and getattr(scanner, '_menu_open', False))
@@ -181,7 +184,7 @@ def _begin(sim, objects):
     spare = [(verdict[1], obj_id) for obj_id, verdict in _verdicts.items() if obj_id not in keep]
     if len(spare) > _VERDICT_LIMIT:
         spare.sort()
-        for _, obj_id in spare[:len(spare) - _VERDICT_LIMIT]:
+        for _, obj_id in spare[: len(spare) - _VERDICT_LIMIT]:
             del _verdicts[obj_id]
     if busy is not None and busy not in keep:
         _drop_current()
@@ -280,6 +283,7 @@ def _tick(token=None):
         return
     try:
         import services
+
         sim = services.get_active_sim()
         client = services.client_manager().get_first_client()
         manager = services.object_manager()
@@ -321,7 +325,9 @@ def _tick(token=None):
             _run['slow_steps'] += 1
         if step_ms > _run['max_step_ms']:
             _run['max_step_ms'] = step_ms
-            _run['slowest'] = '{} {} {} {}'.format(check.obj_id, check.label, check.phase, check.at).strip()
+            _run['slowest'] = '{} {} {} {}'.format(
+                check.obj_id, check.label, check.phase, check.at
+            ).strip()
         if outcome is not None:
             _current = None
             _store(check.obj_id, outcome[0], outcome[1], outcome[2], check.cost_ms)
@@ -339,14 +345,25 @@ def _log_run():
     # _LOG_SECONDS; the numbers keep adding up in between.
     now = time.monotonic()
     counts = _counts_text()
-    if (counts == _last_log['counts'] and _last_log['at'] is not None
-            and now - _last_log['at'] < _LOG_SECONDS):
+    if (
+        counts == _last_log['counts']
+        and _last_log['at'] is not None
+        and now - _last_log['at'] < _LOG_SECONDS
+    ):
         return
-    speech.log_line('availability: checked {} for sim {} ({}), slowest tick {:.1f} ms, '
-                    'slowest step {:.1f} ms, {} steps over {:.0f} ms{}'.format(
-                        _run['checked'], _sim_id, counts, _run['max_tick_ms'], _run['max_step_ms'],
-                        _run['slow_steps'], SLOW_STEP_MS,
-                        ', slowest at {}'.format(_run['slowest']) if _run['slowest'] else ''))
+    speech.log_line(
+        'availability: checked {} for sim {} ({}), slowest tick {:.1f} ms, '
+        'slowest step {:.1f} ms, {} steps over {:.0f} ms{}'.format(
+            _run['checked'],
+            _sim_id,
+            counts,
+            _run['max_tick_ms'],
+            _run['max_step_ms'],
+            _run['slow_steps'],
+            SLOW_STEP_MS,
+            ', slowest at {}'.format(_run['slowest']) if _run['slowest'] else '',
+        )
+    )
     _last_log['at'] = now
     _last_log['counts'] = counts
     _clear_run()
@@ -382,6 +399,7 @@ class _SwallowWatch(object):
     def __enter__(self):
         try:
             import objects.script_object as module
+
             self._real = module.logger
             self._module = module
             module.logger = _LoggerProxy(self._real, self)
@@ -427,7 +445,15 @@ def _store(obj_id, verdict, why, failed, cost_ms):
         # fails (listed, fail-open) need not be retried every few seconds.
         streak = old[4] + 1
     now = time.monotonic()
-    _verdicts[obj_id] = (verdict, now, why, failed, streak, now + _interval(streak, cost_ms), cost_ms)
+    _verdicts[obj_id] = (
+        verdict,
+        now,
+        why,
+        failed,
+        streak,
+        now + _interval(streak, cost_ms),
+        cost_ms,
+    )
     if failed and (_sim_id, obj_id) not in _errors_logged:
         _errors_logged.add((_sim_id, obj_id))
         speech.log_line('availability: check failed for {}, kept listed: {}'.format(obj_id, why))
@@ -445,6 +471,7 @@ def _evaluation(sim, client, obj, check):
     import services
     import interactions.choices as choices
     from server.pick_info import PickInfo, PickType
+
     ChoiceMenu = choices.ChoiceMenu
     show_hidden = bool(getattr(choices, '_show_interaction_failure_reason', False))
     try:
@@ -464,13 +491,19 @@ def _evaluation(sim, client, obj, check):
             targets.append(target)
     yield
     locked_by = None
-    parents = []               # (aop, result, context): rows the pie lists only through their mixers
+    parents = []  # (aop, result, context): rows the pie lists only through their mixers
     for target in targets:
         # As _add_potential_object_aops: one pick and context per target, at
         # the picked object's location, surface and level, preferring it.
         check.phase = 'rows'
-        pick = PickInfo(pick_type=PickType.PICK_OBJECT, target=target, location=location,
-                        routing_surface=surface, lot_id=lot_id, level=level)
+        pick = PickInfo(
+            pick_type=PickType.PICK_OBJECT,
+            target=target,
+            location=location,
+            routing_surface=surface,
+            lot_id=lot_id,
+            level=level,
+        )
         context = client.create_interaction_context(sim, pick=pick)
         context.add_preferred_objects((obj,))
         for aop in target.potential_interactions(context, **parameters):
@@ -498,7 +531,8 @@ def _evaluation(sim, client, obj, check):
         check.phase = 'mixers'
         check.at = _name(aop.affordance)
         sub_rows = aop.affordance.potential_pie_menu_sub_interactions_gen(
-            aop.target, context, None, **aop.interaction_parameters)
+            aop.target, context, None, **aop.interaction_parameters
+        )
         for mixer_aop, mixer_result in sub_rows or ():
             mixer = mixer_aop.affordance
             if mixer.allow_user_directed is False:
@@ -506,8 +540,11 @@ def _evaluation(sim, client, obj, check):
                     locked_by = mixer
             else:
                 checked = ChoiceMenu.is_valid_aop(
-                    mixer_aop, context,
-                    result_override=mixer_result if parent_passed else result, do_test=False)
+                    mixer_aop,
+                    context,
+                    result_override=mixer_result if parent_passed else result,
+                    do_test=False,
+                )
                 if checked:
                     return USABLE, _name(mixer), False
                 if getattr(checked, 'tooltip', None) and locked_by is None:
@@ -521,9 +558,11 @@ def _evaluation(sim, client, obj, check):
     # points for surface providers, and fire rows when a nearby fire would
     # otherwise leave it empty. Keep those objects listed rather than guess.
     check.phase = 'special'
-    if (getattr(obj, 'provided_routing_surface', None) is not None
-            or getattr(obj, 'provides_terrain_interactions', False)
-            or getattr(obj, 'provides_ocean_interactions', False)):
+    if (
+        getattr(obj, 'provided_routing_surface', None) is not None
+        or getattr(obj, 'provides_terrain_interactions', False)
+        or getattr(obj, 'provides_ocean_interactions', False)
+    ):
         return USABLE, 'surface provider, not probed', False
     fire_service = services.get_fire_service()
     if fire_service is not None and fire_service.fire_is_active:
@@ -546,21 +585,30 @@ def _counts():
 def _counts_text():
     counts = _counts()
     return 'usable {} locked {} empty {} errors {}'.format(
-        counts[USABLE], counts[LOCKED], counts[EMPTY], counts['errors'])
+        counts[USABLE], counts[LOCKED], counts[EMPTY], counts['errors']
+    )
 
 
 def status():
     return 'availability: sim {} {} queued {} busy {} last tick {:.1f} ms revision {}'.format(
-        _sim_id, _counts_text(), len(_queue), _current.obj_id if _current is not None else '-',
-        _last_tick_ms, _revision)
+        _sim_id,
+        _counts_text(),
+        len(_queue),
+        _current.obj_id if _current is not None else '-',
+        _last_tick_ms,
+        _revision,
+    )
 
 
-@sims4.commands.Command('simsight.availability', 'a11y.availability', command_type=sims4.commands.CommandType.Live)
+@sims4.commands.Command(
+    'simsight.availability', 'a11y.availability', command_type=sims4.commands.CommandType.Live
+)
 def a11y_availability(_connection=None):
     output = sims4.commands.CheatOutput(_connection)
     output(status())
     try:
         import services
+
         sim = services.get_active_sim()
         manager = services.object_manager()
         now = time.monotonic()
@@ -574,10 +622,20 @@ def a11y_availability(_connection=None):
             rows.append((dx * dx + dz * dz, obj, verdict))
         rows.sort(key=lambda row: row[0])
         for distance, obj, verdict in rows[:10]:
-            output('  {:.1f} m {} {} {} ({:.1f} ms, next in {:.0f} s)'.format(
-                distance ** 0.5, _label(obj), verdict[0], verdict[2], verdict[6],
-                max(0.0, verdict[5] - now)))
+            output(
+                '  {:.1f} m {} {} {} ({:.1f} ms, next in {:.0f} s)'.format(
+                    distance**0.5,
+                    _label(obj),
+                    verdict[0],
+                    verdict[2],
+                    verdict[6],
+                    max(0.0, verdict[5] - now),
+                )
+            )
         slow = sorted(_verdicts.items(), key=lambda item: -item[1][6])[:3]
-        output('  slowest: ' + ', '.join('{} {:.1f} ms'.format(obj_id, verdict[6]) for obj_id, verdict in slow))
+        output(
+            '  slowest: '
+            + ', '.join('{} {:.1f} ms'.format(obj_id, verdict[6]) for obj_id, verdict in slow)
+        )
     except Exception as ex:
         output('availability: listing failed {!r}'.format(ex))

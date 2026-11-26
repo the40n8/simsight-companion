@@ -3,6 +3,7 @@
 Only opens the game's menu. Never switches Sims, travels, or applies an
 away action directly. Called on the simulation-thread pump by the hub.
 """
+
 import math
 import simsight_lang as lang
 import simsight_speech as speech
@@ -15,6 +16,7 @@ def _say(term):
 def _state():
     import services
     import simsight_place as place
+
     if place.in_build_mode():
         return None
     actor = services.get_active_sim()
@@ -44,11 +46,16 @@ def open_sim(sim_id, actor_id, zone_id, household_id):
     try:
         import simsight_scanner as scanner
         from server.pick_info import PickType
+
         state = _state()
         if state is None:
             raise ValueError('no live household context')
         actor, household, lot, current_zone = state
-        if actor.sim_info.sim_id != actor_id or current_zone != zone_id or household.id != household_id:
+        if (
+            actor.sim_info.sim_id != actor_id
+            or current_zone != zone_id
+            or household.id != household_id
+        ):
             raise ValueError('household, actor or zone changed')
         info = _candidates(household, actor_id).get(sim_id)
         if info is None:
@@ -60,13 +67,19 @@ def open_sim(sim_id, actor_id, zone_id, household_id):
         lot_id = int(lot.lot_id)
         if lot_id < 0:
             raise ValueError('invalid lot')
-        if lot_id > 0xffffffff:
+        if lot_id > 0xFFFFFFFF:
             lot_id = 0  # Native current-lot sentinel; never truncate an ID.
         name = ' '.join(p for p in (info.first_name, info.last_name) if p).replace('|', ' ')
-        sent = scanner._send_ui('A11y|pick|{}|{}|{}|{}|{:.3f}|{:.3f}|{:.3f}|{}'.format(
-            sim_id, int(PickType.PICK_SKEWER), lot_id, name, *point, int(actor.level)))
-        speech.log_line('away actions: portrait request sim={} actor={} zone={} sent={}'.format(
-            sim_id, actor_id, current_zone, bool(sent)))
+        sent = scanner._send_ui(
+            'A11y|pick|{}|{}|{}|{}|{:.3f}|{:.3f}|{:.3f}|{}'.format(
+                sim_id, int(PickType.PICK_SKEWER), lot_id, name, *point, int(actor.level)
+            )
+        )
+        speech.log_line(
+            'away actions: portrait request sim={} actor={} zone={} sent={}'.format(
+                sim_id, actor_id, current_zone, bool(sent)
+            )
+        )
         if not sent:
             _say('action unavailable')
         return bool(sent)
@@ -80,6 +93,7 @@ def open_away_actions():
     try:
         import simsight_hub as hub
         import simsight_menu as menu
+
         state = _state()
         if state is None:
             _say('action unavailable')
@@ -88,12 +102,23 @@ def open_away_actions():
         actor_id, household_id = actor.sim_info.sim_id, household.id
         candidates = _candidates(household, actor_id)
         rows = []
-        for ident, info in sorted(candidates.items(), key=lambda pair: (
-                pair[1].first_name.casefold(), pair[1].last_name.casefold(), pair[0])):
+        for ident, info in sorted(
+            candidates.items(),
+            key=lambda pair: (pair[1].first_name.casefold(), pair[1].last_name.casefold(), pair[0]),
+        ):
             name = ' '.join(p for p in (info.first_name, info.last_name) if p)
-            rows.append((menu._raw(name or str(ident)), None,
-                         lambda ident=ident: open_sim(ident, actor_id, zone_id, household_id)))
-        speech.log_line('away actions: household={} zone={} candidates={}'.format(household_id, zone_id, len(rows)))
+            rows.append(
+                (
+                    menu._raw(name or str(ident)),
+                    None,
+                    lambda ident=ident: open_sim(ident, actor_id, zone_id, household_id),
+                )
+            )
+        speech.log_line(
+            'away actions: household={} zone={} candidates={}'.format(
+                household_id, zone_id, len(rows)
+            )
+        )
         if not rows:
             _say('no away household sims')
             return False

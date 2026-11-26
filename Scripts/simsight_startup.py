@@ -14,6 +14,7 @@ follows the settings while no UI is connected. Loopback connections must
 belong to this game process. Only the fixed narration/state channels are
 accepted; there is no command execution.
 """
+
 from collections import deque
 import functools
 import os
@@ -33,10 +34,26 @@ PORT_KEYBOARD_FULL_MENUS = 45995
 MAX_FRAME = 32768
 MAX_QUEUE = 48
 HELLO = 'HELLO|A11Y_STARTUP_V2'
-CHANNELS = frozenset(('simsight.speak_enc', 'simsight.widget_enc', 'simsight.focus_enc',
-    'simsight.widgetname_enc', 'simsight.dialog_enc', 'simsight.scope_enc', 'simsight.event_enc',
-    'simsight.context_enc', 'simsight.inspect_enc', 'simsight.modalstate', 'simsight.inputfence',
-    'simsight.blocking', 'simsight.clock_enc', 'simsight.mood_enc', 'simsight.stop', 'simsight.mark'))
+CHANNELS = frozenset(
+    (
+        'simsight.speak_enc',
+        'simsight.widget_enc',
+        'simsight.focus_enc',
+        'simsight.widgetname_enc',
+        'simsight.dialog_enc',
+        'simsight.scope_enc',
+        'simsight.event_enc',
+        'simsight.context_enc',
+        'simsight.inspect_enc',
+        'simsight.modalstate',
+        'simsight.inputfence',
+        'simsight.blocking',
+        'simsight.clock_enc',
+        'simsight.mood_enc',
+        'simsight.stop',
+        'simsight.mark',
+    )
+)
 _lock = threading.Lock()
 _incoming = deque()
 _thread = None
@@ -46,14 +63,15 @@ _startup = True
 _generation = 0
 _next_tick = 0.0
 _port = None
-_wanted = None   # the port the settings ask for (a fallback can serve another)
-_seen = None     # the latest settings reading, for the two-reading rule
+_wanted = None  # the port the settings ask for (a fallback can serve another)
+_seen = None  # the latest settings reading, for the two-reading rule
 _flash_startup = False
 
 
 def log(message):
     try:
         import simsight_speech as speech
+
         speech.log_line('startup: ' + message)
     except Exception:
         pass
@@ -62,6 +80,7 @@ def log(message):
 def enabled():
     try:
         import simsight_settings as settings
+
         return bool(settings.get('startup', True))
     except Exception:
         return True
@@ -72,6 +91,7 @@ def listen_port():
     are enabled."""
     try:
         import simsight_settings as settings
+
         keyboard = bool(settings.get('keyboard', True))
         simplified = bool(settings.get('simplified_menus', True))
     except Exception:
@@ -130,13 +150,29 @@ def same_process_peer(peer_port, listener_port=None):
         listener_port = _port or PORT_KEYBOARD
     try:
         import ctypes
+
         class Row(ctypes.Structure):
-            _fields_ = [(name, ctypes.c_ulong) for name in
-                        ('state', 'local_address', 'local_port',
-                         'remote_address', 'remote_port', 'pid')]
+            _fields_ = [
+                (name, ctypes.c_ulong)
+                for name in (
+                    'state',
+                    'local_address',
+                    'local_port',
+                    'remote_address',
+                    'remote_port',
+                    'pid',
+                )
+            ]
+
         api = ctypes.WinDLL('iphlpapi').GetExtendedTcpTable
-        api.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_ulong),
-                        ctypes.c_int, ctypes.c_ulong, ctypes.c_int, ctypes.c_ulong]
+        api.argtypes = [
+            ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_ulong),
+            ctypes.c_int,
+            ctypes.c_ulong,
+            ctypes.c_int,
+            ctypes.c_ulong,
+        ]
         api.restype = ctypes.c_ulong
         size = ctypes.c_ulong(0)
         result = api(None, ctypes.byref(size), False, 2, 5, 0)
@@ -150,11 +186,13 @@ def same_process_peer(peer_port, listener_port=None):
             return False
         for index in range(count):
             row = Row.from_buffer(data, 4 + index * ctypes.sizeof(Row))
-            if (row.pid == os.getpid()
-                    and row.local_address == 0x0100007F
-                    and row.remote_address == 0x0100007F
-                    and socket.ntohs(row.local_port & 0xffff) == peer_port
-                    and socket.ntohs(row.remote_port & 0xffff) == listener_port):
+            if (
+                row.pid == os.getpid()
+                and row.local_address == 0x0100007F
+                and row.remote_address == 0x0100007F
+                and socket.ntohs(row.local_port & 0xFFFF) == peer_port
+                and socket.ntohs(row.remote_port & 0xFFFF) == listener_port
+            ):
                 return True
     except Exception:
         pass
@@ -162,9 +200,12 @@ def same_process_peer(peer_port, listener_port=None):
 
 
 def _is_mode_mark(channel, payload):
-    return (channel == 'simsight.mark' and isinstance(payload, str)
-            and payload.startswith('startup-v11-')
-            and payload.endswith(('-active', '-idle', '-native')))
+    return (
+        channel == 'simsight.mark'
+        and isinstance(payload, str)
+        and payload.startswith('startup-v11-')
+        and payload.endswith(('-active', '-idle', '-native'))
+    )
 
 
 def note_mark(payload):
@@ -198,14 +239,18 @@ def send_navigation(message_name):
 
 def _dispatch(channel, payload):
     import simsight_narrator as narrator
+
     if channel == 'simsight.modalstate':
         import simsight_keys as keys
+
         keys.a11y_modalstate(payload)
     elif channel == 'simsight.blocking':
         import simsight_keys as keys
+
         keys.a11y_blocking(payload)
     elif channel == 'simsight.inputfence':
         import simsight_keys as keys
+
         keys.a11y_inputfence()
     elif channel == 'simsight.mark':
         note_mark(payload)
@@ -237,6 +282,7 @@ def tick():
         return
     _next_tick = time.monotonic() + 0.02
     import services
+
     zone = services.current_zone()
     manager = services.client_manager() if zone is not None else None
     client = manager.get_first_client() if manager is not None else None
@@ -244,7 +290,9 @@ def tick():
     with _lock:
         changed = startup != _startup
         if changed:
-            log('transport switched to ' + ('startup Socket' if startup else 'native loaded client'))
+            log(
+                'transport switched to ' + ('startup Socket' if startup else 'native loaded client')
+            )
         _startup = startup
         generation = _generation
         batch = list(_incoming)
@@ -308,8 +356,10 @@ def _connection(conn):
                     return None
                 with _lock:
                     if len(_incoming) >= MAX_QUEUE and (
-                            post[0] in ('simsight.inputfence', 'simsight.modalstate', 'simsight.blocking')
-                            or _is_mode_mark(*post)):
+                        post[0]
+                        in ('simsight.inputfence', 'simsight.modalstate', 'simsight.blocking')
+                        or _is_mode_mark(*post)
+                    ):
                         _incoming.popleft()
                     if len(_incoming) < MAX_QUEUE:
                         _incoming.append((_generation,) + post)
@@ -336,9 +386,11 @@ def _bind(port):
     except Exception:
         listener.close()
         raise
-    meaning = {PORT_KEYBOARD: 'keyboard on, simplified menus on',
-               PORT_KEYBOARD_FULL_MENUS: 'keyboard on, simplified menus off',
-               PORT_SPEECH: 'speech only'}.get(port, 'unknown')
+    meaning = {
+        PORT_KEYBOARD: 'keyboard on, simplified menus on',
+        PORT_KEYBOARD_FULL_MENUS: 'keyboard on, simplified menus off',
+        PORT_SPEECH: 'speech only',
+    }.get(port, 'unknown')
     log('same-process-only loopback listener ready on port {} ({})'.format(port, meaning))
     return listener
 
@@ -353,7 +405,11 @@ def _open_listener(port):
     except Exception as ex:
         if port != PORT_KEYBOARD_FULL_MENUS:
             raise
-        log('port {} unavailable ({!r}); simplified menus stay on until a save loads'.format(port, ex))
+        log(
+            'port {} unavailable ({!r}); simplified menus stay on until a save loads'.format(
+                port, ex
+            )
+        )
         return PORT_KEYBOARD, _bind(PORT_KEYBOARD)
 
 
@@ -364,7 +420,7 @@ def _preference_moved():
     the brief empty store of simsight.reload never moves it."""
     global _wanted, _seen
     if _wanted is None:
-        return False          # not serving (a session outside _serve)
+        return False  # not serving (a session outside _serve)
     now = listen_port()
     moved = now != _wanted and now == _seen
     if moved:
@@ -433,6 +489,7 @@ def install():
     if _thread is not None:
         return
     import sims4.core_services as core
+
     original = core.on_tick
 
     @functools.wraps(original)

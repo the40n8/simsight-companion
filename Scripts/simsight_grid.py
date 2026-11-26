@@ -4,6 +4,7 @@ Inspired by glaroc's a11yscan grid, with EA 1.127's actual routing signature.
 Object origins are not footprints; a navmesh point is not placement approval.
 This never moves the native mouse, Sim, objects, camera, or household funds.
 """
+
 import math
 
 import sims4.commands
@@ -27,6 +28,7 @@ def _say(en, pl):
 
 def _controls_enabled():
     import simsight_build as build
+
     return build.controls_enabled()
 
 
@@ -34,6 +36,7 @@ def active():
     global _active
     try:
         import services
+
         if services.current_zone_id() != _zone_id or services.active_lot() is None:
             _active = False
         elif not _controls_enabled():
@@ -49,13 +52,14 @@ def _sample_key(x, z):
 
 def _surface():
     import routing
-    return routing.SurfaceIdentifier(_zone_id, _level,
-                                     routing.SurfaceType.SURFACETYPE_WORLD)
+
+    return routing.SurfaceIdentifier(_zone_id, _level, routing.SurfaceType.SURFACETYPE_WORLD)
 
 
 def _position(x=None, z=None):
     import terrain
     from sims4.math import Vector3
+
     x = _x if x is None else x
     z = _z if z is None else z
     y = terrain.get_terrain_height(x, z, routing_surface=_surface())
@@ -68,15 +72,20 @@ def enter():
     global _active, _zone_id, _x, _z, _level, _origin
     if not _controls_enabled():
         import simsight_build as build
+
         return build.refuse_disabled()
     import simsight_keys as keys
     import simsight_place as place
+
     building = place.in_build_mode()
     if keys._scanner_effective() and not building:
-        _say('Turn scanner mode off to use the lot grid.',
-             'Wyłącz tryb skanera, aby użyć siatki parceli.')
+        _say(
+            'Turn scanner mode off to use the lot grid.',
+            'Wyłącz tryb skanera, aby użyć siatki parceli.',
+        )
         return False
     import services
+
     try:
         sim = services.get_active_sim()
         lot = services.active_lot()
@@ -89,13 +98,16 @@ def enter():
         _zone_id = services.current_zone_id()
         _origin = (_x, _z)
         import simsight_build as build
+
         if build.active() or build.aiming():
             build.request('off')
         _active = True
     except Exception:
         _active = False
-        _say('Load a household with an active Sim first.',
-             'Najpierw wczytaj rodzinę z aktywnym Simem.')
+        _say(
+            'Load a household with an active Sim first.',
+            'Najpierw wczytaj rodzinę z aktywnym Simem.',
+        )
         return False
     note = (_text(*start_note) + ' ') if start_note is not None else ''
     if building and _start_build(note):
@@ -103,26 +115,40 @@ def enter():
     if building:
         announce_placement(note)
     else:
-        _say(note + 'Read-only lot grid on. Arrows sample one metre. Objects are listed by their origin, not their full footprint.',
-             note + 'Siatka parceli włączona, tylko do odczytu. Strzałki przesuwają o metr. Lista podaje punkty początkowe obiektów, nie ich pełne obrysy.')
+        _say(
+            note
+            + 'Read-only lot grid on. Arrows sample one metre. Objects are listed by their origin, not their full footprint.',
+            note
+            + 'Siatka parceli włączona, tylko do odczytu. Strzałki przesuwają o metr. Lista podaje punkty początkowe obiektów, nie ich pełne obrysy.',
+        )
     return describe()
 
 
 def announce_placement(note=''):
     import simsight_place as place
     import simsight_scanner as scanner
+
     item = place.product()
-    parts = [note, _text('Build placement on. Control Alt arrows move one metre, Page Up and Page Down change floor, '
-                   'Control Alt Enter places the object chosen in the Build catalog, brackets rotate it, '
-                   'Z undoes, X sells what is here. ',
-                   'Umieszczanie włączone. Control Alt i strzałki przesuwają o metr, Page Up i Page Down zmieniają piętro, '
-                   'Control Alt Enter umieszcza obiekt wybrany w katalogu, nawiasy go obracają, '
-                   'Z cofa, X sprzedaje to, co tu stoi. ')]
+    parts = [
+        note,
+        _text(
+            'Build placement on. Control Alt arrows move one metre, Page Up and Page Down change floor, '
+            'Control Alt Enter places the object chosen in the Build catalog, brackets rotate it, '
+            'Z undoes, X sells what is here. ',
+            'Umieszczanie włączone. Control Alt i strzałki przesuwają o metr, Page Up i Page Down zmieniają piętro, '
+            'Control Alt Enter umieszcza obiekt wybrany w katalogu, nawiasy go obracają, '
+            'Z cofa, X sprzedaje to, co tu stoi. ',
+        ),
+    ]
     if item is not None and item['name']:
         parts += [_text('Selected: ', 'Wybrano: '), item['name'], '. ']
     else:
-        parts.append(_text('Choose an object in the Build catalog, close the catalog, then come back here. ',
-                           'Wybierz obiekt w katalogu, zamknij katalog i wróć tutaj. '))
+        parts.append(
+            _text(
+                'Choose an object in the Build catalog, close the catalog, then come back here. ',
+                'Wybierz obiekt w katalogu, zamknij katalog i wróć tutaj. ',
+            )
+        )
     scanner._speak_parts(parts)
     return True
 
@@ -130,9 +156,12 @@ def announce_placement(note=''):
 def placement_toggle():
     """Ctrl+Alt+B: the lot grid as the Build placement cursor."""
     import simsight_place as place
+
     if not place.in_build_mode():
-        _say('Enter Build mode first. In Live mode, Control Alt T reads the lot grid.',
-             'Najpierw włącz tryb budowania. W trybie życia Control Alt T odczytuje siatkę parceli.')
+        _say(
+            'Enter Build mode first. In Live mode, Control Alt T reads the lot grid.',
+            'Najpierw włącz tryb budowania. W trybie życia Control Alt T odczytuje siatkę parceli.',
+        )
         return False
     return toggle()
 
@@ -140,6 +169,7 @@ def placement_toggle():
 def _cancel_placement():
     try:
         import simsight_place as place
+
         place.cancel_pending()
     except Exception:
         pass
@@ -153,12 +183,22 @@ def _start_point(sim, lot):
     position = sim.position
     if lot.is_position_on_lot(position):
         return position, int(sim.level), None
-    for getter, note in ((lambda: lot.center,
-                          ('Your Sim is off the lot, so the grid starts at the centre of the lot.',
-                           'Twój Sim jest poza parcelą, więc siatka zaczyna się na środku parceli.')),
-                         (lambda: lot.get_default_position(),
-                          ('Your Sim is off the lot, so the grid starts near the front of the lot.',
-                           'Twój Sim jest poza parcelą, więc siatka zaczyna się przy froncie parceli.'))):
+    for getter, note in (
+        (
+            lambda: lot.center,
+            (
+                'Your Sim is off the lot, so the grid starts at the centre of the lot.',
+                'Twój Sim jest poza parcelą, więc siatka zaczyna się na środku parceli.',
+            ),
+        ),
+        (
+            lambda: lot.get_default_position(),
+            (
+                'Your Sim is off the lot, so the grid starts near the front of the lot.',
+                'Twój Sim jest poza parcelą, więc siatka zaczyna się przy froncie parceli.',
+            ),
+        ),
+    ):
         try:
             candidate = getter()
             if candidate is not None and lot.is_position_on_lot(candidate):
@@ -204,6 +244,7 @@ def focus_position(position, level):
     if _build:
         global _tile
         import simsight_tiles as tiles
+
         f = tiles.frame()
         if f is not None:
             _tile = f.clamp(*f.tile_of(x, z))
@@ -217,8 +258,13 @@ def cursor():
         return None
     import services
     import build_buy
+
     try:
-        if not int(build_buy.get_lowest_level_allowed()) <= _level <= int(build_buy.get_highest_level_allowed()):
+        if (
+            not int(build_buy.get_lowest_level_allowed())
+            <= _level
+            <= int(build_buy.get_highest_level_allowed())
+        ):
             return None
         position = _position()
         if not services.active_lot().is_position_on_lot(position):
@@ -237,6 +283,7 @@ def move(dx, dz):
     if _build:
         return _build_move(dx, dz)
     import services
+
     try:
         position = _position(_x + dx, _z + dz)
         if not services.active_lot().is_position_on_lot(position):
@@ -254,6 +301,7 @@ def change_level(delta):
     if not active() or delta not in (-1, 1):
         return False
     import build_buy
+
     try:
         minimum = int(build_buy.get_lowest_level_allowed())
         maximum = int(build_buy.get_highest_level_allowed())
@@ -271,10 +319,13 @@ def change_level(delta):
 
 def _place_here():
     import simsight_place as place
+
     target = cursor()
     if target is None:
-        _say('This grid point cannot take an object. Move the cursor.',
-             'W tym punkcie siatki nie można umieścić obiektu. Przesuń kursor.')
+        _say(
+            'This grid point cannot take an object. Move the cursor.',
+            'W tym punkcie siatki nie można umieścić obiektu. Przesuń kursor.',
+        )
         return False
     position, level, _ident = target
     return place.place(position, level, _surface())
@@ -282,6 +333,7 @@ def _place_here():
 
 def _enter_key():
     import simsight_place as place
+
     if _build and place.in_build_mode():
         return _build_place()
     return _place_here() if place.in_build_mode() else describe()
@@ -293,6 +345,7 @@ def _sell_target():
     2026-09-26). An object focused with number 1 on a target layer comes
     first (simsight_layers). None when the tile has nothing to sell."""
     import simsight_layers as layers
+
     focused = layers.focused_target()
     if focused is not None:
         return focused
@@ -306,6 +359,7 @@ def _sell_target():
 
 def _sell_here():
     import simsight_place as place
+
     return place.sell(_sell_target())
 
 
@@ -324,6 +378,7 @@ def _no_redo():
 def _objects_at_origin():
     """Fresh lookup: no stale references after moves, sales or zone changes."""
     import services
+
     objects = []
     for obj in services.object_manager().values():
         try:
@@ -332,7 +387,9 @@ def _objects_at_origin():
             pos = obj.position
             # Cells are relative to the starting Sim so fractional starts
             # don't put the cursor and object in different arbitrary grids.
-            if _sample_key(pos.x - _origin[0], pos.z - _origin[1]) != _sample_key(_x - _origin[0], _z - _origin[1]):
+            if _sample_key(pos.x - _origin[0], pos.z - _origin[1]) != _sample_key(
+                _x - _origin[0], _z - _origin[1]
+            ):
                 continue
             objects.append(obj)
         except Exception:
@@ -344,15 +401,18 @@ def facts():
     """Independent queries preserve unknown values rather than inventing facts."""
     import build_buy
     import routing
+
     result = {}
     try:
         position = _position()
     except Exception:
         return result
-    for label, method in (('floor', 'has_floor_at_location'),
-                          ('pool', 'is_location_pool'),
-                          ('ground', 'is_location_natural_ground'),
-                          ('outside', 'is_location_outside')):
+    for label, method in (
+        ('floor', 'has_floor_at_location'),
+        ('pool', 'is_location_pool'),
+        ('ground', 'is_location_natural_ground'),
+        ('outside', 'is_location_outside'),
+    ):
         try:
             value = getattr(build_buy, method)(position, _level)
             if value is not None:
@@ -375,16 +435,22 @@ def describe():
     if _build:
         return describe_build()
     import simsight_scanner as scanner
-    parts = [_text('Grid x {}, z {}, floor {}. ', 'Siatka x {}, z {}, piętro {}. ').format(
-        int(round(_x - _origin[0])), int(round(_z - _origin[1])), _level)]
+
+    parts = [
+        _text('Grid x {}, z {}, floor {}. ', 'Siatka x {}, z {}, piętro {}. ').format(
+            int(round(_x - _origin[0])), int(round(_z - _origin[1])), _level
+        )
+    ]
     values = facts()
     labels = {
         'floor': (('floor', 'podłoga'), ('no floor', 'brak podłogi')),
         'pool': (('pool', 'basen'), None),
         'ground': (('natural ground', 'naturalny grunt'), None),
         'outside': (('outside', 'na zewnątrz'), ('inside', 'wewnątrz')),
-        'navmesh': (('walking surface present', 'powierzchnia do chodzenia'),
-                    ('no walking surface at this point', 'brak powierzchni do chodzenia w tym punkcie')),
+        'navmesh': (
+            ('walking surface present', 'powierzchnia do chodzenia'),
+            ('no walking surface at this point', 'brak powierzchni do chodzenia w tym punkcie'),
+        ),
     }
     for key, pair in labels.items():
         if key in values:
@@ -400,48 +466,85 @@ def describe():
             for index, obj in enumerate(objects[:5]):
                 if index:
                     parts.append(', ')
-                entry = scanner._entry_for(obj, obj.position, _level,
-                                            bool(getattr(obj, 'is_sim', False)), '', '')
+                entry = scanner._entry_for(
+                    obj, obj.position, _level, bool(getattr(obj, 'is_sim', False)), '', ''
+                )
                 parts.append(scanner._name_part(entry))
             if len(objects) > 5:
                 parts.append(_text(' and {} more', ' i {} więcej').format(len(objects) - 5))
         else:
-            parts.append(_text('No object origins in this sample.',
-                               'Brak punktów początkowych obiektów w tym polu.'))
+            parts.append(
+                _text(
+                    'No object origins in this sample.',
+                    'Brak punktów początkowych obiektów w tym polu.',
+                )
+            )
     except Exception:
-        parts.append(_text('Object information unavailable.', 'Informacje o obiektach niedostępne.'))
+        parts.append(
+            _text('Object information unavailable.', 'Informacje o obiektach niedostępne.')
+        )
     scanner._speak_parts(parts)
     return True
 
 
 def on_key(intent):
-    actions = {'left': lambda: move(-1, 0), 'right': lambda: move(1, 0),
-               'up': lambda: move(0, 1), 'down': lambda: move(0, -1),
-               'prevcat': lambda: move(-1, 0), 'nextcat': lambda: move(1, 0),
-               'prev': lambda: move(0, 1), 'next': lambda: move(0, -1),
-               'prevsub': lambda: change_level(1), 'nextsub': lambda: change_level(-1),
-               'floorup': lambda: change_level(1), 'floordown': lambda: change_level(-1),
-               'open': _enter_key, 'repeat': describe, 'where': describe,
-               'status': describe, 'rescan': describe, 'back': leave,
-               'off': leave, 'on': enter, 'toggle': toggle}
+    actions = {
+        'left': lambda: move(-1, 0),
+        'right': lambda: move(1, 0),
+        'up': lambda: move(0, 1),
+        'down': lambda: move(0, -1),
+        'prevcat': lambda: move(-1, 0),
+        'nextcat': lambda: move(1, 0),
+        'prev': lambda: move(0, 1),
+        'next': lambda: move(0, -1),
+        'prevsub': lambda: change_level(1),
+        'nextsub': lambda: change_level(-1),
+        'floorup': lambda: change_level(1),
+        'floordown': lambda: change_level(-1),
+        'open': _enter_key,
+        'repeat': describe,
+        'where': describe,
+        'status': describe,
+        'rescan': describe,
+        'back': leave,
+        'off': leave,
+        'on': enter,
+        'toggle': toggle,
+    }
     import simsight_place as place
-    actions.update({'rotateleft': lambda: place.rotate(-1), 'rotateright': lambda: place.rotate(1),
-                    'undo': place.undo, 'redo': _no_redo, 'sell': _sell_here,
-                    'place': _place_here})
+
+    actions.update(
+        {
+            'rotateleft': lambda: place.rotate(-1),
+            'rotateright': lambda: place.rotate(1),
+            'undo': place.undo,
+            'redo': _no_redo,
+            'sell': _sell_here,
+            'place': _place_here,
+        }
+    )
     if _build:
         if intent in ('back', 'off') and _move['obj_id'] is not None:
-            _clear_move()           # Escape cancels a move before it leaves the cursor
+            _clear_move()  # Escape cancels a move before it leaves the cursor
             _say('Move cancelled.', 'Anulowano przesuwanie.')
             return True
         import simsight_layers as layers
         import simsight_rooms as rooms
-        actions.update({'place': _enter_key, 'turn': lambda: _turn(1), 'turnback': lambda: _turn(-1),
-                        'last': _jump_to_last, 'moveobject': _move_key,
-                        'layerup': lambda: layers.change_layer(1),
-                        'layerdown': lambda: layers.change_layer(-1),
-                        'roomlabel': rooms.show_picker})
+
+        actions.update(
+            {
+                'place': _enter_key,
+                'turn': lambda: _turn(1),
+                'turnback': lambda: _turn(-1),
+                'last': _jump_to_last,
+                'moveobject': _move_key,
+                'layerup': lambda: layers.change_layer(1),
+                'layerdown': lambda: layers.change_layer(-1),
+                'roomlabel': rooms.show_picker,
+            }
+        )
         for topic in range(1, 7):
-            actions['info{}'.format(topic)] = (lambda value=topic: _detail(value))
+            actions['info{}'.format(topic)] = lambda value=topic: _detail(value)
     callback = actions.get(intent)
     return callback() if callback is not None else False
 
@@ -462,7 +565,7 @@ _build = False
 _tile = (0, 0)
 _facing = 0
 _offer = None
-_last_room = [None, None]      # (room id, outside) of the last tile read
+_last_room = [None, None]  # (room id, outside) of the last tile read
 OFFER_SECONDS = 20.0
 
 
@@ -470,8 +573,10 @@ def _flash(message):
     try:
         import distributor.ops
         import distributor.system
+
         distributor.system.Distributor.instance().add_op_with_no_owner(
-            distributor.ops.SendUIMessage(message))
+            distributor.ops.SendUIMessage(message)
+        )
     except Exception as ex:
         speech.log_line('grid: {} not sent ({!r})'.format(message, ex))
 
@@ -484,6 +589,7 @@ def _start_build(note):
     """Called by enter() in Build mode. False keeps the plain grid."""
     global _build, _tile, _facing, _offer, _x, _z
     import simsight_tiles as tiles
+
     f = tiles.frame()
     if f is None:
         return False
@@ -495,19 +601,33 @@ def _start_build(note):
     _flash('A11yBuildGridOn')
     import simsight_place as place
     import simsight_scanner as scanner
+
     item = place.product()
-    parts = [note, _text('Build placement on. Arrow keys move one tile. R turns the object, Enter places it, '
-                         'number keys 1 to 6 read details, Space repeats, Escape leaves. ',
-                         'Umieszczanie włączone. Strzałki przesuwają o jedno pole. R obraca obiekt, Enter go umieszcza, '
-                         'klawisze od 1 do 6 czytają szczegóły, spacja powtarza, Escape kończy. ')]
+    parts = [
+        note,
+        _text(
+            'Build placement on. Arrow keys move one tile. R turns the object, Enter places it, '
+            'number keys 1 to 6 read details, Space repeats, Escape leaves. ',
+            'Umieszczanie włączone. Strzałki przesuwają o jedno pole. R obraca obiekt, Enter go umieszcza, '
+            'klawisze od 1 do 6 czytają szczegóły, spacja powtarza, Escape kończy. ',
+        ),
+    ]
     if item is not None and item['name']:
         parts += [_text('Selected: ', 'Wybrano: '), item['name'], '. ']
     else:
-        parts.append(_text('Choose an object in the Build catalog; Tab returns to it. ',
-                           'Wybierz obiekt w katalogu; Tab do niego wraca. '))
+        parts.append(
+            _text(
+                'Choose an object in the Build catalog; Tab returns to it. ',
+                'Wybierz obiekt w katalogu; Tab do niego wraca. ',
+            )
+        )
     street = _street_side(f)
     if street is not None:
-        parts.append(_text('The street is to the {}. ', 'Ulica jest na {}. ').format(tiles.direction_name(street)))
+        parts.append(
+            _text('The street is to the {}. ', 'Ulica jest na {}. ').format(
+                tiles.direction_name(street)
+            )
+        )
     scanner._speak_parts(parts)
     return True
 
@@ -525,6 +645,7 @@ def _street_side(f):
     street), or None."""
     try:
         import services
+
         point = services.active_lot().get_default_position()
         i, j = f.tile_of(point.x, point.z)
     except Exception:
@@ -536,6 +657,7 @@ def _street_side(f):
 def _build_move(dx, dz):
     global _tile, _x, _z, _offer
     import simsight_tiles as tiles
+
     f = tiles.frame()
     if f is None:
         return False
@@ -550,8 +672,11 @@ def _build_move(dx, dz):
 
 def _name(obj):
     import simsight_scanner as scanner
+
     try:
-        entry = scanner._entry_for(obj, obj.position, _level, bool(getattr(obj, 'is_sim', False)), '', '')
+        entry = scanner._entry_for(
+            obj, obj.position, _level, bool(getattr(obj, 'is_sim', False)), '', ''
+        )
         return scanner._name_part(entry)
     except Exception:
         return _text('an object', 'obiekt')
@@ -559,6 +684,7 @@ def _name(obj):
 
 def _object_parts(f, objects, spots=True):
     import simsight_tiles as tiles
+
     parts = []
     for index, obj in enumerate(objects[:4]):
         if index:
@@ -587,14 +713,16 @@ def _wall_parts(f, all_sides=False, objects=None):
     the lot edge; beside walls, the rooms on either side."""
     import simsight_rooms as rooms
     import simsight_wall as wall
+
     parts = wall.wall_parts(f, all_sides=all_sides, objects=objects)
-    if not all_sides:       # number 3 is the complete four-side report
+    if not all_sides:  # number 3 is the complete four-side report
         parts += rooms.wall_context(f)
     return parts
 
 
 def _room_parts_base(f):
     import simsight_tiles as tiles
+
     i, j = _tile
     facts = tiles.ground(f, i, j, _level)
     room = tiles.room(f, i, j, _level)
@@ -602,15 +730,23 @@ def _room_parts_base(f):
     parts = []
     previous_room, previous_outside = _last_room
     import simsight_rooms as rooms
+
     label = rooms.display_name(room, _level) if room is not None and not outside else None
     if previous_outside is not None and outside is not None and outside != previous_outside:
         if outside:
             parts.append(_text('Outside. ', 'Na zewnątrz. '))
         else:
-            parts.append(_text('Inside {}. ', 'Wewnątrz: {}. ').format(label) if label else _text('Inside. ', 'Wewnątrz. '))
+            parts.append(
+                _text('Inside {}. ', 'Wewnątrz: {}. ').format(label)
+                if label
+                else _text('Inside. ', 'Wewnątrz. ')
+            )
     elif previous_room is not None and room is not None and room != previous_room and not outside:
-        parts.append(_text('Entering {}. ', 'Wchodzisz: {}. ').format(label) if label
-                     else _text('Another room. ', 'Inne pomieszczenie. '))
+        parts.append(
+            _text('Entering {}. ', 'Wchodzisz: {}. ').format(label)
+            if label
+            else _text('Another room. ', 'Inne pomieszczenie. ')
+        )
     _last_room[0], _last_room[1] = room, outside
     return parts, facts
 
@@ -619,24 +755,34 @@ def _fit_parts_base(f, with_facing=True, objects=None):
     """What the chosen object would do on this tile at the current facing."""
     import simsight_place as place
     import simsight_tiles as tiles
+
     item = place.product()
     if item is None:
         return []
     need = place.requirement(item['id'])
     import simsight_chair_snap as chair_snap
-    snap_parts=chair_snap.fit_parts(item,f)
-    if snap_parts is not None:return snap_parts
+
+    snap_parts = chair_snap.fit_parts(item, f)
+    if snap_parts is not None:
+        return snap_parts
     i, j = _tile
     import simsight_surfaces as surfaces_mod
+
     if need == 'wall':
         import simsight_wall as wall
+
         return wall.fit_parts()
     if surfaces_mod.handles(need):
         return surfaces_mod.fit_parts(need)
     if need == 'slot':
         surfaces = [obj for obj in tiles.objects_on(f, i, j, _level) if tiles.free_spots(obj)]
-        return [_text('It can go on a surface here. ', 'Może stanąć tu na powierzchni. ') if surfaces
-                else _text('It needs a surface with a free spot. ', 'Wymaga powierzchni z wolnym miejscem. ')]
+        return [
+            _text('It can go on a surface here. ', 'Może stanąć tu na powierzchni. ')
+            if surfaces
+            else _text(
+                'It needs a surface with a free spot. ', 'Wymaga powierzchni z wolnym miejscem. '
+            )
+        ]
     if need in place._NEEDS:
         return [_text(*place._NEEDS[need]), ' ']
     point, why = tiles.fit_at(f, item['id'], i, j, _level, _facing)
@@ -648,15 +794,22 @@ def _fit_parts_base(f, with_facing=True, objects=None):
             return [_text('Fit unknown here. ', 'Nie wiadomo, czy się tu zmieści. ')]
         return [_text('Does not fit here: {}. ', 'Nie mieści się tutaj: {}. ').format(why)]
     if point is not None:
-        return [_text('Fits here, facing {}. ', 'Mieści się tutaj, skierowany na {}. ').format(facing)]
+        return [
+            _text('Fits here, facing {}. ', 'Mieści się tutaj, skierowany na {}. ').format(facing)
+        ]
     if why is None:
         return [_text('Fit unknown here. ', 'Nie wiadomo, czy się tu zmieści. ')]
-    return [_text('Does not fit here facing {}: {}. ', 'Nie mieści się tutaj, skierowany na {}: {}. ').format(facing, why)]
+    return [
+        _text(
+            'Does not fit here facing {}: {}. ', 'Nie mieści się tutaj, skierowany na {}: {}. '
+        ).format(facing, why)
+    ]
 
 
 def describe_build():
     import simsight_scanner as scanner
     import simsight_tiles as tiles
+
     f = tiles.frame()
     if f is None:
         _say('Tile information unavailable.', 'Informacje o polu niedostępne.')
@@ -685,6 +838,7 @@ def _detail(topic):
     import simsight_scanner as scanner
     import simsight_tiles as tiles
     import simsight_place as place
+
     f = tiles.frame()
     if f is None:
         _say('Tile information unavailable.', 'Informacje o polu niedostępne.')
@@ -692,6 +846,7 @@ def _detail(topic):
     i, j = _tile
     parts = []
     import simsight_layers as layers
+
     if topic == 1 and layers.enabled():
         return layers.focus_detail(f)
     if topic == 4 and layers.enabled():
@@ -702,9 +857,11 @@ def _detail(topic):
     elif topic == 2:
         facts = tiles.ground(f, i, j, _level)
         parts.append(_text('Floor {}. ', 'Piętro {}. ').format(_level))
-        for key, yes, no in (('outside', ('Outside', 'Na zewnątrz'), ('Inside', 'Wewnątrz')),
-                             ('floor', ('Floor tiles', 'Podłoga'), ('No floor tiles', 'Brak podłogi')),
-                             ('pool', ('Pool', 'Basen'), None)):
+        for key, yes, no in (
+            ('outside', ('Outside', 'Na zewnątrz'), ('Inside', 'Wewnątrz')),
+            ('floor', ('Floor tiles', 'Podłoga'), ('No floor tiles', 'Brak podłogi')),
+            ('pool', ('Pool', 'Basen'), None),
+        ):
             if key in facts:
                 label = yes if facts[key] else no
                 if label:
@@ -732,28 +889,50 @@ def _detail(topic):
             if count >= 8:
                 break
         if not count:
-            parts = [_text('Nothing within {} tiles.', 'Nic w promieniu {} pól.').format(tiles.NEARBY_RADIUS)]
+            parts = [
+                _text('Nothing within {} tiles.', 'Nic w promieniu {} pól.').format(
+                    tiles.NEARBY_RADIUS
+                )
+            ]
     elif topic == 5:
         item = place.product()
         if item is None:
-            parts = [_text('No object chosen. Tab returns to the Build catalog.',
-                           'Nie wybrano obiektu. Tab wraca do katalogu.')]
+            parts = [
+                _text(
+                    'No object chosen. Tab returns to the Build catalog.',
+                    'Nie wybrano obiektu. Tab wraca do katalogu.',
+                )
+            ]
         else:
-            parts = [item['name'] or _text('The object', 'Obiekt'), '. ',
-                     _text('Facing {}. ', 'Skierowany na {}. ').format(tiles.direction_name(_facing))]
+            parts = [
+                item['name'] or _text('The object', 'Obiekt'),
+                '. ',
+                _text('Facing {}. ', 'Skierowany na {}. ').format(tiles.direction_name(_facing)),
+            ]
             parts += _fit_parts(f)
     elif topic == 6:
-        parts.append(_text('Column {} of {}, row {} of {}, floor {}. ', 'Kolumna {} z {}, rząd {} z {}, piętro {}. ').format(
-            i + 1, f.width, j + 1, f.depth, _level))
+        parts.append(
+            _text(
+                'Column {} of {}, row {} of {}, floor {}. ',
+                'Kolumna {} z {}, rząd {} z {}, piętro {}. ',
+            ).format(i + 1, f.width, j + 1, f.depth, _level)
+        )
         street = _street_side(f)
         if street is not None:
-            parts.append(_text('The street is to the {}. ', 'Ulica jest na {}. ').format(tiles.direction_name(street)))
+            parts.append(
+                _text('The street is to the {}. ', 'Ulica jest na {}. ').format(
+                    tiles.direction_name(street)
+                )
+            )
         try:
             import services
+
             door = services.active_lot().get_front_door()
             if door is not None:
                 di, dj = (a - b for a, b in zip(f.tile_of(door.position.x, door.position.z), _tile))
-                parts.append(_text('Front door: {}. ', 'Drzwi frontowe: {}. ').format(tiles.relative(di, dj)))
+                parts.append(
+                    _text('Front door: {}. ', 'Drzwi frontowe: {}. ').format(tiles.relative(di, dj))
+                )
         except Exception:
             pass
     scanner._speak_parts(parts)
@@ -764,16 +943,20 @@ def _turn(step):
     global _facing, _offer
     import simsight_scanner as scanner
     import simsight_tiles as tiles
+
     f = tiles.frame()
     if f is None:
         return False
     _facing, _offer = (_facing + step) % 4, None
     import simsight_place as place
+
     if place.product() is None:
         _say('Choose an object in the Build catalog first.', 'Najpierw wybierz obiekt w katalogu.')
         return False
-    scanner._speak_parts([_text('Facing {}. ', 'Skierowany na {}. ').format(tiles.direction_name(_facing))]
-                         + _fit_parts(f, with_facing=False))
+    scanner._speak_parts(
+        [_text('Facing {}. ', 'Skierowany na {}. ').format(tiles.direction_name(_facing))]
+        + _fit_parts(f, with_facing=False)
+    )
     return True
 
 
@@ -783,27 +966,34 @@ def _build_place():
     import time
     import simsight_place as place
     import simsight_tiles as tiles
+
     item = place.product()
     if item is None:
-        _say('Choose an object in the Build catalog first. Tab returns to it.',
-             'Najpierw wybierz obiekt w katalogu. Tab do niego wraca.')
+        _say(
+            'Choose an object in the Build catalog first. Tab returns to it.',
+            'Najpierw wybierz obiekt w katalogu. Tab do niego wraca.',
+        )
         return False
     need = place.requirement(item['id'])
     if need == 'wall':
         import simsight_layers as layers
         import simsight_wall as wall
+
         return False if layers.wall_refusal() else wall.place(item)
     import simsight_surfaces as surfaces_mod
+
     if surfaces_mod.handles(need):
         return surfaces_mod.place(item, need)
     import simsight_chair_snap as chair_snap
-    snap_frame=tiles.frame()
+
+    snap_frame = tiles.frame()
     if snap_frame is not None:
-        snapped=chair_snap.try_place(item,snap_frame)
+        snapped = chair_snap.try_place(item, snap_frame)
         if snapped is not None:
-            _offer=None
+            _offer = None
             return snapped
     import simsight_layers as layers
+
     focused = layers.focused_target() if need in (None, 'slot') else None
     if focused is not None and layers.surface_slots(focused):
         target = cursor()
@@ -816,10 +1006,16 @@ def _build_place():
     i, j = _tile
     now = time.monotonic()
     offer = _offer
-    if (offer is not None and offer['from'] == (i, j, _level, _facing) and offer['product'] == item['id']
-            and now - offer['at'] < OFFER_SECONDS):
+    if (
+        offer is not None
+        and offer['from'] == (i, j, _level, _facing)
+        and offer['product'] == item['id']
+        and now - offer['at'] < OFFER_SECONDS
+    ):
         _offer = None
-        return place.place(offer['point'], _level, _surface(), angle=f.yaw(offer['facing']), exact=True)
+        return place.place(
+            offer['point'], _level, _surface(), angle=f.yaw(offer['facing']), exact=True
+        )
     _offer = None
     if need == 'slot':
         target = cursor()
@@ -834,23 +1030,44 @@ def _build_place():
     if point is not None:
         return place.place(point, _level, _surface(), angle=f.yaw(_facing), exact=True)
     if why is None:
-        _say('The game could not check this tile, so nothing was bought.',
-             'Gra nie mogła sprawdzić tego pola, więc nic nie kupiono.')
+        _say(
+            'The game could not check this tile, so nothing was bought.',
+            'Gra nie mogła sprawdzić tego pola, więc nic nie kupiono.',
+        )
         return False
     import simsight_scanner as scanner
+
     name = item['name'] or _text('It', 'Obiekt')
     found = tiles.nearest_fit(f, item['id'], i, j, _level, _facing)
     if found is None:
-        scanner._speak_parts([name, _text(' does not fit here: {}. No tile within {} fits it either. Try another spot or facing.',
-                                          ' nie mieści się tutaj: {}. W promieniu {} pól też nie ma miejsca. Spróbuj innego miejsca lub kierunku.'
-                                          ).format(why, tiles.NEAREST_RADIUS)])
+        scanner._speak_parts(
+            [
+                name,
+                _text(
+                    ' does not fit here: {}. No tile within {} fits it either. Try another spot or facing.',
+                    ' nie mieści się tutaj: {}. W promieniu {} pól też nie ma miejsca. Spróbuj innego miejsca lub kierunku.',
+                ).format(why, tiles.NEAREST_RADIUS),
+            ]
+        )
         return False
     ni, nj, spot, facing = found
-    _offer = {'from': (i, j, _level, _facing), 'product': item['id'], 'point': spot,
-              'facing': facing, 'tile': (ni, nj), 'at': now}
-    scanner._speak_parts([name, _text(' does not fit here: {}. It fits {}, facing {}. Press Enter again to place it there, or move to cancel.',
-                                      ' nie mieści się tutaj: {}. Zmieści się: {}, skierowany na {}. Naciśnij Enter ponownie, aby go tam umieścić, albo przesuń kursor.'
-                                      ).format(why, tiles.relative(ni - i, nj - j), tiles.direction_name(facing))])
+    _offer = {
+        'from': (i, j, _level, _facing),
+        'product': item['id'],
+        'point': spot,
+        'facing': facing,
+        'tile': (ni, nj),
+        'at': now,
+    }
+    scanner._speak_parts(
+        [
+            name,
+            _text(
+                ' does not fit here: {}. It fits {}, facing {}. Press Enter again to place it there, or move to cancel.',
+                ' nie mieści się tutaj: {}. Zmieści się: {}, skierowany na {}. Naciśnij Enter ponownie, aby go tam umieścić, albo przesuń kursor.',
+            ).format(why, tiles.relative(ni - i, nj - j), tiles.direction_name(facing)),
+        ]
+    )
     return False
 
 
@@ -872,6 +1089,7 @@ def _object_name(obj):
 def _move_key():
     import services
     import simsight_place as place
+
     if _move['obj_id'] is None:
         obj = _sell_target()
         if obj is None:
@@ -882,12 +1100,20 @@ def _move_key():
             place._say_text(*place._CANNOT_SELL[refusal])
             return False
         if getattr(obj, 'parent', None) is not None:
-            _say('Objects attached to another object cannot be moved from the grid yet.',
-                 'Obiektów przymocowanych do innego obiektu nie można jeszcze przesuwać z siatki.')
+            _say(
+                'Objects attached to another object cannot be moved from the grid yet.',
+                'Obiektów przymocowanych do innego obiektu nie można jeszcze przesuwać z siatki.',
+            )
             return False
         _move['obj_id'], _move['name'] = obj.id, _object_name(obj)
-        _say('{} selected to move. Go to the new tile and press M again. Escape cancels.'.format(_move['name']),
-             'Wybrano {} do przesunięcia. Przejdź do nowego pola i ponownie naciśnij M. Escape anuluje.'.format(_move['name']))
+        _say(
+            '{} selected to move. Go to the new tile and press M again. Escape cancels.'.format(
+                _move['name']
+            ),
+            'Wybrano {} do przesunięcia. Przejdź do nowego pola i ponownie naciśnij M. Escape anuluje.'.format(
+                _move['name']
+            ),
+        )
         return True
     obj = services.object_manager().get(_move['obj_id'])
     name = _move['name'] or _text('Object', 'Obiekt')
@@ -911,12 +1137,16 @@ def _move_key():
             raise RuntimeError('object stayed on another floor')
     except Exception as ex:
         try:
-            obj.move_to(translation=old_position, orientation=old_orientation, routing_surface=old_surface)
+            obj.move_to(
+                translation=old_position, orientation=old_orientation, routing_surface=old_surface
+            )
         except Exception:
             pass
         speech.log_line('grid: move failed for {}: {!r}'.format(_move['obj_id'], ex))
-        _say('The object could not be moved; its original position was kept.',
-             'Nie udało się przesunąć obiektu; zachowano jego pierwotne położenie.')
+        _say(
+            'The object could not be moved; its original position was kept.',
+            'Nie udało się przesunąć obiektu; zachowano jego pierwotne położenie.',
+        )
         return False
     _clear_move()
     _say('{} moved.'.format(name), 'Przesunięto {}.'.format(name))
@@ -927,6 +1157,7 @@ def _jump_to_last():
     global _tile, _x, _z, _offer
     import simsight_place as place
     import simsight_tiles as tiles
+
     f = tiles.frame()
     position = place.last_position()
     if f is None or position is None:
@@ -945,6 +1176,7 @@ def command(action: str = 'toggle', _connection=None):
     action = action.lower()
     if action not in ('off', 'back') and not _controls_enabled():
         import simsight_build as build
+
         return build.refuse_disabled()
     return on_key(action)
 
@@ -953,9 +1185,11 @@ def command(action: str = 'toggle', _connection=None):
 # the optional lot-planning description of each tile.
 def _fit_parts(f, with_facing=True, objects=None):
     import simsight_chair_alignment as chair_alignment
+
     return chair_alignment.fit_parts(f, with_facing=with_facing, objects=objects)
 
 
 def _room_parts(f):
     import simsight_lot_grid as lot_grid
+
     return lot_grid.room_parts(f)

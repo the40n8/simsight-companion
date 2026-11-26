@@ -13,16 +13,31 @@ SimSight. Its log is SimSight_Plus.log next to the mod and in the
 Windows user folder. Do not also install SimSight_Plus.ts4script: both
 would poll the same Alt keys.
 """
+
 import simsight_speech as speech
 
-MODULES = ('core', 'menu', 'needs', 'notify', 'time', 'rooms', 'sims', 'family',
-           'build', 'house', 'furnish', 'decor', 'draw')
+MODULES = (
+    'core',
+    'menu',
+    'needs',
+    'notify',
+    'time',
+    'rooms',
+    'sims',
+    'family',
+    'build',
+    'house',
+    'furnish',
+    'decor',
+    'draw',
+)
 loaded = []
 failed = []
 
 
 def _load():
     import importlib
+
     for name in MODULES:
         try:
             importlib.import_module('simsight_plus_' + name)

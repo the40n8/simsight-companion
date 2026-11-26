@@ -4,6 +4,7 @@ Only the client performs placement. No object creation, funds adjustment,
 footprint override, custom undo stack or synthetic success announcement.
 The cursor uses screen coordinates, independently of the read-only lot grid.
 """
+
 import time
 import math
 from urllib.parse import unquote
@@ -22,24 +23,63 @@ _last_feedback = ''
 _feedback_time = 0.0
 _aim_pending = 0
 _aim_until = 0.0
-_release_serial = 0   # the 'off' sent when Build mode ended; its reply is silent
-_log_window = 0.0     # client diagnostics burst window start
+_release_serial = 0  # the 'off' sent when Build mode ended; its reply is silent
+_log_window = 0.0  # client diagnostics burst window start
 _log_count = 0
-_LOG_BURST = 40       # lines per 5 s window; the rest are dropped with one notice
+_LOG_BURST = 40  # lines per 5 s window; the rest are dropped with one notice
 _installed = False
 
-ACTIONS = frozenset(('on', 'off', 'toggle', 'left', 'right', 'up', 'down',
-                     'click', 'cancel', 'rotateleft', 'rotateright', 'undo',
-                     'redo', 'status', 'fine', 'coarse', 'center', 'grid'))
-ALIASES = {'prev': 'up', 'next': 'down', 'prevcat': 'left',
-           'nextcat': 'right', 'open': 'click', 'back': 'cancel',
-           'repeat': 'status', 'where': 'status'}
+ACTIONS = frozenset(
+    (
+        'on',
+        'off',
+        'toggle',
+        'left',
+        'right',
+        'up',
+        'down',
+        'click',
+        'cancel',
+        'rotateleft',
+        'rotateright',
+        'undo',
+        'redo',
+        'status',
+        'fine',
+        'coarse',
+        'center',
+        'grid',
+    )
+)
+ALIASES = {
+    'prev': 'up',
+    'next': 'down',
+    'prevcat': 'left',
+    'nextcat': 'right',
+    'open': 'click',
+    'back': 'cancel',
+    'repeat': 'status',
+    'where': 'status',
+}
 # Actions an accessibility menu row may request. Opening that menu retires
 # the native cursor (a modal is open), so the client re-enables it at its
 # remembered position for this one explicit choice, under its own guards.
-MENU_ACTIONS = frozenset(('left', 'right', 'up', 'down', 'click', 'cancel',
-                          'rotateleft', 'rotateright', 'status', 'fine',
-                          'coarse', 'center'))
+MENU_ACTIONS = frozenset(
+    (
+        'left',
+        'right',
+        'up',
+        'down',
+        'click',
+        'cancel',
+        'rotateleft',
+        'rotateright',
+        'status',
+        'fine',
+        'coarse',
+        'center',
+    )
+)
 
 
 def _text(en, pl):
@@ -56,14 +96,17 @@ def controls_enabled():
     turning it off never blocks the release of a cursor already sent."""
     try:
         import simsight_settings as settings
+
         return bool(settings.get('build_controls'))
     except Exception:
         return False
 
 
 def refuse_disabled():
-    _say('Build controls are off. Turn them on in the settings menu.',
-         'Sterowanie budowaniem jest wyłączone. Włącz je w menu ustawień.')
+    _say(
+        'Build controls are off. Turn them on in the settings menu.',
+        'Sterowanie budowaniem jest wyłączone. Włącz je w menu ustawień.',
+    )
     return False
 
 
@@ -74,9 +117,12 @@ def announce_controls():
     try:
         import distributor.ops
         import distributor.system
+
         distributor.system.Distributor.instance().add_op_with_no_owner(
             distributor.ops.SendUIMessage(
-                'A11y|buildcontrols|' + ('on' if controls_enabled() else 'off')))
+                'A11y|buildcontrols|' + ('on' if controls_enabled() else 'off')
+            )
+        )
         return True
     except Exception as ex:
         speech.log_line('build: controls notice failed ({!r})'.format(ex))
@@ -91,6 +137,7 @@ def apply_setting():
     if not controls_enabled():
         try:
             import simsight_grid as grid
+
             grid.retire()
         except Exception as ex:
             speech.log_line('build: grid retire failed ({!r})'.format(ex))
@@ -105,6 +152,7 @@ def apply_setting():
 def _zone():
     try:
         import services
+
         zone = services.current_zone()
         return zone if zone is not None and zone.is_in_build_buy else None
     except Exception:
@@ -123,8 +171,12 @@ def active():
 def aiming():
     global _aim_pending
     zone = _zone()
-    if _aim_pending and (zone is None or zone.id != _zone_id or time.monotonic() > _aim_until
-                         or not controls_enabled()):
+    if _aim_pending and (
+        zone is None
+        or zone.id != _zone_id
+        or time.monotonic() > _aim_until
+        or not controls_enabled()
+    ):
         _pending.pop(_aim_pending, None)
         _aim_pending = 0
     return bool(_aim_pending)
@@ -146,11 +198,14 @@ def aim_grid():
     if not controls_enabled():
         return refuse_disabled()
     import simsight_grid as grid
+
     zone = _zone()
     target = grid.cursor()
     if zone is None or target is None or target[2] != zone.id:
-        _say('Choose a point on the lot grid in Build mode first.',
-             'Najpierw wybierz punkt na siatce parceli w trybie budowania.')
+        _say(
+            'Choose a point on the lot grid in Build mode first.',
+            'Najpierw wybierz punkt na siatce parceli w trybie budowania.',
+        )
         return False
     position, level, ident = target
     values = (float(position.x), float(position.y), float(position.z))
@@ -158,6 +213,7 @@ def aim_grid():
         return False
     import distributor.ops
     import distributor.system
+
     _serial += 1
     _zone_id, _active, _last_serial = ident, False, _serial
     _last_feedback = ''
@@ -169,8 +225,12 @@ def aim_grid():
     grid.leave()
     announce_controls()
     distributor.system.Distributor.instance().add_op_with_no_owner(
-        distributor.ops.SendUIMessage('A11y|buildaim|{}|{:.6f}|{:.6f}|{:.6f}|{}|{}'.format(
-            _serial, values[0], values[1], values[2], level, ident)))
+        distributor.ops.SendUIMessage(
+            'A11y|buildaim|{}|{:.6f}|{:.6f}|{:.6f}|{}|{}'.format(
+                _serial, values[0], values[1], values[2], level, ident
+            )
+        )
+    )
     return True
 
 
@@ -195,12 +255,14 @@ def request(action):
         return False
     if action == 'on':
         import simsight_grid as grid
+
         if grid.active():
             grid.leave()
     if action in ('on', 'off', 'left', 'right', 'up', 'down', 'center', 'click', 'cancel'):
         _last_feedback = ''
     import distributor.ops
     import distributor.system
+
     _serial += 1
     if action == 'off':
         _active = False
@@ -213,7 +275,8 @@ def request(action):
     if action == 'on':
         announce_controls()
     distributor.system.Distributor.instance().add_op_with_no_owner(
-        distributor.ops.SendUIMessage('A11y|build|{}|{}'.format(action, _serial)))
+        distributor.ops.SendUIMessage('A11y|build|{}|{}'.format(action, _serial))
+    )
     return True
 
 
@@ -234,12 +297,14 @@ def request_menu(action):
         _say('Enter Build mode first.', 'Najpierw włącz tryb budowania.')
         return False
     import simsight_grid as grid
+
     if grid.active():
         grid.leave()
     if action in ('left', 'right', 'up', 'down', 'center', 'click', 'cancel'):
         _last_feedback = ''
     import distributor.ops
     import distributor.system
+
     _serial += 1
     if len(_pending) > 128:
         _pending.clear()
@@ -247,7 +312,8 @@ def request_menu(action):
     _pending[_serial] = _zone_id
     announce_controls()
     distributor.system.Distributor.instance().add_op_with_no_owner(
-        distributor.ops.SendUIMessage('A11y|build|menu:{}|{}'.format(action, _serial)))
+        distributor.ops.SendUIMessage('A11y|build|menu:{}|{}'.format(action, _serial))
+    )
     return True
 
 
@@ -261,14 +327,16 @@ def on_build_buy_exit():
     global _release_serial, _zone_id, _active, _aim_pending
     try:
         import simsight_place as place
-        place.forget()        # a catalog product belongs to its Build session
+
+        place.forget()  # a catalog product belongs to its Build session
         import simsight_grid as grid
+
         if grid.active():
-            grid.retire()     # placement ends with Build mode; Ctrl+Alt+T reads the lot in Live
+            grid.retire()  # placement ends with Build mode; Ctrl+Alt+T reads the lot in Live
     except Exception as ex:
         speech.log_line('build: placement product not cleared ({!r})'.format(ex))
     if not (_active or _zone_id is not None):
-        return False      # this Build session never asked for the cursor
+        return False  # this Build session never asked for the cursor
     try:
         sent = request('off')
     except Exception as ex:
@@ -276,8 +344,11 @@ def on_build_buy_exit():
         sent = False
     _release_serial = _serial if sent else 0
     _active, _aim_pending, _zone_id = False, 0, None
-    speech.log_line('build: Build mode ended, cursor release {} (serial {})'.format(
-        'sent' if sent else 'not sent', _serial))
+    speech.log_line(
+        'build: Build mode ended, cursor release {} (serial {})'.format(
+            'sent' if sent else 'not sent', _serial
+        )
+    )
     return sent
 
 
@@ -288,6 +359,7 @@ def on_build_buy_enter():
     placement with its announcement, as Build exit already does."""
     try:
         import simsight_grid as grid
+
         if grid.active():
             grid.retire()
             speech.log_line('build: Build mode started, Live grid retired')
@@ -304,6 +376,7 @@ def install():
     if _installed:
         return True
     import build_buy
+
     build_buy.register_build_buy_exit_callback(on_build_buy_exit)
     build_buy.register_build_buy_enter_callback(on_build_buy_enter)
     _installed = True
@@ -316,12 +389,16 @@ except Exception as _install_ex:
     speech.log_line('build: exit release not installed: {!r}'.format(_install_ex))
 
 
-@sims4.commands.Command('simsight.build', 'a11y.build', command_type=sims4.commands.CommandType.Live)
+@sims4.commands.Command(
+    'simsight.build', 'a11y.build', command_type=sims4.commands.CommandType.Live
+)
 def command(action: str = 'toggle', _connection=None):
     return request(action.lower())
 
 
-@sims4.commands.Command('simsight.buildinfo', 'a11y.buildinfo', command_type=sims4.commands.CommandType.Live)
+@sims4.commands.Command(
+    'simsight.buildinfo', 'a11y.buildinfo', command_type=sims4.commands.CommandType.Live
+)
 def info(encoded: str = '', _connection=None):
     """Native localized hovered-object/error text; never infer placement success."""
     global _last_feedback, _feedback_time
@@ -348,7 +425,9 @@ def info(encoded: str = '', _connection=None):
     return True
 
 
-@sims4.commands.Command('simsight.buildlog', 'a11y.buildlog', command_type=sims4.commands.CommandType.Live)
+@sims4.commands.Command(
+    'simsight.buildlog', 'a11y.buildlog', command_type=sims4.commands.CommandType.Live
+)
 def buildlog(encoded: str = '', _connection=None):
     """Client lifecycle diagnostics for the Build cursor and the catalog
     product memory: written to the log, never spoken, capped per window."""
@@ -368,7 +447,9 @@ def buildlog(encoded: str = '', _connection=None):
     return True
 
 
-@sims4.commands.Command('simsight.buildstate', 'a11y.buildstate', command_type=sims4.commands.CommandType.Live)
+@sims4.commands.Command(
+    'simsight.buildstate', 'a11y.buildstate', command_type=sims4.commands.CommandType.Live
+)
 def state(encoded: str = '', _connection=None):
     """Client reply: serial|active|result|x|y|step. Coordinates are pixels."""
     global _active, _last_reply, _last_serial, _aim_pending, _release_serial
@@ -411,13 +492,17 @@ def state(encoded: str = '', _connection=None):
         _aim_pending = 0
     _last_reply = time.monotonic()
     if serial and serial == _release_serial and not flag:
-        return True      # the Build-exit release: nothing to announce in Live mode
+        return True  # the Build-exit release: nothing to announce in Live mode
     replies = {
-        'on': ('Build cursor on. Screen pixels, not lot tiles. ',
-               'Kursor budowania włączony. Piksele ekranu, nie pola parceli. '),
+        'on': (
+            'Build cursor on. Screen pixels, not lot tiles. ',
+            'Kursor budowania włączony. Piksele ekranu, nie pola parceli. ',
+        ),
         'off': ('Build cursor off.', 'Kursor budowania wyłączony.'),
-        'blocked': ('Close the open dialog or text field first.',
-                    'Najpierw zamknij otwarte okno lub pole tekstowe.'),
+        'blocked': (
+            'Close the open dialog or text field first.',
+            'Najpierw zamknij otwarte okno lub pole tekstowe.',
+        ),
         'unavailable': ('Build cursor unavailable.', 'Kursor budowania niedostępny.'),
         'click': ('Select or place. ', 'Wybierz lub umieść. '),
         'cancel': ('Cancel Build tool.', 'Anuluj narzędzie budowania.'),
@@ -425,20 +510,27 @@ def state(encoded: str = '', _connection=None):
         'redo': ('Redo.', 'Ponów.'),
         'rotateleft': ('Rotate left requested.', 'Wysłano polecenie obrotu w lewo.'),
         'rotateright': ('Rotate right requested.', 'Wysłano polecenie obrotu w prawo.'),
-        'toolblocked': ('Choose the Select tool or an object from the catalog first.',
-                        'Najpierw wybierz narzędzie zaznaczania lub obiekt z katalogu.'),
-        'nohistory': ('Nothing to undo or redo.',
-                      'Brak dostępnego wpisu w historii gry.'),
-        'aim': ('Build cursor aimed at the grid point. Press Enter to select or place. ',
-                'Kursor budowania ustawiony na rzucie punktu siatki. Naciśnij Enter, aby wybrać lub umieścić obiekt. '),
-        'aimfailed': ('The grid point is not visible in the Build viewport. Adjust the camera or floor, then choose the grid point again.',
-                      'Punkt siatki nie jest widoczny w oknie budowania. Zmień kamerę lub piętro, a następnie ponownie wybierz punkt.'),
+        'toolblocked': (
+            'Choose the Select tool or an object from the catalog first.',
+            'Najpierw wybierz narzędzie zaznaczania lub obiekt z katalogu.',
+        ),
+        'nohistory': ('Nothing to undo or redo.', 'Brak dostępnego wpisu w historii gry.'),
+        'aim': (
+            'Build cursor aimed at the grid point. Press Enter to select or place. ',
+            'Kursor budowania ustawiony na rzucie punktu siatki. Naciśnij Enter, aby wybrać lub umieścić obiekt. ',
+        ),
+        'aimfailed': (
+            'The grid point is not visible in the Build viewport. Adjust the camera or floor, then choose the grid point again.',
+            'Punkt siatki nie jest widoczny w oknie budowania. Zmień kamerę lub piętro, a następnie ponownie wybierz punkt.',
+        ),
     }
     if result in ('on', 'aim', 'move', 'status', 'fine', 'coarse', 'center', 'click'):
         prefix = _text(*replies[result]) if result in replies else ''
         feedback = ' ' + _last_feedback if _last_feedback and result in ('click', 'status') else ''
-        _say(prefix + 'Screen x {}, y {}. Step {} pixels.'.format(x, y, step) + feedback,
-             prefix + 'Ekran x {}, y {}. Krok {} pikseli.'.format(x, y, step) + feedback)
+        _say(
+            prefix + 'Screen x {}, y {}. Step {} pixels.'.format(x, y, step) + feedback,
+            prefix + 'Ekran x {}, y {}. Krok {} pikseli.'.format(x, y, step) + feedback,
+        )
     elif result in replies:
         _say(*replies[result])
     return True

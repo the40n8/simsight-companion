@@ -10,6 +10,7 @@ the phone would (test_and_execute), so it opens the game's own career
 picker, event planner, move screen and so on. Travel goes through the
 travel list's own Go alone / Choose who comes window.
 """
+
 import functools
 import sims4.commands
 import simsight_lang as lang
@@ -28,6 +29,7 @@ def _recipient(dialog):
 def _note(dialog, phone_ring_type):
     from ui.ui_dialog import PhoneRingType
     import services
+
     if phone_ring_type == PhoneRingType.NO_RING or not settings.get('keyboard', True):
         return
     owner_id, info = _recipient(dialog)
@@ -41,10 +43,12 @@ def _note(dialog, phone_ring_type):
         return
     _waiting.append(token)
     del _waiting[:-32]
-    name = ' '.join(part for part in (getattr(info, 'first_name', ''),
-                                      getattr(info, 'last_name', '')) if part)
-    speech.speak('Phone for {}. Control Alt P opens the waiting call or text.'.format(name),
-                 source='event')
+    name = ' '.join(
+        part for part in (getattr(info, 'first_name', ''), getattr(info, 'last_name', '')) if part
+    )
+    speech.speak(
+        'Phone for {}. Control Alt P opens the waiting call or text.'.format(name), source='event'
+    )
 
 
 def open_waiting(list_when_none=False):
@@ -54,6 +58,7 @@ def open_waiting(list_when_none=False):
     import services
     import distributor.ops
     import distributor.system
+
     service = services.ui_dialog_service()
     client = services.client_manager().get_first_client()
     if service is None or client is None:
@@ -81,9 +86,9 @@ def open_waiting(list_when_none=False):
 
 # ------------------------------------------------------------- phone list
 
-_list_id = None        # our open phone window
-_list = None           # the _PhoneList behind it
-_CLOSE_WAIT = 1.0      # seconds a chosen action waits for our window to close
+_list_id = None  # our open phone window
+_list = None  # the _PhoneList behind it
+_CLOSE_WAIT = 1.0  # seconds a chosen action waits for our window to close
 
 
 def simplified():
@@ -109,8 +114,8 @@ class _Entry(object):
 class _PhoneList(object):
     def __init__(self, sim_id, groups, direct):
         self.sim_id = sim_id
-        self.groups = groups      # [(localized label, [_Entry])], in phone order
-        self.direct = direct      # [_Entry] with no category
+        self.groups = groups  # [(localized label, [_Entry])], in phone order
+        self.direct = direct  # [_Entry] with no category
 
 
 def _root(category):
@@ -128,6 +133,7 @@ def _collect(sim, client):
     import services
     import sims4.resources
     from interactions.choices import ChoiceMenu
+
     context = client.create_interaction_context(sim)
     choice_menu = ChoiceMenu(sim)
     choice_menu.add_potential_aops(None, context, sim.potential_phone_interactions(context), None)
@@ -151,16 +157,18 @@ def _collect(sim, client):
         enabled = bool(item.result) and not modifier_tooltip
         tip = None
         if tooltip is not None:
-            tip = affordance.create_localized_string(tooltip, context=item.context, target=aop.target,
-                                                     **aop.interaction_parameters)
+            tip = affordance.create_localized_string(
+                tooltip, context=item.context, target=aop.target, **aop.interaction_parameters
+            )
         category = categories.get(item.category_key) if item.category_key else None
         root = _root(category)
         detail = None
         if category is not None and category is not root:
             detail = category._display_name(sim)
         elif tip is None:
-            detail = affordance.get_display_tooltip(context=item.context, target=aop.target,
-                                                    **aop.interaction_parameters)
+            detail = affordance.get_display_tooltip(
+                context=item.context, target=aop.target, **aop.interaction_parameters
+            )
         entry = _Entry(aop, name, enabled, tip, detail)
         if root is None:
             direct.append(entry)
@@ -173,8 +181,11 @@ def _collect(sim, client):
     def priority(root):
         value = getattr(root, '_display_priority', 0)
         return value if isinstance(value, (int, float)) else 0
-    order.sort(key=priority)                  # stable: equal priorities keep the phone's order
-    return _PhoneList(sim.sim_id, [(root._display_name(sim), groups[root]) for root in order], direct)
+
+    order.sort(key=priority)  # stable: equal priorities keep the phone's order
+    return _PhoneList(
+        sim.sim_id, [(root._display_name(sim), groups[root]) for root in order], direct
+    )
 
 
 def _phone_refused(sim):
@@ -183,6 +194,7 @@ def _phone_refused(sim):
     from event_testing.resolver import SingleSimResolver
     from sims.phone_tuning import PhoneTuning
     import simsight_native as native
+
     resolver = SingleSimResolver(sim.sim_info)
     for phone_test in PhoneTuning.DISABLE_PHONE_TESTS:
         if resolver(phone_test.test):
@@ -199,6 +211,7 @@ def _current_sim(phone_list):
     """The active Sim and client, only while Simplified menus are on and
     the list still belongs to that Sim; otherwise says why and gives None."""
     import services
+
     if not simplified():
         _say('action unavailable')
         return None, None
@@ -214,6 +227,7 @@ def open_list():
     """Simulation pump or a command callback: the phone list for the
     active Sim, or the phone's own reason why there is none."""
     import services
+
     sim = services.get_active_sim()
     client = services.client_manager().get_first_client()
     if sim is None or client is None:
@@ -230,23 +244,35 @@ def open_list():
     if not phone_list.groups and not phone_list.direct:
         _say('phone empty')
         return False
-    speech.log_line('phone: list for sim {}: {} categories, {} other actions'.format(
-        sim.sim_id, len(phone_list.groups), len(phone_list.direct)))
+    speech.log_line(
+        'phone: list for sim {}: {} categories, {} other actions'.format(
+            sim.sim_id, len(phone_list.groups), len(phone_list.direct)
+        )
+    )
     return _show_top(phone_list)
 
 
 def _row(option_id, name, detail, tag, enabled=True, tip=None):
     from ui.ui_dialog_picker import ObjectPickerRow
-    return ObjectPickerRow(option_id=option_id, name=name, row_description=detail,
-                           row_tooltip=(lambda *_, text=tip: text) if tip is not None else None,
-                           icon=None, icon_info=_icon(), tag=tag, is_selected=False,
-                           is_enable=enabled)
+
+    return ObjectPickerRow(
+        option_id=option_id,
+        name=name,
+        row_description=detail,
+        row_tooltip=(lambda *_, text=tip: text) if tip is not None else None,
+        icon=None,
+        icon_info=_icon(),
+        tag=tag,
+        is_selected=False,
+        is_enable=enabled,
+    )
 
 
 def _icon():
     try:
         import services
         from distributor.shared_messages import IconInfoData
+
         sim = services.get_active_sim()
         if sim is not None:
             return IconInfoData(obj_instance=sim)
@@ -260,6 +286,7 @@ def _open(phone_list, title, text, rows):
     for the phone itself, or a category's game string."""
     global _list_id, _list
     import simsight_menu as menu
+
     menu._cancel_dialog(_list_id)
     _list_id = None
     dialog = menu._picker(lang.t('phone'), lang.t(text), localized_title=title)
@@ -285,10 +312,12 @@ def _open(phone_list, title, text, rows):
         if tags[0][0] in ('group', 'back'):
             try:
                 import simsight_keys as keys
-                keys.hold_scanner_resume()      # the next phone window follows
+
+                keys.hold_scanner_resume()  # the next phone window follows
             except Exception:
                 pass
         import simsight_pump as pump
+
         if not pump.post(_chosen, owner, tags[0]):
             _say('action unavailable')
 
@@ -296,6 +325,7 @@ def _open(phone_list, title, text, rows):
     _list = phone_list
     try:
         import simsight_keys as keys
+
         keys.fence_opening_input()
     except Exception:
         pass
@@ -305,12 +335,15 @@ def _open(phone_list, title, text, rows):
 
 
 def _entry_rows(entries, start):
-    return [_row(start + index, entry.name, entry.detail, ('do', entry), entry.enabled, entry.tip)
-            for index, entry in enumerate(entries)]
+    return [
+        _row(start + index, entry.name, entry.detail, ('do', entry), entry.enabled, entry.tip)
+        for index, entry in enumerate(entries)
+    ]
 
 
 def _show_top(phone_list):
     import simsight_menu as menu
+
     rows = []
     for index, (label, entries) in enumerate(phone_list.groups):
         term = 'phone group count one' if len(entries) == 1 else 'phone group count'
@@ -322,6 +355,7 @@ def _show_top(phone_list):
 
 def _show_group(phone_list, index):
     import simsight_menu as menu
+
     label, entries = phone_list.groups[index]
     rows = [_row(0, menu._raw(lang.t('back to phone')), None, ('back',))]
     rows.extend(_entry_rows(entries, 1))
@@ -355,6 +389,7 @@ def _run(phone_list, entry):
     then execute."""
     import services
     import simsight_native as native
+
     global _list
     _list = None
     sim, client = _current_sim(phone_list)
@@ -378,7 +413,12 @@ def _run(phone_list, entry):
         return False
     try:
         import simsight_travel as travel
-        if entry.affordance_id == travel._TRAVEL_AFFORDANCE and travel.enabled() and travel.simplified():
+
+        if (
+            entry.affordance_id == travel._TRAVEL_AFFORDANCE
+            and travel.enabled()
+            and travel.simplified()
+        ):
             if travel._show_front(sim):
                 return True
     except Exception as ex:
@@ -398,11 +438,13 @@ def _when_window_closed(fn, *args):
     why. False when the pump is unavailable."""
     import time
     import simsight_pump as pump
+
     deadline = time.monotonic() + _CLOSE_WAIT
 
     def step():
         try:
             import simsight_keys as keys
+
             waiting = bool(keys._modal_active)
         except Exception:
             waiting = False
@@ -421,6 +463,7 @@ def _execute(phone_list, entry):
     """Pump, once our window has closed: the Sim and the setting again, a
     fresh context, EA's tests again, then execute."""
     import simsight_native as native
+
     sim, client = _current_sim(phone_list)
     if sim is None:
         return False
@@ -439,18 +482,23 @@ def _execute(phone_list, entry):
     return True
 
 
-@sims4.commands.Command('simsight.phonelist', 'a11y.phonelist', command_type=sims4.commands.CommandType.Live)
+@sims4.commands.Command(
+    'simsight.phonelist', 'a11y.phonelist', command_type=sims4.commands.CommandType.Live
+)
 def a11y_phonelist(_connection=None):
     return open_list()
 
 
-@sims4.commands.Command('simsight.phone', 'a11y.phone', command_type=sims4.commands.CommandType.Live)
+@sims4.commands.Command(
+    'simsight.phone', 'a11y.phone', command_type=sims4.commands.CommandType.Live
+)
 def a11y_phone(_connection=None):
     return open_waiting()
 
 
 def _install():
     from ui.ui_dialog_service import UiDialogService
+
     original = UiDialogService.dialog_show
     if getattr(original, '_a11y_phone_hook', False):
         return
