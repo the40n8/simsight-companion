@@ -357,7 +357,7 @@ def open_builder() -> None:
     if not grid.build_cursor():
         core.speak('Turn on the Build grid and move to the intended north-west corner first.')
         return
-    anchor = tuple(grid._tile)
+    anchor = tuple(grid.location.tile)
     _StructureChoices((anchor[0], anchor[1])).start()
 
 

@@ -663,7 +663,7 @@ def a11y_focus_enc(text: str = '', _connection: Any = None) -> bool:
         _cancel_pending_name()
         final = _process_or_raw(_decode_percent(text), 'widget')
         _arm_row_head(final)
-        speech.speak(final, source='widget', explicit=speech.speech_mode == 'hover')
+        speech.speak(final, source='widget', explicit=speech.modes.speech == 'hover')
         return True
     return False
 
@@ -1000,7 +1000,7 @@ def a11y_speechmode(mode: str = '', _connection: Any = None) -> bool:
             speech.set_mode(m)
             output(f'simsight: speech mode {m}')
         else:
-            output(f'simsight: speech mode is {speech.speech_mode}')
+            output(f'simsight: speech mode is {speech.modes.speech}')
             output('simsight: usage simsight.speechmode hover|manual|beeps|off')
         return True
     return False
@@ -1225,7 +1225,7 @@ def a11y_braille(mode: str = '', _connection: Any = None) -> bool:
     with _boundary('narrator: braille'):
         output = sims4.commands.CheatOutput(_connection)
         if mode.lower() not in _BRAILLE_MODES:
-            output(f'a11y braille mode: {speech.braille_mode}')
+            output(f'a11y braille mode: {speech.modes.braille}')
             output(
                 'a11y braille display detected: {}'.format('yes' if speech.has_braille() else 'no')
             )
@@ -1235,10 +1235,10 @@ def a11y_braille(mode: str = '', _connection: Any = None) -> bool:
             output('   only    = braille only, no speech')
             output('   off     = speech only')
             return True
-        speech.braille_mode = mode.lower()
-        settings.set('braille_mode', speech.braille_mode)
-        output(f'simsight: braille mode set to {speech.braille_mode}')
-        speech.speak(f'Braille mode {speech.braille_mode}.', explicit=True)
+        speech.modes.braille = mode.lower()
+        settings.set('braille_mode', speech.modes.braille)
+        output(f'simsight: braille mode set to {speech.modes.braille}')
+        speech.speak(f'Braille mode {speech.modes.braille}.', explicit=True)
         return True
     return False
 
@@ -1277,12 +1277,12 @@ def _reload_speech(output: Output) -> None:
     if not settings.get('captions', False):
         speech.clear_caption()
     simsight_log.enabled = bool(settings.get('logging', simsight_log.enabled))
-    braille = str(settings.get('braille_mode', speech.braille_mode))
+    braille = str(settings.get('braille_mode', speech.modes.braille))
     if braille in _BRAILLE_MODES:
-        speech.braille_mode = braille
+        speech.modes.braille = braille
     mode = str(settings.get('speech_mode', 'hover'))
     if mode in speech._VALID_MODES:
-        speech.speech_mode = mode
+        speech.modes.speech = mode
     speech.restart_sapi()
     if speech.retry_screen_reader():
         output('simsight: screen reader detected; speech now routes through it')
@@ -1293,8 +1293,8 @@ def _reload_modules() -> None:
     try:
         import simsight_keys as keys
 
-        keys._enabled = bool(settings.get('keyboard', True))
-        if keys._enabled:
+        keys.status.enabled = bool(settings.get('keyboard', True))
+        if keys.status.enabled:
             keys.start()
     except ImportError:
         pass  # module not in this build
@@ -1385,7 +1385,7 @@ def _settings_lines() -> tuple[list[str], list[str]]:
     try:
         import simsight_objectnames as objectnames
 
-        lines.append(f'object names {_on_off(objectnames._enabled)}')
+        lines.append(f'object names {_on_off(objectnames.enabled())}')
     except ImportError:
         lines.append('object names unavailable')
     lines.extend(
@@ -1396,7 +1396,7 @@ def _settings_lines() -> tuple[list[str], list[str]]:
     try:
         import simsight_keys as keys
 
-        lines.append(f'keyboard navigation {_on_off(keys._enabled)}')
+        lines.append(f'keyboard navigation {_on_off(keys.status.enabled)}')
         for label, combos in keys.BINDINGS.values():
             keybind_lines.append(
                 '   {}: {}'.format(
@@ -1405,10 +1405,10 @@ def _settings_lines() -> tuple[list[str], list[str]]:
             )
     except ImportError:
         lines.append('keyboard navigation unavailable')
-    lines.append('speech mode {}'.format(speech.speech_mode.replace('_', ' ')))
+    lines.append('speech mode {}'.format(speech.modes.speech.replace('_', ' ')))
     lines.append(f'tooltip delay {_delay_text(_tooltip_delay())}')
     lines.append('auto focus {}'.format(_on_off(settings.get('auto_focus'))))
-    lines.append(f'braille mode {speech.braille_mode}')
+    lines.append(f'braille mode {speech.modes.braille}')
     lines.append('verbosity {}'.format(settings.get('verbosity')))
     lines.append(f'logging {_on_off(simsight_log.enabled)}')
     return lines, keybind_lines
@@ -1439,9 +1439,7 @@ def a11y_status(_connection: Any = None) -> bool:
         output = sims4.commands.CheatOutput(_connection)
         output(f'a11y backend: {speech.backend_name()}')
         output(
-            'a11y screen reader: {}'.format(
-                getattr(getattr(speech, '_prism', None), 'name', None) or 'none; Windows fallback'
-            )
+            'a11y screen reader: {}'.format(speech.screen_reader_name() or 'none; Windows fallback')
         )
         output(
             'a11y speech pack: {}'.format(
@@ -1460,7 +1458,7 @@ def a11y_status(_connection: Any = None) -> bool:
         output(
             'a11y braille: display {} / mode {}'.format(
                 'supported by reader' if speech.has_braille() else 'not available',
-                speech.braille_mode,
+                speech.modes.braille,
             )
         )
         output(

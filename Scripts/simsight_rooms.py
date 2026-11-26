@@ -142,10 +142,10 @@ def room_name(room_id: Any, outside: Any, level: Any) -> str | None:
 def current_room() -> RoomKey | None:
     import simsight_grid as grid
 
-    room_id, outside = _room_at(grid._tile[0], grid._tile[1], grid._level)
+    room_id, outside = _room_at(grid.location.tile[0], grid.location.tile[1], grid.location.level)
     if room_id is None or outside:
         return None
-    return room_id, grid._level
+    return room_id, grid.location.level
 
 
 def _clean(label: object) -> str:
@@ -264,7 +264,7 @@ def _facing_part(here: str, separated: list[tuple[int, str, Any]]) -> str | None
     import simsight_place as place
 
     item = place.product()
-    faces_wall = any(side == int(grid._facing) % 4 for side, _d, _t in separated)
+    faces_wall = any(side == int(grid.location.facing) % 4 for side, _d, _t in separated)
     if item is not None and place.requirement(item['id']) == 'wall' and faces_wall:
         return grid._text(
             'Selected object faces into {}. ', 'Wybrany obiekt jest skierowany do: {}. '
@@ -275,8 +275,8 @@ def _facing_part(here: str, separated: list[tuple[int, str, Any]]) -> str | None
 def _wall_parts(frame: Any, parts: list[str]) -> None:
     import simsight_grid as grid
 
-    i, j = grid._tile
-    level = grid._level
+    i, j = grid.location.tile
+    level = grid.location.level
     here_id, here_outside = _room_at(i, j, level)
     unnamed = grid._text('unlabelled room', 'pomieszczenie bez nazwy')
     here_name = room_name(here_id, here_outside, level)

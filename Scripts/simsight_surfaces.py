@@ -127,12 +127,12 @@ def _fence_point() -> tuple[Frame, int, Any, float] | None:
     if state is None:
         return None
     frame, sides, doors = state
-    side = int(grid._facing) % 4
+    side = int(grid.location.facing) % 4
     if side in doors or not wall._blocked(sides.get(side)):
         return None
-    i, j = grid._tile
+    i, j = grid.location.tile
     di, dj = tiles.STEPS[side]
-    center = tiles.position(frame, i, j, grid._level)
+    center = tiles.position(frame, i, j, grid.location.level)
     neighbor = frame.world(i + di, j + dj)
     point = sims4.math.Vector3(
         (float(center.x) + float(neighbor[0])) / 2.0,
@@ -211,7 +211,7 @@ def fit_parts(need: str) -> list[str]:
                 'Umieszczanie eksperymentalne: nie można sprawdzić pola. ',
             )
         ]
-    return [_FIT.get(need, _fence_fit)(position, grid._level)]
+    return [_FIT.get(need, _fence_fit)(position, grid.location.level)]
 
 
 def _placement(
@@ -221,16 +221,16 @@ def _placement(
     import simsight_grid as grid
     import simsight_place as place_mod
 
-    angle, point = frame.yaw(int(grid._facing) % 4), position
+    angle, point = frame.yaw(int(grid.location.facing) % 4), position
     if need == 'terrain':
-        if _natural_ground(position, grid._level) is not True:
+        if _natural_ground(position, grid.location.level) is not True:
             place_mod._say_text(
                 'This object needs natural ground with no floor tiles.',
                 'Ten obiekt wymaga naturalnego terenu bez podłogi.',
             )
             return None
     elif need == 'water':
-        point, depth, kind = _water_point(position, grid._level)
+        point, depth, kind = _water_point(position, grid.location.level)
         if point is None:
             place_mod._say_text(
                 'This object needs water, and no water surface was detected here.',
@@ -239,7 +239,7 @@ def _placement(
             return None
         _log('water product {} kind {} depth {:.2f}'.format(item['id'], kind, depth))
     elif need == 'ceiling':
-        point = _ceiling_point(position, grid._level)
+        point = _ceiling_point(position, grid.location.level)
         if point is None:
             place_mod._say_text(
                 'No ceiling anchor could be sampled here.',
@@ -276,4 +276,4 @@ def place(item: dict[str, Any], need: str) -> bool:
         return False
     point, angle = chosen
     _log('product {} requirement {} sent to exact validation'.format(item['id'], need))
-    return place_mod.place(point, grid._level, grid._surface(), angle=angle, exact=True)
+    return place_mod.place(point, grid.location.level, grid._surface(), angle=angle, exact=True)

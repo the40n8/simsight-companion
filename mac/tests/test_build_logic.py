@@ -78,9 +78,9 @@ class BuildCursor(unittest.TestCase):
 
     def test_on_reply_and_stale_reply(self):
         self.assertTrue(build.request('on'))
-        serial = build._serial
+        serial = build._state.serial
         self.assertEqual(UI[-1], f'A11y|build|on|{serial}')
-        self.assertEqual(build._pending[serial], 7)
+        self.assertEqual(build._state.pending[serial], 7)
         self.assertTrue(build.state(f'{serial}|1|on|100|200|16'))
         self.assertTrue(build.active())
         self.assertEqual(
@@ -93,11 +93,11 @@ class BuildCursor(unittest.TestCase):
 
     def test_feedback_follows_status(self):
         build.request('on')
-        build.state(f'{build._serial}|1|on|1|1|4')
+        build.state(f'{build._state.serial}|1|on|1|1|4')
         self.assertTrue(build.info('name|Dining%20chair'))
         self.assertEqual(SPOKEN[-1], 'Dining chair')
         self.assertTrue(build.request('status'))
-        build.state(f'{build._serial}|1|status|3|4|64')
+        build.state(f'{build._state.serial}|1|status|3|4|64')
         self.assertEqual(SPOKEN[-1], 'Screen x 3, y 4. Step 64 pixels. Dining chair')
 
     def test_retirement_and_disabled(self):
@@ -121,7 +121,7 @@ class BuildCursor(unittest.TestCase):
         self.assertEqual(SPOKEN[-1], 'Build cursor is off.')
         self.assertFalse(build.request('fly'))
         self.assertTrue(build.request_menu('rotateleft'))
-        self.assertEqual(UI[-1], f'A11y|build|menu:rotateleft|{build._serial}')
+        self.assertEqual(UI[-1], f'A11y|build|menu:rotateleft|{build._state.serial}')
 
 
 class Basement(unittest.TestCase):

@@ -96,10 +96,17 @@ _MODE_ANNOUNCEMENTS = {
 #   off      speech only, no braille
 _BRAILLE_MODES = ('concise', 'full', 'only', 'off')
 
-# Module attributes other modules read and set (the narrator and the mod menu).
-speech_mode = 'hover'
-braille_mode = 'concise'
-_prism: Any = None  # the Prism Reader once loaded (the narrator reads its name)
+
+class Modes:
+    """The speech and braille modes, which other modules (the narrator, the mod
+    menu) read and set as speech.modes.speech and speech.modes.braille."""
+
+    def __init__(self) -> None:
+        self.speech = 'hover'  # one of _VALID_MODES
+        self.braille = 'concise'  # one of _BRAILLE_MODES
+
+
+modes = Modes()
 
 # Logging stays on if the settings module itself fails to import.
 simsight_log.enabled = True
@@ -107,12 +114,12 @@ try:
     import simsight_settings as _settings
 
     simsight_log.enabled = bool(_settings.get('logging'))
-    _stored_braille = str(_settings.get('braille_mode', braille_mode))
+    _stored_braille = str(_settings.get('braille_mode', modes.braille))
     if _stored_braille in _BRAILLE_MODES:
-        braille_mode = _stored_braille
+        modes.braille = _stored_braille
     _stored_mode = str(_settings.get('speech_mode', 'hover'))
     if _stored_mode in _VALID_MODES:
-        speech_mode = _stored_mode
+        modes.speech = _stored_mode
 except Exception:
     simsight_log.error('speech: reading the settings')
 
@@ -156,6 +163,7 @@ class _State:
         self.last_repeated: str | None = None
         self.deferred_timer: threading.Timer | None = None
         self.last_beep = 0.0
+        self.prism: Any = None  # the Prism Reader once loaded (Windows)
 
 
 _state = _State()
@@ -171,13 +179,12 @@ def log_line(message: str) -> None:
 
 
 def _try_init_prism() -> bool:
-    global _prism  # noqa: PLW0603 - module attribute the narrator reads
     if IS_MAC or not os.path.isfile(PRISM_DLL_PATH):
         return False
     try:
         from simsight_prism import Reader
 
-        _prism = Reader(PRISM_DLL_PATH, simsight_log.line)
+        _state.prism = Reader(PRISM_DLL_PATH, simsight_log.line)
         simsight_log.line(f'Prism loaded from {PRISM_DLL_PATH}')
         return True
     except Exception as ex:
@@ -185,8 +192,13 @@ def _try_init_prism() -> bool:
         return False
 
 
+def screen_reader_name() -> str | None:
+    """The screen reader Prism speaks through, or None (not loaded)."""
+    return getattr(_state.prism, 'name', None)
+
+
 def has_braille() -> bool:
-    return bool(_prism is not None and _prism.has_braille())
+    return bool(_state.prism is not None and _state.prism.has_braille())
 
 
 def _braille_text(text: str) -> str:
@@ -195,7 +207,7 @@ def _braille_text(text: str) -> str:
     The leading segment is the label ("Fishing. 4" / "Dismiss"), which is what
     a braille reader wants; the trailing prose is what speech is good at.
     """
-    if braille_mode == 'full':
+    if modes.braille == 'full':
         return text
     head = text.split('. ', 1)[0].strip()
     if not head:
@@ -514,10 +526,9 @@ def _beep() -> None:
 def set_mode(mode: str) -> bool:
     """Switch the speech mode, save it and say the new mode. False for an
     unknown mode."""
-    global speech_mode  # noqa: PLW0603 - module attribute other modules read and set
     if mode not in _VALID_MODES:
         return False
-    speech_mode = mode
+    modes.speech = mode
     try:
         import simsight_settings as settings
 
@@ -530,7 +541,7 @@ def set_mode(mode: str) -> bool:
 
 
 def cycle_mode() -> None:
-    set_mode(_VALID_MODES[(_VALID_MODES.index(speech_mode) + 1) % len(_VALID_MODES)])
+    set_mode(_VALID_MODES[(_VALID_MODES.index(modes.speech) + 1) % len(_VALID_MODES)])
 
 
 def _cancel_deferred() -> None:
@@ -560,7 +571,7 @@ def speak_progressive(
     full = head if not body else head + '. ' + body
     _state.captured_text = full
     _state.captured_time = time.monotonic()
-    if not body or speech_mode != 'hover':
+    if not body or modes.speech != 'hover':
         return  # other modes never auto-speak, so nothing to defer
     # The head is playing right now and the body is on its way, so the user
     # is hearing this capture: the read key must STOP. speak() armed the key
@@ -577,7 +588,7 @@ def speak_progressive(
 
 def _flush_deferred(body: str, source: str) -> None:
     _state.deferred_timer = None
-    if speech_mode != 'hover':
+    if modes.speech != 'hover':
         return
     _state.last_repeated = _state.captured_text  # heard in full: 8 now stops
     _speak_now(body, source)
@@ -601,7 +612,7 @@ def repeat_last() -> None:
     press in SILENCE do a soundless "stop", so the key felt dead until a
     second press (tester report, fixed 2026-08-03)."""
     _cancel_deferred()
-    if speech_mode == 'off':
+    if modes.speech == 'off':
         return
     captured = _state.captured_text
     if not captured:
@@ -698,9 +709,9 @@ def speak(
     # off. Explicit speech (command feedback, read-current) always talks.
     # Deafblind exception: in braille-only mode the braille stream keeps
     # flowing regardless of speech mode.
-    if speech_mode != 'hover' and not (braille_mode == 'only' and has_braille()):
-        simsight_log.line(f'CAPTURE[{speech_mode}/{source[0]}]: {text}')
-        if speech_mode == 'beeps':
+    if modes.speech != 'hover' and not (modes.braille == 'only' and has_braille()):
+        simsight_log.line(f'CAPTURE[{modes.speech}/{source[0]}]: {text}')
+        if modes.speech == 'beeps':
             _beep()
         return
     if _park_if_burst(text, source, now):
@@ -730,9 +741,9 @@ def stop() -> None:
     _state.last_time = time.monotonic()
     _state.last_source = 'widget'
     _state.busy_until = 0.0
-    if _prism is not None:
+    if _state.prism is not None:
         try:
-            _prism.stop()
+            _state.prism.stop()
         except Exception as ex:
             simsight_log.line(f'Prism stop failed: {ex!r}')
     # Always cancel any fallback that may still be speaking after a switch.
@@ -766,10 +777,10 @@ def retry_screen_reader() -> bool:
 
 
 def _retry_screen_reader_locked() -> bool:
-    if _prism is None and not _try_init_prism():
+    if _state.prism is None and not _try_init_prism():
         return False
     _state.backend_name = 'prism'
-    found = bool(_prism.select(force=True))
+    found = bool(_state.prism.select(force=True))
     if found:
         restart_sapi()
     return found
@@ -880,14 +891,14 @@ def _mirror(text: str, interrupt: bool) -> None:
 
 def _output(text: str, interrupt: bool) -> None:
     """To the screen reader when it takes it, else to the fallback voice."""
-    if _state.backend_name == 'prism' and _prism is not None:
+    if _state.backend_name == 'prism' and _state.prism is not None:
         try:
-            if _prism.output(text, _braille_text(text), braille_mode, interrupt):
+            if _state.prism.output(text, _braille_text(text), modes.braille, interrupt):
                 restart_sapi()
                 return
         except Exception as ex:
             simsight_log.line(f'Prism output failed: {ex!r}')
-    if braille_mode == 'only':
+    if modes.braille == 'only':
         return
     with _sapi_lock:
         if _state.backend_name in ('prism', 'sapi') and _state.sapi_proc is None:

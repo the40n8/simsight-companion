@@ -343,7 +343,8 @@ def _current(u: Any) -> Frame:
     if window(u) != frame.geometry:
         raise RuntimeError('Game focus, size, position or DPI changed; retry the operation')
     keys = sys.modules.get('simsight_keys')
-    if keys is not None and (getattr(keys, '_editing_active', False) or keys.blocking_active()):
+    status = getattr(keys, 'status', None)
+    if keys is not None and (getattr(status, 'editing_active', False) or keys.blocking_active()):
         raise RuntimeError('Close the open game dialog before building')
     return frame
 
@@ -417,7 +418,7 @@ def _safe_game(zone: int) -> bool:
         place.in_build_mode()
         and int(services.current_zone_id()) == zone
         and not keys.blocking_active()
-        and not keys._editing_active
+        and not keys.status.editing_active
     )
 
 

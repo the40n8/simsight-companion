@@ -68,10 +68,10 @@ import simsight_keys as keys  # noqa: E402
 def reset():
     del SPOKEN[:], POSTED[:], CLOSED[:]
     SETTINGS.clear()
-    keys._enabled = True
-    keys._modal_active = False
-    keys._editing_active = False
-    keys._build_grid_owner = False
+    keys.status.enabled = True
+    keys.status.modal_active = False
+    keys.status.editing_active = False
+    keys.status.build_grid_owner = False
     keys._state.blocking_explicit = None
     keys._state.scanner_owner = False
     keys._opening_keys.clear()
@@ -91,13 +91,13 @@ class ModalStateTest(unittest.TestCase):
 
     def test_dropped_leading_zero_and_numbers(self):
         self.assertTrue(keys.apply_modal_state('1', 'modalstate'))
-        self.assertEqual((keys._modal_active, keys._editing_active), (False, True))
+        self.assertEqual((keys.status.modal_active, keys.status.editing_active), (False, True))
         self.assertTrue(keys.apply_modal_state(10, 'modalstate'))
-        self.assertEqual((keys._modal_active, keys._editing_active), (True, False))
+        self.assertEqual((keys.status.modal_active, keys.status.editing_active), (True, False))
 
     def test_context_suffix_carries_blocking(self):
         self.assertTrue(keys.apply_modal_state('100', 'context'))
-        self.assertTrue(keys._modal_active)
+        self.assertTrue(keys.status.modal_active)
         self.assertFalse(keys.blocking_active())
         # Three digits are only accepted from the context suffix.
         self.assertFalse(keys.apply_modal_state('101', 'modalstate'))
@@ -134,7 +134,7 @@ class PlainMessageTest(unittest.TestCase):
         self.assertEqual(keys._plain_message(0x4E, ctrl=True, shift=True), 'A11yNeeds')
 
     def test_modal_owner(self):
-        keys._modal_active = True
+        keys.status.modal_active = True
         self.assertEqual(keys._plain_message(0x28), 'A11yArrowDown')
         self.assertEqual(keys._plain_message(0x09, shift=True), 'A11yTabPrev')
         self.assertEqual(keys._plain_message(0x1B), 'A11yEscape')
@@ -145,20 +145,20 @@ class PlainMessageTest(unittest.TestCase):
         self.assertEqual(keys._plain_message(0x64), 'A11yArrowUp')
 
     def test_editing_keeps_arrows(self):
-        keys._modal_active = True
-        keys._editing_active = True
+        keys.status.modal_active = True
+        keys.status.editing_active = True
         self.assertIsNone(keys._plain_message(0x28))
         self.assertEqual(keys._plain_message(0x1B), 'A11yEscape')
 
     def test_build_cursor_and_scanner(self):
-        keys._build_grid_owner = True
+        keys.status.build_grid_owner = True
         self.assertEqual(keys._plain_message(0x52), 'A11yBuildGrid:turn')
         self.assertEqual(keys._plain_message(0x52, shift=True), 'A11yBuildGrid:turnback')
-        keys._build_grid_owner = False
+        keys.status.build_grid_owner = False
         keys._state.scanner_owner = True
         SETTINGS['scanner_mode'] = True
         self.assertEqual(keys._plain_message(0x28), 'A11yScanner:next')
-        keys._enabled = False
+        keys.status.enabled = False
         self.assertIsNone(keys._plain_message(0x28))
 
 
@@ -170,12 +170,12 @@ class ChordTest(unittest.TestCase):
         keys._chord('next')
         self.assertEqual(POSTED, [('_world_chord', 'next', keys._state.input_epoch)])
         del POSTED[:]
-        keys._repeat_chord('next')
+        keys.repeat_chord('next')
         self.assertEqual(POSTED, [('_world_chord', 'next', keys._state.input_epoch, True)])
-        self.assertFalse(keys._chord_repeating)
+        self.assertFalse(keys._state.chord_repeating)
 
     def test_modal_owner_gets_navigation(self):
-        keys._modal_active = True
+        keys.status.modal_active = True
         keys._chord('next')
         self.assertEqual(POSTED, [('_deliver_activation', 'A11yNavNext', keys._state.input_epoch)])
         keys._chord('rescan')
@@ -184,7 +184,7 @@ class ChordTest(unittest.TestCase):
         self.assertTrue(SPOKEN[-1].startswith('Dialog.'))
 
     def test_pickers_and_phone_wait_for_the_dialog(self):
-        keys._modal_active = True
+        keys.status.modal_active = True
         keys._chord('queue')
         keys._chord('phone')
         self.assertEqual(
@@ -195,7 +195,7 @@ class ChordTest(unittest.TestCase):
             ],
         )
         self.assertEqual(POSTED, [])
-        keys._modal_active = False
+        keys.status.modal_active = False
         keys._chord('catalog')
         keys._chord('sim2')
         self.assertEqual(
@@ -203,7 +203,7 @@ class ChordTest(unittest.TestCase):
         )
 
     def test_text_field_owns_most_chords(self):
-        keys._editing_active = True
+        keys.status.editing_active = True
         keys._chord('next')
         keys._chord('scannermode')
         keys._chord('clock')
@@ -245,7 +245,7 @@ class PollerTest(unittest.TestCase):
         keys._send, keys._chord, keys._game_is_foreground = self._send, self._chord, self._fg
 
     def test_press_repeat_release(self):
-        keys._modal_active = True
+        keys.status.modal_active = True
         self.user32.down.add(0x28)
         self.poller.poll()
         self.assertEqual(self.sent, ['A11yArrowDown'])
@@ -259,7 +259,7 @@ class PollerTest(unittest.TestCase):
         self.assertEqual(self.sent[-1], 'A11y|keyup|40')
 
     def test_quick_tap_between_polls(self):
-        keys._modal_active = True
+        keys.status.modal_active = True
         self.user32.taps.add(0x0D)
         self.poller.poll()
         self.assertEqual(self.sent, ['A11yActivate', 'A11y|keyup|13'])
@@ -271,7 +271,7 @@ class PollerTest(unittest.TestCase):
         self.assertEqual(self.chords, ['help'])
 
     def test_key_held_across_focus_return_is_ignored(self):
-        keys._modal_active = True
+        keys.status.modal_active = True
         self.poller._focus_left()
         self.user32.down.add(0x28)
         self.poller.poll()

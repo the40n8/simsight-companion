@@ -243,10 +243,10 @@ def _objectnames() -> Any:
 
 # Options whose live value is not (only) the setting.
 _LIVE_VALUES: dict[str, Callable[[], Any]] = {
-    'speech_mode': lambda: speech.speech_mode,
-    'braille_mode': lambda: speech.braille_mode,
-    'keyboard': lambda: bool(_keys()._enabled),
-    'object_names': lambda: bool(_objectnames()._enabled),
+    'speech_mode': lambda: speech.modes.speech,
+    'braille_mode': lambda: speech.modes.braille,
+    'keyboard': lambda: bool(_keys().status.enabled),
+    'object_names': lambda: bool(_objectnames().enabled()),
     'logging': lambda: bool(simsight_log.enabled),
 }
 
@@ -291,19 +291,19 @@ def _label(row: Row) -> str:
 
 
 def _apply_speech_mode(value: Any) -> None:
-    speech.speech_mode = value
+    speech.modes.speech = value
     settings.set('speech_mode', value)
     simsight_log.line(f'speech mode -> {value} (menu)')
 
 
 def _apply_braille_mode(value: Any) -> None:
-    speech.braille_mode = value
+    speech.modes.braille = value
     settings.set('braille_mode', value)
 
 
 def _apply_keyboard(value: Any) -> None:
     keys = _keys()
-    keys._enabled = bool(value)
+    keys.status.enabled = bool(value)
     keys._send('A11yKeyboardOn' if value else 'A11yKeyboardOff')
     settings.set('keyboard', bool(value))
     if value:

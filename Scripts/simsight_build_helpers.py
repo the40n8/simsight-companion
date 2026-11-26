@@ -53,7 +53,7 @@ def _state() -> dict[str, Any]:
     import simsight_grid as grid
     import simsight_keys as keys
 
-    if not _runtime.build.in_build_mode() or keys.blocking_active() or keys._editing_active:
+    if not _runtime.build.in_build_mode() or keys.blocking_active() or keys.status.editing_active:
         raise RuntimeError('Close the game dialog before changing floors')
     lot = services.active_lot()
     if lot is None:
@@ -64,7 +64,7 @@ def _state() -> dict[str, Any]:
         'floor': floor,
         'center': (float(lot.center.x), float(lot.center.z)),
         'grid': bool(grid.build_cursor()),
-        'owner': bool(keys._build_grid_owner),
+        'owner': bool(keys.status.build_grid_owner),
     }
 
 
@@ -76,7 +76,7 @@ def _same_world(state: dict[str, Any]) -> bool:
         _runtime.build.in_build_mode()
         and int(services.current_zone_id()) == state['zone']
         and not keys.blocking_active()
-        and not keys._editing_active
+        and not keys.status.editing_active
     )
 
 
@@ -89,7 +89,7 @@ def _grid_message(message: str) -> None:
 def _grid_released() -> bool:
     import simsight_keys as keys
 
-    return not keys._build_grid_owner
+    return not keys.status.build_grid_owner
 
 
 def _restore_grid(state: dict[str, Any]) -> bool:

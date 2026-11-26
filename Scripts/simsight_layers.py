@@ -156,10 +156,10 @@ def _objects_here(frame: Frame) -> list[Any]:
     import simsight_grid as grid
     import simsight_tiles as tiles
 
-    i, j = grid._tile
+    i, j = grid.location.tile
     return [
         obj
-        for obj in tiles.objects_on(frame, i, j, grid._level)
+        for obj in tiles.objects_on(frame, i, j, grid.location.level)
         if not getattr(obj, 'is_sim', False)
     ]
 
@@ -215,21 +215,23 @@ def focus_detail(frame: Frame) -> bool:
     import simsight_scanner as scanner
 
     objects = _objects_here(frame)
-    i, j = grid._tile
-    matches = [obj for obj in _focus_objects(objects) if _matches(obj, frame, i, j, grid._level)]
+    i, j = grid.location.tile
+    matches = [
+        obj for obj in _focus_objects(objects) if _matches(obj, frame, i, j, grid.location.level)
+    ]
     matches.sort(key=lambda obj: int(getattr(obj, 'id', 0)))
     if not matches:
         clear_focus()
         scanner._speak_parts(_no_match_parts(frame, objects))
         return True
-    context = (grid._tile, grid._level, _state.mode)
+    context = (grid.location.tile, grid.location.level, _state.mode)
     same = _state.focus_where == context
     index = (_state.focus_index + 1) % len(matches) if same else 0
     obj = matches[index]
     _state.focus_id, _state.focus_where, _state.focus_index = obj.id, context, index
     parts = [_text('Focused: ', 'Wybrano: ')]
     parts.extend(_name_parts(obj))
-    parts.extend([', ', _label(obj, frame, i, j, grid._level), '. '])
+    parts.extend([', ', _label(obj, frame, i, j, grid.location.level), '. '])
     if len(matches) > 1:
         parts.append(
             _text(
@@ -293,12 +295,12 @@ def nearby_detail(frame: Frame) -> bool:
     import simsight_scanner as scanner
     import simsight_tiles as tiles
 
-    i, j = grid._tile
+    i, j = grid.location.tile
     parts: list[Any] = []
     seen: set[Any] = set()
     count = 0
     for _distance, di, dj, obj in sorted(
-        _nearby(frame, i, j, grid._level), key=lambda item: item[0]
+        _nearby(frame, i, j, grid.location.level), key=lambda item: item[0]
     ):
         if obj.id in seen:
             continue
@@ -307,7 +309,7 @@ def nearby_detail(frame: Frame) -> bool:
         parts.extend(
             [
                 ', ',
-                _label(obj, frame, i + di, j + dj, grid._level),
+                _label(obj, frame, i + di, j + dj, grid.location.level),
                 ', ',
                 tiles.relative(di, dj),
                 '. ',
@@ -332,7 +334,7 @@ def focused_target() -> Any:
     import simsight_grid as grid
     import simsight_tiles as tiles
 
-    if _state.focus_where != (grid._tile, grid._level, _state.mode):
+    if _state.focus_where != (grid.location.tile, grid.location.level, _state.mode):
         return None
     obj = services.object_manager().get(_state.focus_id)
     frame = tiles.frame()
@@ -363,7 +365,7 @@ def _step_wall_height(step: int) -> bool:
     _state.wall_index = max(0, min(len(wall.HEIGHTS) - 1, _state.wall_index + step))
     _state.mode = _state.wall_index + 1
     label, height = wall_height()
-    direction = tiles.direction_name(int(grid._facing) % 4)
+    direction = tiles.direction_name(int(grid.location.facing) % 4)
     available = wall.selected_wall() is not None
     place._say_text(
         'Height {}, {:.1f} metres. {} {}.'.format(

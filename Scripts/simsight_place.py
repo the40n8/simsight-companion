@@ -125,6 +125,8 @@ class _State:
         self.sell_id: Any = None  # the object awaiting a second sell press
         self.sell_time = 0.0
         self.owed: dict[Any, int] = {}  # household id -> refunds that failed and are still due
+        # Told first of each product the catalog selects (see on_product).
+        self.product_listener: Callable[[Any, Any], object] | None = None
 
 
 _state = _State()
@@ -171,8 +173,17 @@ def in_build_mode() -> bool:
 # ---------------------------------------------------------------- the product
 
 
+def on_product(listener: Callable[[Any, Any], object]) -> None:
+    """Call listener(instance_text, name) first whenever the catalog selects
+    or drops a product (simsight_plus_build notes the tool's name). It replaces
+    the previous listener and must not raise."""
+    _state.product_listener = listener
+
+
 def set_product(instance_text: Any, name: Any) -> bool:
     """The native catalog selected (or dropped) a product."""
+    if _state.product_listener is not None:
+        _state.product_listener(instance_text, name)
     text = str(instance_text or '').strip()
     if not text.isdigit() or int(text) == 0:
         _state.product = None
@@ -721,7 +732,7 @@ def _guided_current(item: dict[str, Any], owner: Any) -> bool:
         and owner == _household_id()
         and in_build_mode()
         and build.controls_enabled()
-        and not keys._editing_active
+        and not keys.status.editing_active
     ):
         return True
     _say_text(
@@ -1663,7 +1674,7 @@ def buildproduct(encoded: str = '', _connection: Any = None) -> bool:
         if '|' not in text or len(text) > 800:
             return False
         instance, name = text.split('|', 1)
-        # By name: simsight_plus_build wraps set_product to learn the product.
+        # simsight_plus_build learns the product through on_product.
         return set_product(instance, unquote(name))
     except Exception:
         simsight_log.error('place: buildproduct')

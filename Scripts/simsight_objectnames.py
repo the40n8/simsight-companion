@@ -142,12 +142,9 @@ class _State:
 _state = _State()
 
 
-def __getattr__(name: str) -> Any:
-    # simsight_menu and simsight_narrator read `_enabled` (module attribute
-    # lookups that fail land here, PEP 562).
-    if name == '_enabled':
-        return _state.enabled
-    raise AttributeError(name)
+def enabled() -> bool:
+    """Whether object names are on (the mod menu and the narrator read it)."""
+    return _state.enabled
 
 
 def _is_player_affordance(sa: Any) -> bool:

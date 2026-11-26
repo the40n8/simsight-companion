@@ -493,7 +493,7 @@ def _when_window_closed(fn: Callable[..., object], *args: Any) -> bool:
         try:
             import simsight_keys as keys
 
-            waiting = bool(keys._modal_active)
+            waiting = bool(keys.status.modal_active)
         except (ImportError, AttributeError):
             waiting = False  # no key tracking: nothing known to own the keys
         if not waiting:

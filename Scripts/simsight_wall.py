@@ -73,10 +73,10 @@ def _wall_state() -> tuple[Frame, dict[int, str], dict[int, Any]] | None:
     frame = tiles.frame()
     if frame is None:
         return None
-    i, j = grid._tile
-    objects = tiles.snapshot(grid._level)
-    sides = tiles.walls(frame, i, j, grid._level)
-    doors = tiles.doors(frame, i, j, grid._level, objects=objects)
+    i, j = grid.location.tile
+    objects = tiles.snapshot(grid.location.level)
+    sides = tiles.walls(frame, i, j, grid.location.level)
+    doors = tiles.doors(frame, i, j, grid.location.level, objects=objects)
     return frame, sides, doors
 
 
@@ -88,7 +88,7 @@ def selected_wall() -> tuple[Frame, int] | None:
     if state is None:
         return None
     frame, sides, doors = state
-    side = int(grid._facing) % 4
+    side = int(grid.location.facing) % 4
     if side in doors or not _blocked(sides.get(side)) or not separates_rooms(frame, side):
         return None
     return frame, side
@@ -100,11 +100,11 @@ def separates_rooms(frame: Frame, side: int) -> bool:
     import simsight_grid as grid
     import simsight_tiles as tiles
 
-    i, j = grid._tile
+    i, j = grid.location.tile
     di, dj = tiles.STEPS[side]
     try:
-        here = tiles.room(frame, i, j, grid._level)
-        there = tiles.room(frame, i + di, j + dj, grid._level)
+        here = tiles.room(frame, i, j, grid.location.level)
+        there = tiles.room(frame, i + di, j + dj, grid.location.level)
     except Exception as ex:
         _log(f'room boundary check failed: {ex!r}')
         return False
@@ -116,9 +116,9 @@ def _wall_anchor(frame: Frame, side: int) -> tuple[Any, float]:
     import simsight_grid as grid
     import simsight_tiles as tiles
 
-    i, j = grid._tile
+    i, j = grid.location.tile
     di, dj = tiles.STEPS[side]
-    center = tiles.position(frame, i, j, grid._level)
+    center = tiles.position(frame, i, j, grid.location.level)
     neighbor = frame.world(i + di, j + dj)
     _label, height = selected_height()
     point = sims4.math.Vector3(
@@ -150,9 +150,9 @@ def wall_parts(frame: Frame, all_sides: bool = False, objects: Any = None) -> li
     import simsight_grid as grid
     import simsight_tiles as tiles
 
-    i, j = grid._tile
-    sides = tiles.walls(frame, i, j, grid._level)
-    doors = tiles.doors(frame, i, j, grid._level, objects=objects)
+    i, j = grid.location.tile
+    sides = tiles.walls(frame, i, j, grid.location.level)
+    doors = tiles.doors(frame, i, j, grid.location.level, objects=objects)
     if all_sides:
         return [
             f'{tiles.direction_name(index).capitalize()}: {_side_state(frame, index, sides, doors)}. '
@@ -181,7 +181,13 @@ def _spot_key(side: int) -> SpotKey:
     import simsight_grid as grid
     import simsight_place as place_mod
 
-    return (place_mod._zone_id(), grid._level, tuple(grid._tile), side, selected_height()[0])
+    return (
+        place_mod._zone_id(),
+        grid.location.level,
+        tuple(grid.location.tile),
+        side,
+        selected_height()[0],
+    )
 
 
 def remember(key: SpotKey, hung: Any, message: str = '') -> None:
@@ -242,14 +248,14 @@ def _on_this_wall(frame: Frame, side: int) -> list[tuple[Any, str]]:
     import simsight_grid as grid
     import simsight_tiles as tiles
 
-    i, j = grid._tile
+    i, j = grid.location.tile
     di, dj = tiles.STEPS[side]
-    floor_y = float(tiles.position(frame, i, j, grid._level).y)
+    floor_y = float(tiles.position(frame, i, j, grid.location.level).y)
     _label, height = selected_height()
     found: list[tuple[Any, str]] = []
     seen: set[Any] = set()
     for ti, tj in ((i, j), (i + di, j + dj)):
-        for obj in _objects_or_none(frame, ti, tj, grid._level):
+        for obj in _objects_or_none(frame, ti, tj, grid.location.level):
             if getattr(obj, 'is_sim', False) or obj.id in seen:
                 continue
             seen.add(obj.id)
@@ -276,7 +282,7 @@ def _wall_continues(frame: Frame, side: int) -> tuple[list[str], list[str]]:
     import simsight_grid as grid
     import simsight_tiles as tiles
 
-    i, j = grid._tile
+    i, j = grid.location.tile
     open_ends: list[str] = []
     doors_beside: list[str] = []
     for along in (1, 3) if side in (0, 2) else (0, 2):
@@ -301,9 +307,9 @@ def _stretch_end(frame: Frame, i: int, j: int, side: int) -> str | None:
     import simsight_tiles as tiles
 
     try:
-        if side in tiles.doors(frame, i, j, grid._level):
+        if side in tiles.doors(frame, i, j, grid.location.level):
             return 'door'
-        if not _blocked(tiles.walls(frame, i, j, grid._level).get(side)):
+        if not _blocked(tiles.walls(frame, i, j, grid.location.level).get(side)):
             return 'open'
     except Exception as ex:
         _log(f'wall continuation check failed: {ex!r}')
@@ -408,7 +414,7 @@ def place(item: dict[str, Any]) -> bool:
 
     selected = selected_wall()
     if selected is None:
-        direction = tiles.direction_name(int(grid._facing) % 4)
+        direction = tiles.direction_name(int(grid.location.facing) % 4)
         place_mod._say_text(
             f'There is no wall {direction}. Turn with R or move beside a wall.',
             f'Brak ściany w kierunku {direction}. Obracaj R albo przejdź obok ściany.',
@@ -435,7 +441,9 @@ def column_here(frame: Frame) -> bool:
     import simsight_tiles as tiles
 
     try:
-        for obj in tiles.objects_on(frame, grid._tile[0], grid._tile[1], grid._level):
+        for obj in tiles.objects_on(
+            frame, grid.location.tile[0], grid.location.tile[1], grid.location.level
+        ):
             if any('column' in name.lower() for name in scanner._tag_names(obj)):
                 return True
     except Exception as ex:
@@ -547,7 +555,9 @@ def hang_with_game_tool(
             'Stoi tu kolumna, przed ścianą lub na jej końcu. Przejdź wzdłuż ściany na wolny odcinek i naciśnij Enter.',
         )
         return False
-    center = tiles.position(frame, grid._tile[0], grid._tile[1], grid._level)
+    center = tiles.position(
+        frame, grid.location.tile[0], grid.location.tile[1], grid.location.level
+    )
     dx, dz = float(center.x) - float(point.x), float(center.z) - float(point.z)
     length = (dx * dx + dz * dz) ** 0.5 or 1.0
     dx, dz = dx / length, dz / length
@@ -577,7 +587,7 @@ def hang_with_game_tool(
     # (the porch hid the wall base), so look at the wall at the chosen height.
     plus.run_job(
         [target],
-        grid._level,
+        grid.location.level,
         job.act,
         'wall decoration',
         height=height,

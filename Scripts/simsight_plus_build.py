@@ -159,11 +159,6 @@ def _touch_text(grid: Grid, e: int, n: int, w: int, d: int) -> str:
 # ---------------------------------------------------------------- projection (via SimSight)
 
 
-def _hook_replies() -> None:
-    """Kept for callers: projection replies now come from simsight_build_coordinates,
-    so nothing needs to be caught from SimSight's build speech any more."""
-
-
 def _send_ui(msg: str) -> None:
     import distributor.ops
     import distributor.system
@@ -177,10 +172,7 @@ def _new_serial() -> int:
     import simsight_build as b
     import services
 
-    b._serial += 1
-    b._pending[b._serial] = services.current_zone_id()
-    b._zone_id = services.current_zone_id()
-    return b._serial
+    return b.next_serial(services.current_zone_id())
 
 
 def floor_height(x: float, z: float, level: int) -> float:
@@ -450,7 +442,6 @@ def _point_and_act_base(  # noqa: PLR0913, PLR0917 - signature other modules cal
 ) -> bool:
     """Worker thread only. Center the camera, project the points, do the mouse action.
     Returns True when the action was performed."""
-    _hook_replies()
     cx = sum(p[0] for p in points_world) / len(points_world)
     cz = sum(p[1] for p in points_world) / len(points_world)
     if overview:
@@ -551,27 +542,24 @@ def run_job(  # noqa: PLR0913, PLR0917 - signature other modules call
 _product: dict[str, Any] = {'id': None, 'name': ''}  # the chosen catalog item
 
 
-def _hook_product() -> None:
+def _note_product(instance_text: Any, name: Any) -> None:
+    """simsight_place's product listener: remember the chosen catalog item."""
+    try:
+        text = str(instance_text or '').strip()
+        _product['id'] = int(text) if text.isdigit() and int(text) else None
+        _product['name'] = str(name or '').strip()
+        core.log('build: selected product {} {!r}'.format(_product['id'], _product['name']))
+    except Exception:  # noting the product must never stop SimSight choosing it
+        simsight_log.error('plus build: note selected product')
+
+
+def watch_product() -> None:
+    """Learn each product the Build catalog selects from now on."""
     try:
         import simsight_place as place
     except ImportError:
         return
-    if getattr(place, '_a11yplus_hooked', False):
-        return
-    original = place.set_product
-
-    def a11yplus_set_product(instance_text: Any, name: Any) -> Any:
-        try:
-            text = str(instance_text or '').strip()
-            _product['id'] = int(text) if text.isdigit() and int(text) else None
-            _product['name'] = str(name or '').strip()
-            core.log('build: selected product {} {!r}'.format(_product['id'], _product['name']))
-        except Exception:  # noting the product must never stop SimSight choosing it
-            simsight_log.error('plus build: note selected product')
-        return original(instance_text, name)
-
-    place.set_product = a11yplus_set_product
-    setattr(place, '_a11yplus_hooked', True)  # noqa: B010 - marker on a module mypy knows
+    place.on_product(_note_product)
 
 
 def tool_name() -> str:
@@ -1473,7 +1461,7 @@ def _undo_spoken() -> None:
 
 @core.on_zone_started
 def _start() -> None:
-    _hook_product()
+    watch_product()
 
 
 # ------------------------------------------------- DaRainbowGirlXX's build engine work
@@ -1609,7 +1597,7 @@ def open_menu() -> None:
     """Alt+B. DaRainbowGirlXX's house, roof, basement and lot tools replace
     Michael Maslo's Build my house, Put a roof on my house and Describe the lot
     (Leo, 2026-11-14); his other tools stay."""
-    _hook_product()
+    watch_product()
     if not in_build_mode():
         core.speak('The build helper works in Build mode. Press F2 first, on a laptop Fn+F2.')
         return

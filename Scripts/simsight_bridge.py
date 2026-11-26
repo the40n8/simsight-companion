@@ -1132,7 +1132,7 @@ def _narration() -> Json:
         import simsight_settings as settings
 
         return {
-            'macVoice': speech.speech_mode == 'hover',
+            'macVoice': speech.modes.speech == 'hover',
             'simActions': bool(settings.get('sim_actions')),
         }
     except Exception:
