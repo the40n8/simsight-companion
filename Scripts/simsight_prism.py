@@ -108,11 +108,11 @@ class _NativeReader:
             if mode == 'only':
                 result = self.dll.prism_backend_braille(self.backend, brief.encode('utf-8'))
                 if result:
-                    self.log('Prism braille failed: {}'.format(result))
+                    self.log(f'Prism braille failed: {result}')
                 return True  # Never substitute audio for braille-only output.
             result = self.dll.prism_backend_speak(self.backend, text.encode('utf-8'), interrupt)
             if result:
-                self.log('Prism speech failed: {} ({})'.format(self.name, result))
+                self.log(f'Prism speech failed: {self.name} ({result})')
                 self._drop()
                 return False
             if mode != 'off' and self.has_braille():

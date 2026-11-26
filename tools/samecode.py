@@ -54,7 +54,7 @@ def main():
             changed.append(rel)
     for rel in changed:
         print('changed:', rel)
-    print('{} modules compared, {} changed'.format(len(set(old) & set(new)), len(changed)))
+    print(f'{len(set(old) & set(new))} modules compared, {len(changed)} changed')
     sys.exit(1 if changed else 0)
 
 

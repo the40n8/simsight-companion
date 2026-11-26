@@ -1,7 +1,5 @@
 """Conservative detached one-floor structure planner for the Build grid."""
 
-import threading
-
 import simsight_speech as speech
 
 
@@ -41,25 +39,25 @@ def _clearance(box):
     for i in range(x1 - 1, x2 + 1):
         for j in range(n1 - 1, n2 + 1):
             if not frame.inside(i, j):
-                problems.append('lot edge at {},{}'.format(i, j))
+                problems.append(f'lot edge at {i},{j}')
                 continue
             facts = tiles.ground(frame, i, j, 0)
             objects = tiles.objects_on(frame, i, j, 0)
             rid = tiles.room(frame, i, j, 0)
             inside = x1 <= i < x2 and n1 <= j < n2
             if facts.get('pool'):
-                problems.append('pool at {},{}'.format(i, j))
+                problems.append(f'pool at {i},{j}')
             if rid is not None:
-                problems.append('room at {},{}'.format(i, j))
+                problems.append(f'room at {i},{j}')
             if objects:
-                problems.append('{} at {},{}'.format(_object_summary(objects), i, j))
+                problems.append(f'{_object_summary(objects)} at {i},{j}')
             if inside and facts.get('floor') and facts.get('outside'):
-                problems.append('exterior flooring at {},{}'.format(i, j))
+                problems.append(f'exterior flooring at {i},{j}')
     unique = []
     for p in problems:
         if p not in unique:
             unique.append(p)
-    _log('clearance box={} problems={}'.format(box, unique))
+    _log(f'clearance box={box} problems={unique}')
     return unique
 
 
@@ -98,7 +96,7 @@ def _make_plan(box, layout, names, entrance, building_name, kind):
         n = (n1 + n2 - 1) // 2
         p.doors.append(
             {
-                'what': 'Door between {} and {}'.format(names[0], names[1]),
+                'what': f'Door between {names[0]} and {names[1]}',
                 'tile_a': (split - 1, n),
                 'tile_b': (split, n),
                 'front': False,
@@ -114,7 +112,7 @@ def _make_plan(box, layout, names, entrance, building_name, kind):
         x = (x1 + x2 - 1) // 2
         p.doors.append(
             {
-                'what': 'Door between {} and {}'.format(names[0], names[1]),
+                'what': f'Door between {names[0]} and {names[1]}',
                 'tile_a': (x, split - 1),
                 'tile_b': (x, split),
                 'front': False,
@@ -125,7 +123,7 @@ def _make_plan(box, layout, names, entrance, building_name, kind):
     p.doors.insert(
         0,
         {
-            'what': 'Exterior door into {}'.format(names[0]),
+            'what': f'Exterior door into {names[0]}',
             'tile_a': a,
             'tile_b': b,
             'front': True,
@@ -145,7 +143,6 @@ def _make_plan(box, layout, names, entrance, building_name, kind):
 def _review(plan):
     import simsight_plus_core as core
     import simsight_plus_house as house
-    import simsight_plus_build as build
 
     meta = plan._a11y_detached
     problems = _clearance(meta['box'])
@@ -154,7 +151,7 @@ def _review(plan):
         more = len(problems) - 5
         core.speak(
             'That footprint is not clear: {}{}. Move the Build-grid cursor to another north-west corner; nothing was changed.'.format(
-                sample, '; and {} more conflicts'.format(more) if more > 0 else ''
+                sample, f'; and {more} more conflicts' if more > 0 else ''
             )
         )
         return
@@ -314,9 +311,7 @@ def open_builder():
 
     core.choose(
         'Detached structure',
-        'Current Build-grid tile {} from west and {} from north is the proposed north-west corner.'.format(
-            anchor[0], anchor[1]
-        ),
+        f'Current Build-grid tile {anchor[0]} from west and {anchor[1]} from north is the proposed north-west corner.',
         kinds,
         kind_chosen,
         tag='build',
@@ -341,14 +336,14 @@ def _build_followup(plan):
             )
         )
     except Exception as ex:
-        _log('post-build verification failed: {!r}'.format(ex))
+        _log(f'post-build verification failed: {ex!r}')
     if complete:
         try:
             import simsight_lot_grid as lot_grid
 
             lot_grid.register_box_label(meta['box'], meta['levels'], meta['name'])
         except Exception as ex:
-            _log('building label follow-up failed: {!r}'.format(ex))
+            _log(f'building label follow-up failed: {ex!r}')
         try:
             import simsight_plus_core as core
             import simsight_roof_tools as roofs
@@ -359,7 +354,7 @@ def _build_followup(plan):
             )
             core.post(roofs.roof_builder_for_box, meta['box'], 0, meta['rooms'])
         except Exception as ex:
-            _log('roof follow-up failed: {!r}'.format(ex))
+            _log(f'roof follow-up failed: {ex!r}')
     return result
 
 

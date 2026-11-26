@@ -1,7 +1,10 @@
 # SimSight Plus (by Michael Maslo) - core helpers: log, speech, main-thread pump, hotkeys, dialogs.
 # Speech goes through the SimSight mod (simsight_speech), so it uses the
 # same screen reader connection (JAWS / NVDA through Prism, or a Windows voice).
-import os, time, threading, traceback
+import os
+import time
+import threading
+import traceback
 import sims4.commands
 
 # Merged into SimSight from SimSight Plus 0.7.1 (2026-10-08).
@@ -47,7 +50,7 @@ def log(message):
                 with open(LOG_PATH, mode, encoding='utf-8') as f:
                     f.write(line)
             except Exception as e:
-                problem = '[could not write {}: {}]\n'.format(LOG_PATH, e)
+                problem = f'[could not write {LOG_PATH}: {e}]\n'
             try:
                 with open(HOME_LOG_PATH, mode, encoding='utf-8') as f:
                     f.write(line if problem is None else problem + line)
@@ -58,10 +61,10 @@ def log(message):
 
 
 def log_exc(where):
-    log('ERROR in {}: {}'.format(where, traceback.format_exc()))
+    log(f'ERROR in {where}: {traceback.format_exc()}')
 
 
-log('SimSight Plus {} loading from {}'.format(VERSION, MODS_FOLDER))
+log(f'SimSight Plus {VERSION} loading from {MODS_FOLDER}')
 
 # ---------------------------------------------------------------- settings
 
@@ -82,7 +85,7 @@ def _load_settings():
         if not os.path.isfile(SETTINGS_PATH):
             _save_settings()
             return
-        with open(SETTINGS_PATH, 'r', encoding='utf-8') as f:
+        with open(SETTINGS_PATH, encoding='utf-8') as f:
             for line in f:
                 line = line.strip()
                 if not line or line.startswith('#') or '=' not in line:
@@ -102,7 +105,7 @@ def _save_settings():
         with open(SETTINGS_PATH, 'w', encoding='utf-8') as f:
             f.write('# SimSight Plus settings. on or off.\n')
             for k in DEFAULTS:
-                f.write('{} = {}\n'.format(k, _settings.get(k, DEFAULTS[k])))
+                f.write(f'{k} = {_settings.get(k, DEFAULTS[k])}\n')
     except Exception:
         log_exc('save settings')
 
@@ -141,7 +144,7 @@ def speak_parts(parts):
         import simsight_scanner as scanner
 
         scanner._speak_parts(parts)
-        log('SAY parts: {!r}'.format(parts))
+        log(f'SAY parts: {parts!r}')
         return
     except Exception:
         log_exc('speak_parts')
@@ -172,7 +175,7 @@ _alarm = None
 _tickers = []  # (interval_seconds, fn, [last_run])
 
 
-class _Owner(object):
+class _Owner:
     pass
 
 
@@ -212,7 +215,8 @@ def _drain(_handle=None):
 def start_pump():
     global _alarm
     try:
-        import alarms, clock
+        import alarms
+        import clock
 
         if _alarm is not None:
             try:
@@ -274,7 +278,7 @@ def _keys_loop():
     other_seen = 0.0
     log(
         'hotkey thread running, keys: {}'.format(
-            ', '.join('{}={}'.format(chr(vk), d) for (vk, (fn, d)) in sorted(HOTKEYS.items()))
+            ', '.join(f'{chr(vk)}={d}' for (vk, (fn, d)) in sorted(HOTKEYS.items()))
         )
     )
     while True:
@@ -301,10 +305,10 @@ def _keys_loop():
                     if pressed:
                         down.add(vk)
                     if alt or 0x41 <= vk <= 0x5A:
-                        log('seen key {} alt={} other={}'.format(chr(vk), bool(alt), bool(other)))
+                        log(f'seen key {chr(vk)} alt={bool(alt)} other={bool(other)}')
                     if alt and not other and _game_foreground(user32, kernel32):
                         (fn, desc) = HOTKEYS[vk]
-                        log('key Alt+{} ({})'.format(chr(vk) if 48 <= vk <= 90 else vk, desc))
+                        log(f'key Alt+{chr(vk) if 48 <= vk <= 90 else vk} ({desc})')
                         if _wants_shift(fn):
                             post(fn, shift)
                         else:
@@ -373,7 +377,7 @@ def _typing_finish(accepted):
         return
     _cancel_previous('text')
     text = ''.join(t['chars']).strip()
-    log('typed text: {!r} accepted={}'.format(text, accepted))
+    log(f'typed text: {text!r} accepted={accepted}')
     if not accepted:
         speak('Cancelled.')
         return
@@ -542,11 +546,9 @@ def ask_text(title, text, initial, on_done, max_length=40):
     With an initial value, Enter on an empty box keeps it."""
     global _typing
     if initial:
-        text = '{} Press Enter to keep {}, or type something else and press Enter.'.format(
-            text, initial
-        )
+        text = f'{text} Press Enter to keep {initial}, or type something else and press Enter.'
     else:
-        text = '{} Type, then press Enter.'.format(text)
+        text = f'{text} Type, then press Enter.'
 
     def finished(value):
         value = value or (initial or '')
@@ -606,7 +608,9 @@ def ask_text(title, text, initial, on_done, max_length=40):
 def open_interactions(obj):
     """Open the pie menu (interactions) for a Sim or object, the same way the SimSight scanner does."""
     try:
-        import services, distributor.ops, distributor.system
+        import services
+        import distributor.ops
+        import distributor.system
         from server.pick_info import PickType
 
         is_sim = getattr(obj, 'is_sim', False)
@@ -623,9 +627,7 @@ def open_interactions(obj):
         first = ''
         if is_sim:
             first = str(obj.sim_info.first_name or '').replace('|', ' ')
-        msg = 'A11y|pick|{}|{}|{}|{}|{:.3f}|{:.3f}|{:.3f}|{}'.format(
-            obj.id, int(pick_type), lot_id, first, float(pos.x), float(pos.y), float(pos.z), level
-        )
+        msg = f'A11y|pick|{obj.id}|{int(pick_type)}|{lot_id}|{first}|{float(pos.x):.3f}|{float(pos.y):.3f}|{float(pos.z):.3f}|{level}'
         distributor.system.Distributor.instance().add_op_with_no_owner(
             distributor.ops.SendUIMessage(msg)
         )
@@ -679,10 +681,6 @@ except Exception:
 @sims4.commands.Command('a11yplus.status', command_type=sims4.commands.CommandType.Live)
 def _status(_connection=None):
     out = sims4.commands.CheatOutput(_connection)
-    out(
-        'SimSight Plus {} - pump {}, keys {}'.format(
-            VERSION, _alarm is not None, _keys_thread is not None
-        )
-    )
-    speak('SimSight Plus version {} is running.'.format(VERSION))
+    out(f'SimSight Plus {VERSION} - pump {_alarm is not None}, keys {_keys_thread is not None}')
+    speak(f'SimSight Plus version {VERSION} is running.')
     return True

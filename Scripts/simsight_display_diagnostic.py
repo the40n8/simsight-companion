@@ -163,7 +163,7 @@ def saved_options():
             folder = os.path.dirname(folder)
         else:
             raise ValueError('Mods root unavailable')
-        with open(os.path.join(root, 'Options.ini'), 'r', encoding='utf-8-sig') as f:
+        with open(os.path.join(root, 'Options.ini'), encoding='utf-8-sig') as f:
             text = f.read(65536)
         keys = {
             'resolutionwidth',
@@ -267,8 +267,6 @@ def inspect_display(delay: float = 5, _connection=None):
     _timer.name = 'a11y_display_probe'
     _timer.start()
     output(
-        'Read-only display snapshot in {} seconds. Close the console and keep the game focused; see SimSight log.'.format(
-            delay
-        )
+        f'Read-only display snapshot in {delay} seconds. Close the console and keep the game focused; see SimSight log.'
     )
     return True

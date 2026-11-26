@@ -10,7 +10,7 @@ GROWN_UPS = ('YOUNGADULT', 'ADULT', 'ELDER')
 AGE_ORDER = ('TODDLER', 'CHILD', 'TEEN', 'YOUNGADULT', 'ADULT', 'ELDER')
 
 
-class _Member(object):
+class _Member:
     def __init__(self):
         self.age = None
         self.gender = None
@@ -20,7 +20,7 @@ class _Member(object):
         self.relation = None  # (kind, index of the earlier member) or None
 
 
-class _Family(object):
+class _Family:
     def __init__(self):
         self.last = ''
         self.members = []
@@ -42,7 +42,7 @@ def _gender_word(m):
 
 
 def _member_line(m):
-    return '{} {}, {} {}'.format(m.first, _family[0].last, _age_label(m.age), _gender_word(m))
+    return f'{m.first} {_family[0].last}, {_age_label(m.age)} {_gender_word(m)}'
 
 
 def _age_rank(age):
@@ -70,8 +70,8 @@ def start():
     core.choose(
         'Start a brand-new family',
         'You make 1 to 8 new Sims and choose an empty lot to build on, or a house. '
-        'The family gets {} simoleons, like in Create a Sim. Then the game switches to your new family. '
-        'The family you are playing now stays in the town.'.format(STARTING_FUNDS),
+        f'The family gets {STARTING_FUNDS} simoleons, like in Create a Sim. Then the game switches to your new family. '
+        'The family you are playing now stays in the town.',
         rows,
         _started,
         tag='family',
@@ -104,10 +104,10 @@ def _new_member():
         text = 'Sim 1. Choose an age. The first Sim must be a young adult or older, to look after the home.'
     else:
         choices = list(sims.AGE_CHOICES)
-        text = 'Sim {}. Choose an age.'.format(n)
+        text = f'Sim {n}. Choose an age.'
     rows = [(label, desc, key) for (label, key, desc) in choices]
     core.choose(
-        'Sim {}: age'.format(n),
+        f'Sim {n}: age',
         text,
         rows,
         _got_age,
@@ -122,7 +122,7 @@ def _got_age(key):
     _family[0].members.append(m)
     rows = [('Female', None, 'FEMALE'), ('Male', None, 'MALE')]
     core.choose(
-        'Sim {}: gender'.format(len(_family[0].members)),
+        f'Sim {len(_family[0].members)}: gender',
         'Choose a gender.',
         rows,
         _got_gender,
@@ -153,9 +153,7 @@ def _got_gender(key):
         m.first = first
         core.post(_choose_traits)
 
-    core.ask_text(
-        'Sim {}: first name'.format(len(fam.members)), 'Type the first name.', '', got_first
-    )
+    core.ask_text(f'Sim {len(fam.members)}: first name', 'Type the first name.', '', got_first)
 
 
 def _choose_traits():
@@ -167,7 +165,7 @@ def _choose_traits():
         m.traits = list(chosen)
         core.post(_choose_aspiration)
 
-    sims.pick_traits('{}: traits'.format(m.first), m.age, m.gender, limit, token, done)
+    sims.pick_traits(f'{m.first}: traits', m.age, m.gender, limit, token, done)
 
 
 def _choose_aspiration():
@@ -188,7 +186,7 @@ def _choose_aspiration():
         core.post(_choose_relation)
 
     core.choose(
-        '{}: aspiration'.format(m.first),
+        f'{m.first}: aspiration',
         'An aspiration is a life goal. It gives the Sim goals to work on and rewards. Escape skips it.',
         rows,
         picked,
@@ -203,12 +201,12 @@ def _relation_options(new, old_index):
     out = []
     grown = ('YOUNGADULT', 'ADULT', 'ELDER')
     if new.age.name in grown and old.age.name in grown:
-        out.append(('Spouse, married to {}'.format(old.first), 'spouse'))
+        out.append((f'Spouse, married to {old.first}', 'spouse'))
     if _age_rank(new.age) < _age_rank(old.age) and old.age.name in grown:
-        out.append(('Child of {}'.format(old.first), 'child'))
+        out.append((f'Child of {old.first}', 'child'))
     if _age_rank(new.age) > _age_rank(old.age) and new.age.name in grown:
-        out.append(('Parent of {}'.format(old.first), 'parent'))
-    out.append(('Brother or sister of {}'.format(old.first), 'sibling'))
+        out.append((f'Parent of {old.first}', 'parent'))
+    out.append((f'Brother or sister of {old.first}', 'sibling'))
     return out
 
 
@@ -238,8 +236,8 @@ def _choose_relation():
         core.post(_member_done)
 
     core.choose(
-        '{}: family tie'.format(m.first),
-        'How is {} related to the family? Choose one.'.format(m.first),
+        f'{m.first}: family tie',
+        f'How is {m.first} related to the family? Choose one.',
         rows,
         picked,
         tag='family',
@@ -249,7 +247,7 @@ def _choose_relation():
 
 def _member_done():
     m = _family[0].members[-1]
-    core.speak('{} added.'.format(_member_line(m)))
+    core.speak(f'{_member_line(m)} added.')
     core.post(_family_menu)
 
 
@@ -273,10 +271,10 @@ def _family_menu():
     rows.append(('Done, choose a home', 'Choose an empty lot to build on, or a house.', 'home'))
     rows.append(('Hear the family', 'Everyone you have made so far.', 'list'))
     if n > 1:
-        rows.append(('Remove the last Sim, {}'.format(fam.members[-1].first), None, 'drop'))
+        rows.append((f'Remove the last Sim, {fam.members[-1].first}', None, 'drop'))
     rows.append(('Cancel the whole family', 'Nothing is changed in the game.', 'cancel'))
     core.choose(
-        'The {} family'.format(fam.last),
+        f'The {fam.last} family',
         '{} Sim{} so far. What next?'.format(n, '' if n == 1 else 's'),
         rows,
         _family_pick,
@@ -305,7 +303,7 @@ def _family_pick(value):
         for m in fam.members:
             if m.relation and m.relation[1] >= len(fam.members):
                 m.relation = None
-        core.speak('{} removed.'.format(gone.first))
+        core.speak(f'{gone.first} removed.')
         core.post(_family_menu)
     elif value == 'cancel':
         _family[0] = None
@@ -328,7 +326,7 @@ def _relation_text(m):
 def _speak_family():
     fam = _family[0]
     core.speak(
-        'The {} family: '.format(fam.last)
+        f'The {fam.last} family: '
         + '. '.join(_member_line(m) + _relation_text(m) for m in fam.members)
         + '.'
     )
@@ -375,7 +373,8 @@ def _hook_prices():
     if _hooked[0]:
         return True
     try:
-        import sims4.commands, simsight_travel as travel
+        import sims4.commands
+        import simsight_travel as travel
 
         original = travel.a11y_lotprice_enc
 
@@ -416,7 +415,9 @@ def _got_price(zone_id, rental):
 
 
 def _ask_prices(zone_ids, then):
-    import time, distributor.ops, distributor.system
+    import time
+    import distributor.ops
+    import distributor.system
 
     if not _hook_prices():
         core.post(then)
@@ -424,7 +425,7 @@ def _ask_prices(zone_ids, then):
     for z in zone_ids:
         if z not in _prices:
             distributor.system.Distributor.instance().add_op_with_no_owner(
-                distributor.ops.SendUIMessage('A11y|lotprice|{}|424242'.format(z))
+                distributor.ops.SendUIMessage(f'A11y|lotprice|{z}|424242')
             )
     _price_wait[:] = [time.monotonic() + 3.0, list(zone_ids), then]
 
@@ -503,7 +504,7 @@ def _choose_lot_kind():
     ]
     core.choose(
         'Choose a home',
-        'The family has {} simoleons to spend.'.format(STARTING_FUNDS),
+        f'The family has {STARTING_FUNDS} simoleons to spend.',
         rows,
         _choose_lot,
         tag='family',
@@ -549,13 +550,13 @@ def _choose_lot(empty):
         if lot['price'] is None:
             desc = 'The price could not be found.'
         elif price > STARTING_FUNDS:
-            desc = 'Too expensive, the family has {} simoleons.'.format(STARTING_FUNDS)
+            desc = f'Too expensive, the family has {STARTING_FUNDS} simoleons.'
         else:
-            desc = '{} simoleons left after buying.'.format(STARTING_FUNDS - price)
+            desc = f'{STARTING_FUNDS - price} simoleons left after buying.'
         rows.append((_lot_label(lot), desc, lot))
     core.choose(
         'Empty lots' if empty else 'Houses',
-        '{} free. Sorted by town, cheapest first.'.format(len(lots)),
+        f'{len(lots)} free. Sorted by town, cheapest first.',
         rows,
         _picked_lot,
         tag='family',
@@ -577,7 +578,7 @@ def _picked_lot(lot):
     fam.lot = lot
     rows = [
         (
-            'Yes, move in and play the {} family'.format(fam.last),
+            f'Yes, move in and play the {fam.last} family',
             'The game loads the new home. This takes a minute, like any trip.',
             'yes',
         ),
@@ -618,7 +619,8 @@ def _confirmed(value):
 
 
 def _create_and_move():
-    import services, distributor.ops, distributor.system
+    import distributor.ops
+    import distributor.system
     from sims.sim_spawner import SimSpawner, SimCreator
 
     fam = _family[0]
@@ -640,11 +642,7 @@ def _create_and_move():
         family_name=fam.last,
         creation_source='SimSight Plus: new family',
     )
-    core.log(
-        'new family {} household {} sims {}'.format(
-            fam.last, household.id, [i.sim_id for i in infos]
-        )
-    )
+    core.log(f'new family {fam.last} household {household.id} sims {[i.sim_id for i in infos]}')
     try:
         household.name = fam.last
     except Exception:
@@ -674,7 +672,7 @@ def _create_and_move():
     except Exception:
         core.log_exc('played household')
     household.move_into_zone(zone_id)
-    core.log('moved household {} into zone {}'.format(household.id, zone_id))
+    core.log(f'moved household {household.id} into zone {zone_id}')
     core.speak(
         'The {} family is moving in to {}. Loading the new home, please wait.'.format(
             fam.last, lot['name']
@@ -732,7 +730,7 @@ def _set_relations(fam, infos):
                 if not shared:
                     me.genealogy.set_parent_of_parentless_siblings(other)
         except Exception:
-            core.log_exc('relation {} {}'.format(kind, m.first))
+            core.log_exc(f'relation {kind} {m.first}')
     # A child of one married parent is also the child of the other parent.
     for child in infos:
         try:
@@ -781,7 +779,7 @@ def _arrived():
     size = ''
     try:
         lot = services.active_lot()
-        size = ' It is {} by {} meters.'.format(int(lot.size_x), int(lot.size_z))
+        size = f' It is {int(lot.size_x)} by {int(lot.size_z)} meters.'
     except Exception:
         pass
     if empty:
@@ -792,6 +790,4 @@ def _arrived():
         )
     else:
         tip = 'Press Alt+R to hear the rooms of your new house.'
-    core.speak(
-        'Welcome home, {} family. You have {} simoleons. {}'.format(household.name, money, tip)
-    )
+    core.speak(f'Welcome home, {household.name} family. You have {money} simoleons. {tip}')

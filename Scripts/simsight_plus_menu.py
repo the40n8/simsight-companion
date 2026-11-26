@@ -12,8 +12,11 @@ def open_queue():
 
 
 def _features():
-    import simsight_plus_needs as needs, simsight_plus_time as t, simsight_plus_rooms as rooms
-    import simsight_plus_notify as notify, simsight_plus_sims as sims
+    import simsight_plus_needs as needs
+    import simsight_plus_time as t
+    import simsight_plus_rooms as rooms
+    import simsight_plus_notify as notify
+    import simsight_plus_sims as sims
 
     feats = [
         ('Needs', 'Alt+N. Reads all needs, lowest first.', needs.read_needs),
@@ -56,7 +59,7 @@ def open_menu():
     rows = [(name, desc, fn) for (name, desc, fn) in _features()]
     rows.append(('Settings', 'Turn warnings and reminders on or off.', 'settings'))
     core.choose(
-        'SimSight Plus {}'.format(core.VERSION),
+        f'SimSight Plus {core.VERSION}',
         'Every feature also has its own Alt key, shown in its description.',
         rows,
         _pick,

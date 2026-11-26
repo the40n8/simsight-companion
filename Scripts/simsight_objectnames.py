@@ -266,7 +266,7 @@ def _install_inventory_hook():
             if _enabled:
                 stamp(self.owner, inventory=True)
         except Exception as ex:
-            _log('objectnames: inventory name failed: {!r}'.format(ex))
+            _log(f'objectnames: inventory name failed: {ex!r}')
         return result
 
     InventoryItemComponent.on_added_to_inventory = a11y_on_added_to_inventory
@@ -275,7 +275,7 @@ def _install_inventory_hook():
 try:
     _install_inventory_hook()
 except Exception as _ex:
-    _log('objectnames: inventory hook install failed: {!r}'.format(_ex))
+    _log(f'objectnames: inventory hook install failed: {_ex!r}')
 
 
 def enable(on):
@@ -317,7 +317,7 @@ def _install_tooltip_rebuild_hook():
                 owner.hover_tip = _STYLE
                 owner.update_ui_metadata()
         except Exception as ex:
-            _log('objectnames: rebuild hook failed: {!r}'.format(ex))
+            _log(f'objectnames: rebuild hook failed: {ex!r}')
         return result
 
     TooltipComponent.update_object_tooltip = a11y_update_object_tooltip
@@ -326,7 +326,7 @@ def _install_tooltip_rebuild_hook():
 try:
     _install_tooltip_rebuild_hook()
 except Exception as _ex:
-    _log('objectnames: rebuild hook install failed: {!r}'.format(_ex))
+    _log(f'objectnames: rebuild hook install failed: {_ex!r}')
 
 
 def _install_zone_hook():
@@ -339,9 +339,9 @@ def _install_zone_hook():
         try:
             if _enabled:
                 stamped = enable(True)
-                _log('objectnames: stamped {} objects at zone load'.format(stamped))
+                _log(f'objectnames: stamped {stamped} objects at zone load')
         except Exception as ex:
-            _log('objectnames: zone-load stamp failed: {!r}'.format(ex))
+            _log(f'objectnames: zone-load stamp failed: {ex!r}')
         return result
 
     zone.Zone.on_loading_screen_animation_finished = a11y_on_loading_screen_animation_finished
@@ -350,7 +350,7 @@ def _install_zone_hook():
 try:
     _install_zone_hook()
 except Exception as _ex:
-    _log('objectnames: zone hook install failed: {!r}'.format(_ex))
+    _log(f'objectnames: zone hook install failed: {_ex!r}')
 
 
 @sims4.commands.Command(
@@ -376,43 +376,33 @@ def a11y_objdiag(match: str = '', _connection=None):
             continue
         count += 1
         lines = [
-            'objdiag: {} id={} hover_tip={!r} stamped={} interactive={}'.format(
-                cls_name, obj.id, obj.hover_tip, obj.id in _stamped, _has_interactions(obj)
-            )
+            f'objdiag: {cls_name} id={obj.id} hover_tip={obj.hover_tip!r} stamped={obj.id in _stamped} interactive={_has_interactions(obj)}'
         ]
         comp = obj.get_component(component_types.TOOLTIP_COMPONENT)
         if comp is None:
             lines.append('   no tooltip component')
         else:
             lines.append(
-                '   hovertip_requested={} handles={} external={}'.format(
-                    comp.hovertip_requested,
-                    sorted(comp._ui_metadata_handles.keys()),
-                    sorted(comp._external_field_to_data.keys()),
-                )
+                f'   hovertip_requested={comp.hovertip_requested} handles={sorted(comp._ui_metadata_handles.keys())} external={sorted(comp._external_field_to_data.keys())}'
             )
             try:
                 from event_testing.resolver import SingleObjectResolver
 
                 resolver = SingleObjectResolver(obj)
                 lines.append(
-                    '   tooltip_tests_pass={}'.format(bool(comp.tooltip_tests.run_tests(resolver)))
+                    f'   tooltip_tests_pass={bool(comp.tooltip_tests.run_tests(resolver))}'
                 )
                 for i, tip in enumerate(comp._get_custom_tooltips()):
                     passed = bool(tip.object_tests) and bool(tip.object_tests.run_tests(resolver))
-                    lines.append(
-                        '   custom[{}] style={!r} tests_pass={}'.format(
-                            i, tip.tooltip_style, passed
-                        )
-                    )
+                    lines.append(f'   custom[{i}] style={tip.tooltip_style!r} tests_pass={passed}')
             except Exception as ex:
-                lines.append('   test eval failed: {!r}'.format(ex))
+                lines.append(f'   test eval failed: {ex!r}')
         for line in lines:
             _log(line)
             output(line)
         if count >= 8:
             break
-    output('simsight: objdiag matched {} object(s)'.format(count))
+    output(f'simsight: objdiag matched {count} object(s)')
     return True
 
 
@@ -425,8 +415,8 @@ def a11y_objectnames(mode: str = 'on', _connection=None):
         # Re-apply over anything that lost its tip after our first pass.
         _stamped.clear()
         again = stamp_all(force=True)
-        output('simsight: re-stamped {} objects'.format(again))
-        _speak('Re-stamped {} objects.'.format(again))
+        output(f'simsight: re-stamped {again} objects')
+        _speak(f'Re-stamped {again} objects.')
         return True
     if mode.lower() in ('off', 'false', '0'):
         enable(False)
@@ -436,7 +426,7 @@ def a11y_objectnames(mode: str = 'on', _connection=None):
         return True
     stamped = enable(True)
     settings.set('object_names', True)
-    output('simsight: object hover names ON ({} objects stamped)'.format(stamped))
+    output(f'simsight: object hover names ON ({stamped} objects stamped)')
     # Report how many objects the game currently believes carry a hover tip,
     # which is what actually drives the tooltip appearing at all.
     tipped = 0
@@ -451,8 +441,8 @@ def a11y_objectnames(mode: str = 'on', _connection=None):
                 if obj.hover_tip:
                     tipped += 1
     except Exception as ex:
-        _log('objectnames: audit failed {!r}'.format(ex))
-    output('simsight: {}/{} objects currently have a hover tip'.format(tipped, total))
-    _log('objectnames: audit {}/{} objects have hover_tip'.format(tipped, total))
-    _speak('Object hover names on. {} objects.'.format(stamped))
+        _log(f'objectnames: audit failed {ex!r}')
+    output(f'simsight: {tipped}/{total} objects currently have a hover tip')
+    _log(f'objectnames: audit {tipped}/{total} objects have hover_tip')
+    _speak(f'Object hover names on. {stamped} objects.')
     return True

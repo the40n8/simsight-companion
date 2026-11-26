@@ -76,15 +76,13 @@ def open_sim(sim_id, actor_id, zone_id, household_id):
             )
         )
         speech.log_line(
-            'away actions: portrait request sim={} actor={} zone={} sent={}'.format(
-                sim_id, actor_id, current_zone, bool(sent)
-            )
+            f'away actions: portrait request sim={sim_id} actor={actor_id} zone={current_zone} sent={bool(sent)}'
         )
         if not sent:
             _say('action unavailable')
         return bool(sent)
     except Exception as exc:
-        speech.log_line('away actions: request refused: {}: {}'.format(type(exc).__name__, exc))
+        speech.log_line(f'away actions: request refused: {type(exc).__name__}: {exc}')
         _say('action unavailable')
         return False
 
@@ -115,15 +113,13 @@ def open_away_actions():
                 )
             )
         speech.log_line(
-            'away actions: household={} zone={} candidates={}'.format(
-                household_id, zone_id, len(rows)
-            )
+            f'away actions: household={household_id} zone={zone_id} candidates={len(rows)}'
         )
         if not rows:
             _say('no away household sims')
             return False
         return hub._window('away actions', 'away actions instructions', rows)
     except Exception as exc:
-        speech.log_line('away actions: picker failed: {}: {}'.format(type(exc).__name__, exc))
+        speech.log_line(f'away actions: picker failed: {type(exc).__name__}: {exc}')
         _say('action unavailable')
         return False

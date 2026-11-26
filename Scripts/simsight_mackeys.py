@@ -81,7 +81,7 @@ def handle(family, vk, down, shift):
     if not down:
         _held.pop(key, None)
         if family == 'plain':
-            keys._send('A11y|keyup|{}'.format(vk))
+            keys._send(f'A11y|keyup|{vk}')
         return True
     now = time.monotonic()
     if family == 'needs':
@@ -109,7 +109,7 @@ def handle(family, vk, down, shift):
             else:
                 fn()
         except Exception as ex:
-            _log('{} failed: {!r}'.format(entry[1], ex))
+            _log(f'{entry[1]} failed: {ex!r}')
         return True
     if family == 'plain':
         message = keys._plain_message(vk, False, False, shift)
@@ -150,7 +150,7 @@ def grab_set():
             out.append(str(vk))
     for vk in _SHIFTED:
         if keys._plain_message(vk, False, False, True) is not None:
-            out.append('{}+shift'.format(vk))
+            out.append(f'{vk}+shift')
     return out
 
 
@@ -183,5 +183,5 @@ def focus_lost():
     keys = _keys()
     for family, vk, _shift in list(_held):
         if family == 'plain':
-            keys._send('A11y|keyup|{}'.format(vk))
+            keys._send(f'A11y|keyup|{vk}')
     _held.clear()

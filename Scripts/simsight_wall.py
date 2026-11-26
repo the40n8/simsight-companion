@@ -87,7 +87,7 @@ def separates_rooms(frame, side):
         here = tiles.room(frame, i, j, grid._level)
         there = tiles.room(frame, i + di, j + dj, grid._level)
     except Exception as ex:
-        _log('room boundary check failed: {!r}'.format(ex))
+        _log(f'room boundary check failed: {ex!r}')
         return False
     return here is not None and there is not None and here != there
 
@@ -133,7 +133,7 @@ def wall_parts(frame, all_sides=False, objects=None):
                     'edge': _text('lot edge', 'granica parceli'),
                     'open': _text('open', 'wolne'),
                 }.get(sides.get(index), _text('unknown', 'nieznane'))
-            parts.append('{}: {}. '.format(tiles.direction_name(index).capitalize(), state))
+            parts.append(f'{tiles.direction_name(index).capitalize()}: {state}. ')
         return parts
     walls, maybe = [], []
     for index in range(4):
@@ -248,7 +248,7 @@ def _wall_continues(frame, side):
             if not _blocked(tiles.walls(frame, ni, nj, grid._level).get(side)):
                 open_ends.append(name)
         except Exception as ex:
-            _log('wall continuation check failed: {!r}'.format(ex))
+            _log(f'wall continuation check failed: {ex!r}')
     return open_ends, doors_beside
 
 
@@ -341,15 +341,15 @@ def place(item):
     if selected is None:
         direction = tiles.direction_name(int(grid._facing) % 4)
         place_mod._say_text(
-            'There is no wall {}. Turn with R or move beside a wall.'.format(direction),
-            'Brak ściany w kierunku {}. Obracaj R albo przejdź obok ściany.'.format(direction),
+            f'There is no wall {direction}. Turn with R or move beside a wall.',
+            f'Brak ściany w kierunku {direction}. Obracaj R albo przejdź obok ściany.',
         )
         return False
     frame, side = selected
     try:
         point, height = _wall_anchor(frame, side)
     except Exception as ex:
-        _log('could not calculate wall anchor: {!r}'.format(ex))
+        _log(f'could not calculate wall anchor: {ex!r}')
         place_mod._say_text(
             'The wall anchor could not be calculated, so nothing was bought.',
             'Nie udało się obliczyć punktu na ścianie, więc nic nie kupiono.',
@@ -370,7 +370,7 @@ def column_here(frame):
             if any('column' in name.lower() for name in scanner._tag_names(obj)):
                 return True
     except Exception as ex:
-        _log('column check failed: {!r}'.format(ex))
+        _log(f'column check failed: {ex!r}')
     return False
 
 
@@ -410,8 +410,8 @@ def hang_with_game_tool(frame, side, item, point, height):
     name = item.get('name') or 'it'
     direction = tiles.direction_name(side)
     place_mod._say_text(
-        'Hanging {} on the {} wall. Please wait.'.format(name, direction),
-        'Wieszanie {} na ścianie {}. Proszę czekać.'.format(name, direction),
+        f'Hanging {name} on the {direction} wall. Please wait.',
+        f'Wieszanie {name} na ścianie {direction}. Proszę czekać.',
     )
     _log(
         'game tool: product {} side {} height {:.1f} at ({:.2f}, {:.2f})'.format(
@@ -429,13 +429,11 @@ def hang_with_game_tool(frame, side, item, point, height):
             # hold another item there. Click only when the game holds this one.
             held = str(plus._product.get('name') or '').strip().lower()
             if held != str(name).strip().lower():
-                _log('game tool: holding {!r}, not {!r}; no click'.format(held, name))
+                _log(f'game tool: holding {held!r}, not {name!r}; no click')
                 plus.core.post(
                     place_mod._say_text,
-                    'The game is holding something else. Choose {} again with Control Alt O.'.format(
-                        name
-                    ),
-                    'Gra trzyma coś innego. Wybierz {} ponownie przez Control Alt O.'.format(name),
+                    f'The game is holding something else. Choose {name} again with Control Alt O.',
+                    f'Gra trzyma coś innego. Wybierz {name} ponownie przez Control Alt O.',
                 )
                 return
             _attempt[0] = _attempt[0] % 3 + 1
@@ -446,7 +444,7 @@ def hang_with_game_tool(frame, side, item, point, height):
                 import os
 
                 base = os.path.join(
-                    os.path.dirname(speech.LOG_PATH), 'SimSight_wallshot_{}'.format(_attempt[0])
+                    os.path.dirname(speech.LOG_PATH), f'SimSight_wallshot_{_attempt[0]}'
                 )
                 spot = plus._to_screen(*screen[0])
                 plus.move_to(*spot)
@@ -469,7 +467,7 @@ def hang_with_game_tool(frame, side, item, point, height):
     key = _spot_key(side)
     before, started = plus.funds(), time.monotonic()
     speak_result = plus.cost_check(
-        'Hung {}'.format(name),
+        f'Hung {name}',
         'It was not hung. Something may be in the way on that wall, or the wall is too short.',
     )
 

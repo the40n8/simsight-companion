@@ -41,12 +41,12 @@ def _release():
 
             camera.cancel_focus(object=_followed)
         except Exception as ex:
-            speech.log_line('scanner camera: release failed {!r}'.format(ex))
+            speech.log_line(f'scanner camera: release failed {ex!r}')
     if _client is not None:
         try:
             _client.unregister_active_sim_changed(_active_sim_changed)
         except Exception as ex:
-            speech.log_line('scanner camera: unregister failed {!r}'.format(ex))
+            speech.log_line(f'scanner camera: unregister failed {ex!r}')
     _followed = None
     _client = None
     if not _configured():
@@ -90,9 +90,9 @@ def _follow(sim, repair=False):
         _followed = sim
         _last_request = now
         _repair_pending = False
-        speech.log_line('scanner camera: native follow sim {}'.format(sim.id))
+        speech.log_line(f'scanner camera: native follow sim {sim.id}')
     except Exception as ex:
-        speech.log_line('scanner camera: follow failed {!r}'.format(ex))
+        speech.log_line(f'scanner camera: follow failed {ex!r}')
 
 
 def _install_report_hook(camera):
@@ -114,7 +114,7 @@ def _install_report_hook(camera):
                 else:
                     _repair_pending = False
             except Exception as ex:
-                speech.log_line('scanner camera: report repair failed {!r}'.format(ex))
+                speech.log_line(f'scanner camera: report repair failed {ex!r}')
         return result
 
     camera.update = update_report
@@ -150,7 +150,7 @@ def update():
         _install_report_hook(camera)
         _follow(services.get_active_sim(), repair=_repair_pending)
     except Exception as ex:
-        speech.log_line('scanner camera: update failed {!r}'.format(ex))
+        speech.log_line(f'scanner camera: update failed {ex!r}')
 
 
 def reset():

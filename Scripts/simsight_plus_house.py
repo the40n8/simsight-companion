@@ -4,7 +4,9 @@
 # put a front door into the living room and a door from every room to the room it opens onto,
 # and name the rooms. Door tools: a door between two rooms (or to the yard), and removing a door
 # or window. Everything uses the build helper's pointing (simsight_plus_build).
-import math, threading, time
+import math
+import threading
+import time
 import simsight_plus_core as core
 import simsight_plus_build as build
 
@@ -88,7 +90,7 @@ def street_side():
 # v away from the street (0 = the front wall). Then mapped to meters from the west and north edges.
 
 
-class Plan(object):
+class Plan:
     def __init__(self):
         self.rooms = []  # dicts: name, kind, uv=(u0, v0, u1, v1), box=(e0, n0, e1, n1)
         self.doors = []  # dicts: what, a=(u, v) tile inside, b=(u, v) tile on the other side, front
@@ -112,7 +114,7 @@ def _names_for(kinds):
         base = KINDS[k][2]
         if counts[k] > 1:
             seen[k] = seen.get(k, 0) + 1
-            out.append('{} {}'.format(base, seen[k]))
+            out.append(f'{base} {seen[k]}')
         else:
             out.append(base)
     return out
@@ -158,9 +160,9 @@ def make_plan(kinds):
     along, deep = (f.width, f.depth) if p.side in ('north', 'south') else (f.depth, f.width)
     if width > along - 2 or depth > deep - SETBACK - 1:
         p.problem = (
-            'A house of {} by {} meters does not fit on this {} by {} meter lot. Choose fewer rooms, '
+            f'A house of {width} by {depth} meters does not fit on this {f.width} by {f.depth} meter lot. Choose fewer rooms, '
             'or one of the two-floor houses, which need only 10 by 11 meters.'
-        ).format(width, depth, f.width, f.depth)
+        )
         return p
     p.width, p.depth = width, depth
     u = 0
@@ -267,11 +269,11 @@ def make_two_floor_plan(variant):
     W, F, H = TWO_W, FRONT_DEPTH, FRONT_DEPTH + HALL_DEPTH
     D = H + BACK_DEPTH
     along, deep = (f.width, f.depth) if p.side in ('north', 'south') else (f.depth, f.width)
-    if W > along - 2 or D > deep - SETBACK - 1:
+    if along - 2 < W or deep - SETBACK - 1 < D:
         p.problem = (
-            'Even a two-floor house, {} by {} meters, does not fit on this {} by {} meter lot. '
+            f'Even a two-floor house, {W} by {D} meters, does not fit on this {f.width} by {f.depth} meter lot. '
             'Choose a bigger lot.'
-        ).format(W, D, f.width, f.depth)
+        )
         return p
     p.width, p.depth = W, D
     down_back = ('bedroom', 'Bedroom 4') if variant == '4bed' else ('dining', 'Dining room')
@@ -304,13 +306,11 @@ def make_two_floor_plan(variant):
         door('Front door into the living room', (3, 0), (3, -1), 0, True),
         door('Door between the living room and the kitchen', (5, 2), (6, 2), 0),
         door('Door from the living room to the hallway', (3, F - 1), (3, F), 0),
-        door('Door from the hallway to the {}'.format(_the(down_back[1])), (3, H), (3, H - 1), 0),
+        door(f'Door from the hallway to the {_the(down_back[1])}', (3, H), (3, H - 1), 0),
         door('Door from the hallway to the bathroom', (8, H), (8, H - 1), 0),
         door('Upstairs, door from the hallway to bedroom 1', (2, F - 1), (2, F), 1),
         door('Upstairs, door from the hallway to bedroom 2', (W - 1, F - 1), (W - 1, F), 1),
-        door(
-            'Upstairs, door from the hallway to {}'.format(_the(up_back[1])), (3, H), (3, H - 1), 1
-        ),
+        door(f'Upstairs, door from the hallway to {_the(up_back[1])}', (3, H), (3, H - 1), 1),
         door('Upstairs, door from the hallway to the upstairs bathroom', (8, H), (8, H - 1), 1),
     ]
     _map_plan(p, f, along)
@@ -382,13 +382,13 @@ def _custom(kinds):
     names = ', '.join(_names_for(kinds)) if kinds else 'no rooms yet'
     rows = []
     if kinds:
-        rows.append(('Done, show the plan', 'Rooms so far: {}.'.format(names), 'done'))
+        rows.append(('Done, show the plan', f'Rooms so far: {names}.', 'done'))
     for k, (row, w, name) in KINDS.items():
         if k == 'living' and 'living' in kinds:
             continue
         rows.append(
             (
-                'Add a {}'.format(name.lower()),
+                f'Add a {name.lower()}',
                 '{} meters wide, at the {}.'.format(w, 'front' if row == 'front' else 'back'),
                 k,
             )
@@ -402,12 +402,12 @@ def _custom(kinds):
         elif value == 'undo':
             _custom(kinds[:-1])
         else:
-            core.speak('{} added.'.format(KINDS[value][2]))
+            core.speak(f'{KINDS[value][2]} added.')
             _custom(kinds + [value])
 
     core.choose(
         'Your rooms',
-        'Rooms so far: {}. A living room is always included.'.format(names),
+        f'Rooms so far: {names}. A living room is always included.',
         rows,
         picked,
         tag='build',
@@ -430,7 +430,7 @@ def _plan_text(p):
         'east': 'north to south',
     }[p.side]
     parts.append(
-        'The front faces the street, on the {} side. At the front, from {}: '.format(p.side, order)
+        f'The front faces the street, on the {p.side} side. At the front, from {order}: '
         + ', '.join(
             '{}, {} by {}'.format(
                 r['name'].lower(), r['uv'][2] - r['uv'][0], r['uv'][3] - r['uv'][1]
@@ -442,7 +442,7 @@ def _plan_text(p):
     back = [r for r in p.rooms if r['uv'][1] > FRONT_DEPTH]
     if back:
         parts.append(
-            'Behind them a hallway across the house. At the back, from {}: '.format(order)
+            f'Behind them a hallway across the house. At the back, from {order}: '
             + ', '.join(
                 '{}, {} by {}'.format(
                     r['name'].lower(), r['uv'][2] - r['uv'][0], r['uv'][3] - r['uv'][1]
@@ -630,7 +630,7 @@ def _place_stairs_worker_base(top, climb):
             time.sleep(0.8)
             build.click(s[0])
 
-        if not build.point_and_act([pt], 0, act, 'stairs try {}'.format(attempt + 1)):
+        if not build.point_and_act([pt], 0, act, f'stairs try {attempt + 1}'):
             return 'noscreen'
         time.sleep(0.5)
         new = [oid for oid in (build.on_main(_stair_ids) or []) if oid not in before]
@@ -639,7 +639,7 @@ def _place_stairs_worker_base(top, climb):
             turn = True
             continue
         info = build.on_main(_stair_info, new[0])
-        core.log('stairs: placed {} want pos {} climb {}'.format(info, want, climb))
+        core.log(f'stairs: placed {info} want pos {want} climb {climb}')
         if info is None:
             continue
         (e, n, got) = info
@@ -678,7 +678,7 @@ def place_door_worker(tile_a, tile_b, level=0):
         [(x, z)],
         level,
         act,
-        'door {} {}'.format(tile_a, side),
+        f'door {tile_a} {side}',
         height=0.15,
         view=build.VIEW_FROM[side],
     ):
@@ -755,7 +755,7 @@ def _build_base(p):
     if p.stairs:
         _say('Putting in the stairs.')
         res = place_stairs_worker(p.stairs['top_lot'], p.stairs['climb_lot'])
-        core.log('house: stairs {}'.format(res))
+        core.log(f'house: stairs {res}')
         stairs_ok = res is True
     # Doors: the front door first, then the inside doors.
     missed = []
@@ -781,9 +781,7 @@ def _build_base(p):
     build.set_floor(0)
     spent = start_money - (build.on_main(build.funds) or 0)
     left = build.on_main(build.funds) or 0
-    text = 'Your house is finished. It cost {:,} simoleons, and you have {:,} left. '.format(
-        spent, left
-    )
+    text = f'Your house is finished. It cost {spent:,} simoleons, and you have {left:,} left. '
     if p.stairs:
         text += (
             'The stairs are in the hallway. '
@@ -856,9 +854,7 @@ def door_between_rooms():
     if not all_rooms:
         core.speak('There are no rooms yet.')
         return
-    rows = [
-        (r.name, '{}, {}'.format(r.size_text(), rooms.floor_name(r.level)), r) for r in all_rooms
-    ]
+    rows = [(r.name, f'{r.size_text()}, {rooms.floor_name(r.level)}', r) for r in all_rooms]
 
     def got_room(room):
         nbs, outside = _neighbors(room, all_rooms)
@@ -868,8 +864,8 @@ def door_between_rooms():
                 continue
             orows.append(
                 (
-                    '{}'.format(other.name),
-                    'They share {} meters of wall.'.format(len(pairs)),
+                    f'{other.name}',
+                    f'They share {len(pairs)} meters of wall.',
                     ('room', other, pairs),
                 )
             )
@@ -884,7 +880,7 @@ def door_between_rooms():
             orows.append(
                 (
                     label,
-                    'A door to the yard. {} meters of wall.'.format(len(pairs)),
+                    f'A door to the yard. {len(pairs)} meters of wall.',
                     ('out', side, pairs),
                 )
             )
@@ -898,7 +894,7 @@ def door_between_rooms():
             _run_door(a, b, room.level, what)
 
         core.choose(
-            'Door from the {} to'.format(room.name),
+            f'Door from the {room.name} to',
             'Choose where the door leads. It goes in the middle of the shared wall.',
             orows,
             got_other,
@@ -918,7 +914,7 @@ def _run_door(a, b, level, what):
         and build._cat.get('chosen') is not None
         and 'door' in build.tool_name().lower()
     )
-    core.speak('Putting {}. Please wait.'.format(what))
+    core.speak(f'Putting {what}. Please wait.')
 
     def work():
         try:
@@ -929,7 +925,7 @@ def _run_door(a, b, level, what):
             ok = place_door_worker(a, b, level)
             spent = money - (build.on_main(build.funds) or 0)
             if ok:
-                _say('Done, {} is in place. It cost {:,} simoleons.'.format(what, spent))
+                _say(f'Done, {what} is in place. It cost {spent:,} simoleons.')
             else:
                 reason = build._last_error['text']
                 _say(
@@ -983,11 +979,11 @@ def _thing_rows():
             if ra == 'outside':
                 (ra, rb, a, b) = (rb, ra, b, a)
             where = (
-                'between the {} and the {}'.format(ra, rb)
+                f'between the {ra} and the {rb}'
                 if rb != 'outside'
-                else 'from the {} to outside, {} wall'.format(ra, side_between(a, b))
+                else f'from the {ra} to outside, {side_between(a, b)} wall'
             )
-            label = '{} {}'.format(kind, where)
+            label = f'{kind} {where}'
             out.append(
                 (
                     label,
@@ -1022,7 +1018,7 @@ def remove_door_or_window():
             core.speak('Still working on the last build step.')
             return
         build._busy[0] = True
-        core.speak('Removing the {}. Please wait.'.format(kind.lower()))
+        core.speak(f'Removing the {kind.lower()}. Please wait.')
 
         def work():
             import services
@@ -1051,16 +1047,10 @@ def remove_door_or_window():
                 time.sleep(0.05)
                 u.keybd_event(0x1B, 0x01, 2, 0)
                 if gone:
-                    _say(
-                        'Removed the {}. You got {:,} simoleons back.'.format(
-                            kind.lower(), max(0, back)
-                        )
-                    )
+                    _say(f'Removed the {kind.lower()}. You got {max(0, back):,} simoleons back.')
                 else:
                     _say(
-                        'The {} is still there. Send the SimSight_Plus.log file from the Mods folder for help.'.format(
-                            kind.lower()
-                        )
+                        f'The {kind.lower()} is still there. Send the SimSight_Plus.log file from the Mods folder for help.'
                     )
             except Exception:
                 core.log_exc('remove door')
@@ -1083,17 +1073,13 @@ def name_a_room():
     if not all_rooms:
         core.speak('There are no rooms yet.')
         return
-    rows = [
-        (r.name, '{}, {}'.format(r.size_text(), rooms.floor_name(r.level)), r) for r in all_rooms
-    ]
+    rows = [(r.name, f'{r.size_text()}, {rooms.floor_name(r.level)}', r) for r in all_rooms]
 
     def got(room):
         def named(text):
             rooms.set_room_name(room, text.strip())
             core.speak(
-                'The room is now called {}.'.format(text.strip())
-                if text.strip()
-                else 'Name removed.'
+                f'The room is now called {text.strip()}.' if text.strip() else 'Name removed.'
             )
 
         core.ask_text(

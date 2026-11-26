@@ -2,7 +2,8 @@
 # Decorate a room: choose a room, walls or floor, then a pattern from the catalog; it is chosen and
 # painted over the whole room in one go. Sell things in a room: tick any number of objects and sell
 # them for what they are worth now, the same way SimSight's own X key sells (remove + refund).
-import threading, time
+import threading
+import time
 import simsight_plus_core as core
 import simsight_plus_build as build
 
@@ -46,7 +47,7 @@ def decorate_room():
             ('Floor', 'Tiles, wood, carpet and more over the whole floor.', 'floor'),
         ]
         core.choose(
-            'Decorate the {}'.format(room.name),
+            f'Decorate the {room.name}',
             'What do you want to change?',
             prows,
             lambda part: _list_patterns(room, part),
@@ -61,7 +62,7 @@ def _list_patterns(room, part):
         core.speak('Still working on the last build step.')
         return
     (ptype, label) = PARTS[part]
-    core.speak('Getting the {}. Please wait.'.format(label.lower()))
+    core.speak(f'Getting the {label.lower()}. Please wait.')
 
     def work():
         items = build.fetch_catalog(ptype, '', 'paint' + part)
@@ -77,11 +78,11 @@ def _show_patterns(room, part, items):
     tiles = len(build._room_tiles(room))
     rows = []
     for i, (name, price, colors) in enumerate(items):
-        desc = '{:,} simoleons a tile'.format(price) if price else 'Free'
+        desc = f'{price:,} simoleons a tile' if price else 'Free'
         if price and part == 'floor':
-            desc += ', about {:,} for this room'.format(price * tiles)
+            desc += f', about {price * tiles:,} for this room'
         if colors > 1:
-            desc += ', {} colors, the first color is used'.format(colors)
+            desc += f', {colors} colors, the first color is used'
         rows.append((name, desc + '.', (i, name)))
     core.choose(
         '{} for the {}'.format('Walls' if part == 'walls' else 'Floor', room.name),
@@ -99,7 +100,7 @@ def _paint(room, part, index, name):
         core.speak('Still working on the last build step.')
         return
     build._busy[0] = True
-    core.speak('Painting the {} of the {} with {}. Please wait.'.format(part, room.name, name))
+    core.speak(f'Painting the {part} of the {room.name} with {name}. Please wait.')
 
     def work():
         try:
@@ -109,7 +110,7 @@ def _paint(room, part, index, name):
             finally:
                 build._cat['silent_select'] = False
             verify = build.on_main(
-                _paint_check, 'Painted the {} of the {} with {}'.format(part, room.name, name)
+                _paint_check, f'Painted the {part} of the {room.name} with {name}'
             )
             build.set_floor(room.level)
             if part == 'walls':
@@ -151,15 +152,13 @@ def _paint_check(done_text):
         after = build.funds()
         reason = build._last_error['text'] if build._last_error['at'] > started else ''
         if reason:
-            core.speak('Not done. The game says: {}'.format(reason))
+            core.speak(f'Not done. The game says: {reason}')
         elif before is None or after is None or after == before:
-            core.speak('{}. No extra cost: the old one was traded in.'.format(done_text))
+            core.speak(f'{done_text}. No extra cost: the old one was traded in.')
         elif after < before:
-            core.speak('{}. It cost {:,} simoleons.'.format(done_text, before - after))
+            core.speak(f'{done_text}. It cost {before - after:,} simoleons.')
         else:
-            core.speak(
-                '{}. You got {:,} simoleons back for the old one.'.format(done_text, after - before)
-            )
+            core.speak(f'{done_text}. You got {after - before:,} simoleons back for the old one.')
 
     return verify
 
@@ -177,9 +176,7 @@ def sell_in_room():
     if not all_rooms:
         core.speak('There are no rooms yet.')
         return
-    rows = [
-        (r.name, '{}, {} things in it.'.format(r.size_text(), len(r.objects)), r) for r in all_rooms
-    ]
+    rows = [(r.name, f'{r.size_text()}, {len(r.objects)} things in it.', r) for r in all_rooms]
     core.choose('Sell things', 'Choose the room.', rows, _pick_things, tag='build')
 
 
@@ -203,14 +200,14 @@ def _pick_things(room):
         if refusal:
             desc = 'Cannot sell: {}.'.format(_REFUSAL_TEXT.get(refusal, 'not allowed'))
         else:
-            desc = 'Sells for {:,} simoleons.'.format(place._value(obj))
+            desc = f'Sells for {place._value(obj):,} simoleons.'
         rows.append((_row_name(obj), desc, obj.id, False, obj))
     if not rows:
-        core.speak('There is nothing to sell in the {}.'.format(room.name))
+        core.speak(f'There is nothing to sell in the {room.name}.')
         return
     core.choose(
-        'Sell things in the {}'.format(room.name),
-        '{} things. Check each one to sell with Space or Enter, then choose OK.'.format(len(rows)),
+        f'Sell things in the {room.name}',
+        f'{len(rows)} things. Check each one to sell with Space or Enter, then choose OK.',
         rows,
         lambda ids: _confirm(room, ids),
         tag='build',
@@ -228,14 +225,14 @@ def _confirm(room, ids):
         core.speak('Nothing chosen that can be sold.')
         return
     total = sum(place._value(o) for o in objs)
-    what = '1 thing' if len(objs) == 1 else '{} things'.format(len(objs))
+    what = '1 thing' if len(objs) == 1 else f'{len(objs)} things'
     rows = [
-        ('Yes, sell {} for {:,} simoleons'.format(what, total), None, True),
+        (f'Yes, sell {what} for {total:,} simoleons', None, True),
         ('No, keep everything', None, False),
     ]
     core.choose(
         'Sell?',
-        'Sell {} from the {} for {:,} simoleons?'.format(what, room.name, total),
+        f'Sell {what} from the {room.name} for {total:,} simoleons?',
         rows,
         lambda yes: _sell(room, [o.id for o in objs]) if yes else core.speak('Nothing sold.'),
         tag='build',
@@ -270,12 +267,10 @@ def _sell(room, ids):
         sold, 'thing' if sold == 1 else 'things', room.name, max(got, 0)
     )
     if got < money:
-        text += ' {:,} more will come back with your next build action.'.format(money - max(got, 0))
+        text += f' {money - max(got, 0):,} more will come back with your next build action.'
     if failed:
-        text += ' {} could not be sold: something may be on it or using it.'.format(len(failed))
+        text += f' {len(failed)} could not be sold: something may be on it or using it.'
     core.log(
-        'sell: {} in {}: {} sold, {} expected, {} received, failed {}'.format(
-            ids, room.name, sold, money, got, failed
-        )
+        f'sell: {ids} in {room.name}: {sold} sold, {money} expected, {got} received, failed {failed}'
     )
     core.speak(text)

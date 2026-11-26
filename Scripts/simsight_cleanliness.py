@@ -42,6 +42,6 @@ def suffix(entry):
         if _errors_logged < 5:
             _errors_logged += 1
             speech.log_line(
-                'cleanliness: state read failed for {}: {}'.format(entry.obj_id, type(exc).__name__)
+                f'cleanliness: state read failed for {entry.obj_id}: {type(exc).__name__}'
             )
         return ''

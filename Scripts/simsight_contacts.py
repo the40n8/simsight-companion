@@ -43,16 +43,7 @@ def open_contact(sim_id, actor_id):
     pos = actor.position
     name = names[sim_id].replace('|', ' ')
     return scanner._send_ui(
-        'A11y|pick|{}|{}|{}|{}|{:.3f}|{:.3f}|{:.3f}|{}'.format(
-            sim_id,
-            int(PickType.PICK_PORTRAIT),
-            int(services.active_lot().lot_id),
-            name,
-            float(pos.x),
-            float(pos.y),
-            float(pos.z),
-            int(actor.level),
-        )
+        f'A11y|pick|{sim_id}|{int(PickType.PICK_PORTRAIT)}|{int(services.active_lot().lot_id)}|{name}|{float(pos.x):.3f}|{float(pos.y):.3f}|{float(pos.z):.3f}|{int(actor.level)}'
     )
 
 

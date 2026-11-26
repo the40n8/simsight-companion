@@ -46,9 +46,7 @@ def _note(dialog, phone_ring_type):
     name = ' '.join(
         part for part in (getattr(info, 'first_name', ''), getattr(info, 'last_name', '')) if part
     )
-    speech.speak(
-        'Phone for {}. Control Alt P opens the waiting call or text.'.format(name), source='event'
-    )
+    speech.speak(f'Phone for {name}. Control Alt P opens the waiting call or text.', source='event')
 
 
 def open_waiting(list_when_none=False):
@@ -75,7 +73,7 @@ def open_waiting(list_when_none=False):
             speech.speak('The recipient is not available.', explicit=True)
             return False
         # Flash waits for ActiveSimId to match before clicking the phone.
-        op = distributor.ops.SendUIMessage('A11y|phone|{}'.format(owner_id))
+        op = distributor.ops.SendUIMessage(f'A11y|phone|{owner_id}')
         distributor.system.Distributor.instance().add_op_with_no_owner(op)
         return True
     if list_when_none and simplified():
@@ -99,7 +97,7 @@ def _say(term):
     speech.speak(lang.t(term), explicit=True)
 
 
-class _Entry(object):
+class _Entry:
     __slots__ = ('aop', 'name', 'enabled', 'tip', 'detail', 'affordance_id')
 
     def __init__(self, aop, name, enabled, tip, detail):
@@ -111,7 +109,7 @@ class _Entry(object):
         self.affordance_id = getattr(aop.affordance, 'guid64', None)
 
 
-class _PhoneList(object):
+class _PhoneList:
     def __init__(self, sim_id, groups, direct):
         self.sim_id = sim_id
         self.groups = groups  # [(localized label, [_Entry])], in phone order
@@ -238,16 +236,14 @@ def open_list():
             return False
         phone_list = _collect(sim, client)
     except Exception as ex:
-        speech.log_line('phone: list unavailable ({!r})'.format(ex))
+        speech.log_line(f'phone: list unavailable ({ex!r})')
         _say('action unavailable')
         return False
     if not phone_list.groups and not phone_list.direct:
         _say('phone empty')
         return False
     speech.log_line(
-        'phone: list for sim {}: {} categories, {} other actions'.format(
-            sim.sim_id, len(phone_list.groups), len(phone_list.direct)
-        )
+        f'phone: list for sim {sim.sim_id}: {len(phone_list.groups)} categories, {len(phone_list.direct)} other actions'
     )
     return _show_top(phone_list)
 
@@ -387,7 +383,6 @@ def _run(phone_list, entry):
     the phone's own checks and the pie menu modifiers again (they can
     change while the window is open), a fresh context, EA's tests again,
     then execute."""
-    import services
     import simsight_native as native
 
     global _list
@@ -404,7 +399,7 @@ def _run(phone_list, entry):
         visible, _suppression = sim.test_pie_menu_modifiers(entry.aop.affordance)
         forbidden = sim.apply_forbid_by_object_tags_pie_menu_modifiers(entry.aop)
     except Exception as ex:
-        speech.log_line('phone: checks failed ({!r})'.format(ex))
+        speech.log_line(f'phone: checks failed ({ex!r})')
         _say('action unavailable')
         return False
     if not visible or forbidden:
@@ -422,7 +417,7 @@ def _run(phone_list, entry):
             if travel._show_front(sim):
                 return True
     except Exception as ex:
-        speech.log_line('phone: travel window unavailable ({!r})'.format(ex))
+        speech.log_line(f'phone: travel window unavailable ({ex!r})')
     if not _when_window_closed(_execute, phone_list, entry):
         _say('action unavailable')
         return False
@@ -471,14 +466,14 @@ def _execute(phone_list, entry):
         context = client.create_interaction_context(sim)
         result = entry.aop.test_and_execute(context)
     except Exception as ex:
-        speech.log_line('phone: action failed ({!r})'.format(ex))
+        speech.log_line(f'phone: action failed ({ex!r})')
         _say('action unavailable')
         return False
     if not result:
-        speech.log_line('phone: action refused: {}'.format(result))
+        speech.log_line(f'phone: action refused: {result}')
         native.say_refusal(result, sim)
         return False
-    speech.log_line('phone: ran {}'.format(entry.affordance_id))
+    speech.log_line(f'phone: ran {entry.affordance_id}')
     return True
 
 
@@ -510,7 +505,7 @@ def _install():
             if not self.is_phone_silenced and dialog.dialog_id in self._active_dialogs:
                 _note(dialog, phone_ring_type)
         except Exception as ex:
-            speech.log_line('phone: announcement failed: {!r}'.format(ex))
+            speech.log_line(f'phone: announcement failed: {ex!r}')
         return result
 
     dialog_show._a11y_phone_hook = True
@@ -520,4 +515,4 @@ def _install():
 try:
     _install()
 except Exception as ex:
-    speech.log_line('phone: hook unavailable: {!r}'.format(ex))
+    speech.log_line(f'phone: hook unavailable: {ex!r}')

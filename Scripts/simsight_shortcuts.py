@@ -90,7 +90,7 @@ def key_name(vk, keyboard):
     if name is None:
         name = next((label for label, code in settings.KEY_NAMES.items() if code == vk), None)
     if name is None:
-        name = chr(vk) if 0x30 <= vk <= 0x5A else 'key {}'.format(vk)
+        name = chr(vk) if 0x30 <= vk <= 0x5A else f'key {vk}'
     return lang.t(name)
 
 
@@ -114,7 +114,7 @@ def sections(keyboard=None, numpad=None):
     for _message, (label, combos) in keyboard.BINDINGS.items():
         for vk, alt in combos:
             combo = ('{} + '.format(lang.t('Alt')) if alt else '') + key_name(vk, keyboard)
-            ordinary.append('{}: {}'.format(combo, lang.t(label)))
+            ordinary.append(f'{combo}: {lang.t(label)}')
     # These modifier variants are implemented by _plain_message, not BINDINGS.
     ordinary.append(lang.t('shortcut shift tab'))
     if settings.get('simplified_menus', True):
@@ -135,7 +135,7 @@ def sections(keyboard=None, numpad=None):
                 if message in keyboard.BINDINGS
                 else EXTRA_LABELS.get(message, message)
             )
-            rows.append('{}: {}'.format(key_name(vk, keyboard), lang.t(label)))
+            rows.append(f'{key_name(vk, keyboard)}: {lang.t(label)}')
         result.append((lang.t('shortcut numpad'), rows))
     return result
 

@@ -44,7 +44,7 @@ def _kind(item):
             if chair in tags:
                 return definition, table
     except Exception as exc:
-        _log('classification unavailable: {!r}'.format(exc))
+        _log(f'classification unavailable: {exc!r}')
     return None
 
 
@@ -168,7 +168,7 @@ def _seat(table, definition, point, obj=None, key=None):
                 continue
             ranked.append((distance, _key(slot), slot))
         except Exception as exc:
-            _log('slot metadata refused: {!r}'.format(exc))
+            _log(f'slot metadata refused: {exc!r}')
     for _distance, _ident, slot in sorted(ranked, key=lambda row: (row[0], row[1][0])):
         try:
             valid = (
@@ -176,11 +176,11 @@ def _seat(table, definition, point, obj=None, key=None):
                 if obj is None
                 else slot.is_valid_for_placement(obj=obj)
             )
-            _log('table {} slot {} native validation={!r}'.format(table.id, _key(slot), valid))
+            _log(f'table {table.id} slot {_key(slot)} native validation={valid!r}')
             if valid:
                 return slot
         except Exception as exc:
-            _log('native slot check failed: {!r}'.format(exc))
+            _log(f'native slot check failed: {exc!r}')
     return None
 
 
@@ -238,7 +238,7 @@ def try_place(item, frame):
             return False
         return place.place(target[0], grid._level, grid._surface(), chair_request=request)
     except Exception as exc:
-        _log('request refused: {!r}'.format(exc))
+        _log(f'request refused: {exc!r}')
         speech.speak('The chair seat could not be checked. Nothing was bought.', explicit=True)
         return False
 
@@ -276,7 +276,7 @@ def validate(request, obj, item, position, level):
         if slot is not None and _slot_state(slot) == request['slot_state']:
             return table, slot
     except Exception as exc:
-        _log('acknowledged seat refused: {!r}'.format(exc))
+        _log(f'acknowledged seat refused: {exc!r}')
     return None
 
 
@@ -291,7 +291,7 @@ def attached(table, slot, obj):
             and any(child is obj for child in slot.children)
         )
     except Exception as exc:
-        _log('attachment readback failed: {!r}'.format(exc))
+        _log(f'attachment readback failed: {exc!r}')
         return False
 
 
@@ -319,7 +319,7 @@ def fit_parts(item, frame):
                 '. Enter places it using the game’s validation. ',
             ]
     except Exception as exc:
-        _log('preview unavailable: {!r}'.format(exc))
+        _log(f'preview unavailable: {exc!r}')
     return None
 
 
@@ -340,7 +340,7 @@ def announce(obj, item, price, table):
             item.get('name') or 'chair',
             ' at ',
             grid._name(table),
-            ' using the game’s chair slot, for {} simoleons.'.format(price),
+            f' using the game’s chair slot, for {price} simoleons.',
         ]
     )
-    _log('attached chair {} to table {} and paid {}'.format(obj.id, table.id, price))
+    _log(f'attached chair {obj.id} to table {table.id} and paid {price}')

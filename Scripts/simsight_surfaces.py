@@ -52,7 +52,7 @@ def _natural_ground(position, level):
 
         return bool(build_buy.is_location_natural_ground(position, level))
     except Exception as ex:
-        _log('natural-ground check failed: {!r}'.format(ex))
+        _log(f'natural-ground check failed: {ex!r}')
         return None
 
 
@@ -67,7 +67,7 @@ def _water_point(position, level):
         pool = bool(build_buy.is_location_pool(position, level))
         pond = bool(build_buy.get_pond_id(position))
     except Exception as ex:
-        _log('pool/pond check failed: {!r}'.format(ex))
+        _log(f'pool/pond check failed: {ex!r}')
     try:
         import terrain
 
@@ -75,7 +75,7 @@ def _water_point(position, level):
             terrain.get_water_depth(float(position.x), float(position.z), int(level)) or 0.0
         )
     except Exception as ex:
-        _log('water-depth check failed: {!r}'.format(ex))
+        _log(f'water-depth check failed: {ex!r}')
     if not (pool or pond or depth > 0.01):
         return None, depth, 'water'
     # Grid Y is the terrain/bottom sample; water depth raises it to the surface.
@@ -105,7 +105,7 @@ def _ceiling_point(position, level):
             return None
         return sims4.math.Vector3(float(position.x), height, float(position.z))
     except Exception as ex:
-        _log('ceiling sample failed: {!r}'.format(ex))
+        _log(f'ceiling sample failed: {ex!r}')
         return None
 
 

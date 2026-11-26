@@ -78,7 +78,7 @@ def _message(holiday_id):
         if service.get_holiday_time_off_school(holiday_id):
             off.append('school')
     except Exception as ex:
-        _log('time off lookup failed: {!r}'.format(ex))
+        _log(f'time off lookup failed: {ex!r}')
     if off:
         lines.append(Loc.get_raw_text('No {} today.'.format(' or '.join(off))))
     return title, Loc.get_new_line_separated_strings(*lines)
@@ -98,10 +98,10 @@ def announce(holiday_id):
             services.active_sim_info(), text=lambda *a, **k: text, title=lambda *a, **k: title
         )
         dialog.show_dialog()
-        _log('announced holiday {}'.format(holiday_id))
+        _log(f'announced holiday {holiday_id}')
         return True
     except Exception as ex:
-        _log('announcement failed for {}: {!r}'.format(holiday_id, ex))
+        _log(f'announcement failed for {holiday_id}: {ex!r}')
         return False
 
 
@@ -132,7 +132,7 @@ def _install():
                 else:
                     announce(holiday_id)
         except Exception as ex:
-            _log('activate hook failed: {!r}'.format(ex))
+            _log(f'activate hook failed: {ex!r}')
         return result
 
     a11y_activate_holiday._a11y_wrapped = True
@@ -158,7 +158,7 @@ def _install():
                 if active is None or holiday_id == active:
                     announce(holiday_id)
         except Exception as ex:
-            _log('load announcement failed: {!r}'.format(ex))
+            _log(f'load announcement failed: {ex!r}')
         finally:
             del _pending_load[:]
         return result
@@ -172,4 +172,4 @@ def _install():
 try:
     _install()
 except Exception as _ex:
-    _log('not installed: {!r}'.format(_ex))
+    _log(f'not installed: {_ex!r}')

@@ -56,7 +56,7 @@ _run = {}
 _last_log = {'at': None, 'counts': None}
 
 
-class _Check(object):
+class _Check:
     __slots__ = ('obj_id', 'label', 'gen', 'steps', 'cost_ms', 'phase', 'at')
 
     def __init__(self, obj_id, label):
@@ -150,7 +150,7 @@ def begin(sim, objects):
     try:
         return _begin(sim, objects)
     except Exception as ex:
-        speech.log_line('availability: begin failed {!r}'.format(ex))
+        speech.log_line(f'availability: begin failed {ex!r}')
         return _revision
 
 
@@ -288,7 +288,7 @@ def _tick(token=None):
         client = services.client_manager().get_first_client()
         manager = services.object_manager()
     except Exception as ex:
-        speech.log_line('availability: services unavailable {!r}'.format(ex))
+        speech.log_line(f'availability: services unavailable {ex!r}')
         _cancel_work()
         return
     if sim is None or client is None or sim.id != _sim_id:
@@ -325,9 +325,7 @@ def _tick(token=None):
             _run['slow_steps'] += 1
         if step_ms > _run['max_step_ms']:
             _run['max_step_ms'] = step_ms
-            _run['slowest'] = '{} {} {} {}'.format(
-                check.obj_id, check.label, check.phase, check.at
-            ).strip()
+            _run['slowest'] = f'{check.obj_id} {check.label} {check.phase} {check.at}'.strip()
         if outcome is not None:
             _current = None
             _store(check.obj_id, outcome[0], outcome[1], outcome[2], check.cost_ms)
@@ -369,7 +367,7 @@ def _log_run():
     _clear_run()
 
 
-class _LoggerProxy(object):
+class _LoggerProxy:
     """Stands in for objects.script_object.logger while a step runs.
 
     ScriptObject.potential_interactions catches its own exceptions and
@@ -390,7 +388,7 @@ class _LoggerProxy(object):
         return getattr(self._real, name)
 
 
-class _SwallowWatch(object):
+class _SwallowWatch:
     def __init__(self):
         self.message = None
         self._module = None
@@ -428,7 +426,7 @@ def _step(check):
     if watch.message is not None:
         outcome = (USABLE, 'swallowed: ' + watch.message, True)
     elif outcome is None and check.steps >= MAX_STEPS:
-        outcome = (USABLE, 'over {} rows'.format(MAX_STEPS), True)
+        outcome = (USABLE, f'over {MAX_STEPS} rows', True)
     if outcome is not None:
         try:
             check.gen.close()
@@ -456,7 +454,7 @@ def _store(obj_id, verdict, why, failed, cost_ms):
     )
     if failed and (_sim_id, obj_id) not in _errors_logged:
         _errors_logged.add((_sim_id, obj_id))
-        speech.log_line('availability: check failed for {}, kept listed: {}'.format(obj_id, why))
+        speech.log_line(f'availability: check failed for {obj_id}, kept listed: {why}')
     if _shown(verdict) != _shown(PENDING if old is None else old[0]):
         _bump()
 
@@ -469,7 +467,7 @@ def _evaluation(sim, client, obj, check):
     """Generator: pauses after each native test, returns (state, why, failed).
     check.phase and check.at name the work the latest step did."""
     import services
-    import interactions.choices as choices
+    from interactions import choices
     from server.pick_info import PickInfo, PickType
 
     ChoiceMenu = choices.ChoiceMenu
@@ -623,19 +621,11 @@ def a11y_availability(_connection=None):
         rows.sort(key=lambda row: row[0])
         for distance, obj, verdict in rows[:10]:
             output(
-                '  {:.1f} m {} {} {} ({:.1f} ms, next in {:.0f} s)'.format(
-                    distance**0.5,
-                    _label(obj),
-                    verdict[0],
-                    verdict[2],
-                    verdict[6],
-                    max(0.0, verdict[5] - now),
-                )
+                f'  {distance**0.5:.1f} m {_label(obj)} {verdict[0]} {verdict[2]} ({verdict[6]:.1f} ms, next in {max(0.0, verdict[5] - now):.0f} s)'
             )
         slow = sorted(_verdicts.items(), key=lambda item: -item[1][6])[:3]
         output(
-            '  slowest: '
-            + ', '.join('{} {:.1f} ms'.format(obj_id, verdict[6]) for obj_id, verdict in slow)
+            '  slowest: ' + ', '.join(f'{obj_id} {verdict[6]:.1f} ms' for obj_id, verdict in slow)
         )
     except Exception as ex:
-        output('availability: listing failed {!r}'.format(ex))
+        output(f'availability: listing failed {ex!r}')

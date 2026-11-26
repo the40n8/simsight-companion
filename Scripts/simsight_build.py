@@ -125,7 +125,7 @@ def announce_controls():
         )
         return True
     except Exception as ex:
-        speech.log_line('build: controls notice failed ({!r})'.format(ex))
+        speech.log_line(f'build: controls notice failed ({ex!r})')
         return False
 
 
@@ -140,7 +140,7 @@ def apply_setting():
 
             grid.retire()
         except Exception as ex:
-            speech.log_line('build: grid retire failed ({!r})'.format(ex))
+            speech.log_line(f'build: grid retire failed ({ex!r})')
         if _active or _aim_pending or _pending or _zone_id is not None:
             _pending.clear()
             sent = request('off')
@@ -226,9 +226,7 @@ def aim_grid():
     announce_controls()
     distributor.system.Distributor.instance().add_op_with_no_owner(
         distributor.ops.SendUIMessage(
-            'A11y|buildaim|{}|{:.6f}|{:.6f}|{:.6f}|{}|{}'.format(
-                _serial, values[0], values[1], values[2], level, ident
-            )
+            f'A11y|buildaim|{_serial}|{values[0]:.6f}|{values[1]:.6f}|{values[2]:.6f}|{level}|{ident}'
         )
     )
     return True
@@ -275,7 +273,7 @@ def request(action):
     if action == 'on':
         announce_controls()
     distributor.system.Distributor.instance().add_op_with_no_owner(
-        distributor.ops.SendUIMessage('A11y|build|{}|{}'.format(action, _serial))
+        distributor.ops.SendUIMessage(f'A11y|build|{action}|{_serial}')
     )
     return True
 
@@ -312,7 +310,7 @@ def request_menu(action):
     _pending[_serial] = _zone_id
     announce_controls()
     distributor.system.Distributor.instance().add_op_with_no_owner(
-        distributor.ops.SendUIMessage('A11y|build|menu:{}|{}'.format(action, _serial))
+        distributor.ops.SendUIMessage(f'A11y|build|menu:{action}|{_serial}')
     )
     return True
 
@@ -334,13 +332,13 @@ def on_build_buy_exit():
         if grid.active():
             grid.retire()  # placement ends with Build mode; Ctrl+Alt+T reads the lot in Live
     except Exception as ex:
-        speech.log_line('build: placement product not cleared ({!r})'.format(ex))
+        speech.log_line(f'build: placement product not cleared ({ex!r})')
     if not (_active or _zone_id is not None):
         return False  # this Build session never asked for the cursor
     try:
         sent = request('off')
     except Exception as ex:
-        speech.log_line('build: release on Build exit failed ({!r})'.format(ex))
+        speech.log_line(f'build: release on Build exit failed ({ex!r})')
         sent = False
     _release_serial = _serial if sent else 0
     _active, _aim_pending, _zone_id = False, 0, None
@@ -364,7 +362,7 @@ def on_build_buy_enter():
             grid.retire()
             speech.log_line('build: Build mode started, Live grid retired')
     except Exception as ex:
-        speech.log_line('build: Live grid not retired on Build entry ({!r})'.format(ex))
+        speech.log_line(f'build: Live grid not retired on Build entry ({ex!r})')
     return True
 
 
@@ -386,7 +384,7 @@ def install():
 try:
     install()
 except Exception as _install_ex:
-    speech.log_line('build: exit release not installed: {!r}'.format(_install_ex))
+    speech.log_line(f'build: exit release not installed: {_install_ex!r}')
 
 
 @sims4.commands.Command(
@@ -528,8 +526,8 @@ def state(encoded: str = '', _connection=None):
         prefix = _text(*replies[result]) if result in replies else ''
         feedback = ' ' + _last_feedback if _last_feedback and result in ('click', 'status') else ''
         _say(
-            prefix + 'Screen x {}, y {}. Step {} pixels.'.format(x, y, step) + feedback,
-            prefix + 'Ekran x {}, y {}. Krok {} pikseli.'.format(x, y, step) + feedback,
+            prefix + f'Screen x {x}, y {y}. Step {step} pixels.' + feedback,
+            prefix + f'Ekran x {x}, y {y}. Krok {step} pikseli.' + feedback,
         )
     elif result in replies:
         _say(*replies[result])

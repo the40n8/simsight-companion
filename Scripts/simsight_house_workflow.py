@@ -82,13 +82,7 @@ def _valid(plan):
 
 
 def _floor(level):
-    return (
-        'Basement'
-        if level == -1
-        else 'Ground floor'
-        if level == 0
-        else 'Floor {}'.format(level + 1)
-    )
+    return 'Basement' if level == -1 else 'Ground floor' if level == 0 else f'Floor {level + 1}'
 
 
 def _position(plan, room):
@@ -143,7 +137,7 @@ def _door_names(plan):
         if door['front'] and (a or b):
             door['what'] = 'Front door into ' + (a or b)
         elif a and b:
-            door['what'] = 'Door between {} and {}'.format(a, b)
+            door['what'] = f'Door between {a} and {b}'
 
 
 def _extend(plan, stories, basement):
@@ -374,8 +368,7 @@ def _review(plan):
 
     _core.choose(
         'Build my house: review',
-        _summary(plan)
-        + ' Estimated structural cost {:,}; household funds {:,}.'.format(estimate, funds),
+        _summary(plan) + f' Estimated structural cost {estimate:,}; household funds {funds:,}.',
         rows,
         selected,
         tag='build',

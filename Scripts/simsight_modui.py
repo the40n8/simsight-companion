@@ -67,7 +67,7 @@ def ls_text(value, depth=0):
     if parts:
         return ' '.join(parts)
     key = getattr(value, 'hash', 0)
-    return 'key 0x{:08X}'.format(key) if key else ''
+    return f'key 0x{key:08X}' if key else ''
 
 
 def _rows(dialog):
@@ -91,14 +91,14 @@ def describe(dialog, msg):
         except Exception:
             text = ''
         if text:
-            parts.append('{} "{}"'.format(field, text[:120]))
+            parts.append(f'{field} "{text[:120]}"')
     count, names = _rows(dialog)
     if count:
-        parts.append('rows {}: {}'.format(count, ' | '.join('"{}"'.format(n[:60]) for n in names)))
+        parts.append('rows {}: {}'.format(count, ' | '.join(f'"{n[:60]}"' for n in names)))
     inputs = getattr(dialog, 'text_inputs', None)
     if inputs:
         try:
-            parts.append('text inputs {}'.format(sorted(inputs)))
+            parts.append(f'text inputs {sorted(inputs)}')
         except Exception:
             pass
     picker_type = getattr(dialog, 'picker_type', None)
@@ -122,9 +122,9 @@ def install():
             try:
                 module, filename = _source()
                 if module is not None:
-                    _log('{} ({}) {}'.format(module, filename, describe(self, msg)))
+                    _log(f'{module} ({filename}) {describe(self, msg)}')
             except Exception as ex:
-                _log('census failed: {!r}'.format(ex))
+                _log(f'census failed: {ex!r}')
         return msg
 
     build_msg.__name__ = original.__name__
@@ -135,4 +135,4 @@ def install():
 try:
     install()
 except Exception as _install_ex:
-    speech.log_line('modui: install failed: {!r}'.format(_install_ex))
+    speech.log_line(f'modui: install failed: {_install_ex!r}')

@@ -33,7 +33,7 @@ def compass(dx, dz):
     return COMPASS[int((angle + 22.5) % 360.0 // 45) % 8]
 
 
-class _Room(object):
+class _Room:
     """Cells of one room on one floor (also what plus_rooms.given_name expects)."""
 
     def __init__(self, rid, level):
@@ -52,7 +52,7 @@ class _Room(object):
 
     @property
     def key(self):
-        return '{}:{}'.format(self.rid, self.level)
+        return f'{self.rid}:{self.level}'
 
     @property
     def center(self):
@@ -97,7 +97,7 @@ def build():
     try:
         levels = range(int(lot.min_level), int(lot.max_level) + 1)
     except Exception:
-        levels = range(0, 3)
+        levels = range(3)
 
     def world(i, j):
         fu, fv = (i + 0.5) / nu, (j + 0.5) / nv
@@ -360,7 +360,6 @@ def _is_stairs(obj):
 
 def _is_pool(x, z, level):
     import build_buy
-    import services
     import sims4.math
     import terrain
 

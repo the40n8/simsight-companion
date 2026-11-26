@@ -37,9 +37,11 @@ def active():
     try:
         import services
 
-        if services.current_zone_id() != _zone_id or services.active_lot() is None:
-            _active = False
-        elif not _controls_enabled():
+        if (
+            services.current_zone_id() != _zone_id
+            or services.active_lot() is None
+            or not _controls_enabled()
+        ):
             _active = False
     except Exception:
         _active = False
@@ -544,7 +546,7 @@ def on_key(intent):
             }
         )
         for topic in range(1, 7):
-            actions['info{}'.format(topic)] = lambda value=topic: _detail(value)
+            actions[f'info{topic}'] = lambda value=topic: _detail(value)
     callback = actions.get(intent)
     return callback() if callback is not None else False
 
@@ -578,7 +580,7 @@ def _flash(message):
             distributor.ops.SendUIMessage(message)
         )
     except Exception as ex:
-        speech.log_line('grid: {} not sent ({!r})'.format(message, ex))
+        speech.log_line(f'grid: {message} not sent ({ex!r})')
 
 
 def build_cursor():
@@ -1149,7 +1151,7 @@ def _move_key():
         )
         return False
     _clear_move()
-    _say('{} moved.'.format(name), 'Przesunięto {}.'.format(name))
+    _say(f'{name} moved.', f'Przesunięto {name}.')
     return True
 
 

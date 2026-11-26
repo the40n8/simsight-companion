@@ -129,10 +129,10 @@ def _try_init_prism():
         from simsight_prism import Reader
 
         _prism = Reader(PRISM_DLL_PATH, log_line)
-        log_line('Prism loaded from {}'.format(PRISM_DLL_PATH))
+        log_line(f'Prism loaded from {PRISM_DLL_PATH}')
         return True
     except Exception as ex:
-        log_line('Prism initialization failed: {!r}'.format(ex))
+        log_line(f'Prism initialization failed: {ex!r}')
         return False
 
 
@@ -171,7 +171,7 @@ def _sapi_script():
     script = (
         'Add-Type -AssemblyName System.Speech; '
         '$sp = New-Object System.Speech.Synthesis.SpeechSynthesizer; '
-        '$sp.Rate = {}; $sp.Volume = {}; '.format(rate, volume)
+        f'$sp.Rate = {rate}; $sp.Volume = {volume}; '
     )
     if voice:
         # Case-insensitive partial match, so "david"/"zira"/"hazel" work
@@ -255,7 +255,7 @@ def _try_init_mac_say():
         log_line('macOS speech companion started: {}'.format(' '.join(args[1:])))
         return True
     except Exception as ex:
-        log_line('macOS speech companion failed: {!r}'.format(ex))
+        log_line(f'macOS speech companion failed: {ex!r}')
         return False
 
 
@@ -272,7 +272,7 @@ def _dispose_sapi_locked():
                 proc.kill()
             proc.wait(timeout=1)
         except Exception as ex:
-            log_line('SAPI child cleanup failed: {!r}'.format(ex))
+            log_line(f'SAPI child cleanup failed: {ex!r}')
         finally:
             if proc.stdin is not None:
                 try:
@@ -312,7 +312,7 @@ def _try_init_sapi():
             # Never retain an unowned helper if native ownership is refused.
             _sapi_proc, _sapi_job = proc, job
             _dispose_sapi_locked()
-            log_line('SAPI backend init failed: {!r}'.format(ex))
+            log_line(f'SAPI backend init failed: {ex!r}')
             return False
 
 
@@ -326,7 +326,7 @@ def _write_sapi(data, action):
             proc.stdin.write(data)
             proc.stdin.flush()
         except Exception as ex:
-            log_line('SAPI {} failed: {!r}'.format(action, ex))
+            log_line(f'SAPI {action} failed: {ex!r}')
 
 
 def restart_sapi():
@@ -360,7 +360,7 @@ def list_voices():
                 if line.count('\t') >= 2
             ]
         except Exception as ex:
-            log_line('voice list failed: {!r}'.format(ex))
+            log_line(f'voice list failed: {ex!r}')
             return []
     try:
         out = subprocess.run(
@@ -380,7 +380,7 @@ def list_voices():
         )
         return [line.strip() for line in out.stdout.splitlines() if line.strip()]
     except Exception as ex:
-        log_line('voice list failed: {!r}'.format(ex))
+        log_line(f'voice list failed: {ex!r}')
         return []
 
 
@@ -403,9 +403,9 @@ def _init_locked():
         _backend_name = 'sapi'
     else:
         _backend_name = 'log-only'
-    log_line('speech backend: {}'.format(_backend_name))
+    log_line(f'speech backend: {_backend_name}')
     if not speech_pack_installed():
-        log_line('Prism speech pack missing; expected {}'.format(PRISM_DLL_PATH))
+        log_line(f'Prism speech pack missing; expected {PRISM_DLL_PATH}')
     return _backend_name
 
 
@@ -484,7 +484,7 @@ def set_mode(mode):
         _s.set('speech_mode', mode)
     except Exception:
         pass
-    log_line('speech mode -> {}'.format(mode))
+    log_line(f'speech mode -> {mode}')
     _speak_now(
         {
             'hover': 'Speech on.',
@@ -638,7 +638,7 @@ def speak(text, interrupt=True, source='tooltip', explicit=False):
     # Deafblind exception: in braille-only mode the braille stream keeps
     # flowing regardless of speech mode.
     if not explicit and speech_mode != 'hover' and not (braille_mode == 'only' and has_braille()):
-        log_line('CAPTURE[{}/{}]: {}'.format(speech_mode, source[0], text))
+        log_line(f'CAPTURE[{speech_mode}/{source[0]}]: {text}')
         if speech_mode == 'beeps':
             _beep()
         return
@@ -705,7 +705,7 @@ def stop():
         try:
             _prism.stop()
         except Exception as ex:
-            log_line('Prism stop failed: {!r}'.format(ex))
+            log_line(f'Prism stop failed: {ex!r}')
     # Always cancel any fallback that may still be speaking after a switch.
     _write_sapi(b'I\n', 'stop')
 
@@ -758,7 +758,7 @@ def _send_caption(text):
     # bytes outside the unreserved ASCII set, including pipes and percent.
     safe = b'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.~'
     encoded = ''.join(
-        chr(byte) if byte in safe else '%{:02X}'.format(byte)
+        chr(byte) if byte in safe else f'%{byte:02X}'
         for byte in text.encode('utf-8', errors='replace')
     )
     op = distributor.ops.SendUIMessage('A11y|cap|' + encoded)
@@ -777,7 +777,7 @@ def _post_caption(text):
             text = text[: _CAPTION_MAX_CHARS - 1] + '\u2026'
         pump.post(_send_caption, text)
     except Exception as ex:
-        log_line('caption: post failed: {!r}'.format(ex))
+        log_line(f'caption: post failed: {ex!r}')
 
 
 def clear_caption():
@@ -841,14 +841,14 @@ def _speak_now(text, source='tooltip'):
             try:
                 bridge.mirror(text, interrupt)
             except Exception as ex:
-                log_line('companion mirror failed: {!r}'.format(ex))
+                log_line(f'companion mirror failed: {ex!r}')
     if _backend_name == 'prism' and _prism is not None:
         try:
             if _prism.output(text, _braille_text(text), braille_mode, interrupt):
                 restart_sapi()
                 return
         except Exception as ex:
-            log_line('Prism output failed: {!r}'.format(ex))
+            log_line(f'Prism output failed: {ex!r}')
     if braille_mode == 'only':
         return
     with _sapi_lock:

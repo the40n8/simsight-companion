@@ -330,17 +330,13 @@ def change_layer(delta):
     kind, label, height = _mode_info()
     if kind == 'wall':
         place._say_text(
-            'Target layer: {}, {:.1f} metres. Press 1 to focus an object here.'.format(
-                label, height
-            ),
-            'Warstwa docelowa: {}, {:.1f} metra. Naciśnij 1, aby wybrać obiekt.'.format(
-                label, height
-            ),
+            f'Target layer: {label}, {height:.1f} metres. Press 1 to focus an object here.',
+            f'Warstwa docelowa: {label}, {height:.1f} metra. Naciśnij 1, aby wybrać obiekt.',
         )
     else:
         place._say_text(
-            'Target layer: {}. Press 1 to focus an object here.'.format(label),
-            'Warstwa docelowa: {}. Naciśnij 1, aby wybrać obiekt.'.format(label),
+            f'Target layer: {label}. Press 1 to focus an object here.',
+            f'Warstwa docelowa: {label}. Naciśnij 1, aby wybrać obiekt.',
         )
     return True
 
@@ -370,9 +366,9 @@ def selected_surface_slot(target_id, candidate, level):
     for index, slot in enumerate(surface_slots(target)):
         try:
             valid = slot.empty and slot.is_valid_for_placement(obj=candidate)
-            _log('surface {} slot {} native validation={!r}'.format(target_id, index, valid))
+            _log(f'surface {target_id} slot {index} native validation={valid!r}')
             if valid:
                 return target, slot
         except Exception as exc:
-            _log('surface {} slot {} validation error: {!r}'.format(target_id, index, exc))
+            _log(f'surface {target_id} slot {index} validation error: {exc!r}')
     return None

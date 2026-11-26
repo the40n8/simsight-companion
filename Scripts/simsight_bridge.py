@@ -76,7 +76,7 @@ def start():
         # at most every RESPAWN_DELAY seconds.
         if time.monotonic() - _last_spawn < RESPAWN_DELAY:
             return False
-        log('restarting (previous one exited with {})'.format(_proc.returncode))
+        log(f'restarting (previous one exited with {_proc.returncode})')
         _proc = None
         _read_buf = b''
         _last_state_json = None  # the new bridge needs a full state
@@ -106,10 +106,10 @@ def start():
         if not IS_WINDOWS:
             os.set_blocking(_proc.stdout.fileno(), False)
     except Exception as ex:
-        log('start failed: {!r}'.format(ex))
+        log(f'start failed: {ex!r}')
         _proc = None
         return False
-    log('started (pid {})'.format(_proc.pid))
+    log(f'started (pid {_proc.pid})')
     send(
         {
             'hello': {
@@ -137,7 +137,7 @@ def write_line(data):
             _proc.stdin.flush()
             return True
         except Exception as ex:
-            log('write failed: {!r}'.format(ex))
+            log(f'write failed: {ex!r}')
             return False
 
 
@@ -162,7 +162,7 @@ def set_voice(rate, volume, name, lang):
     send({'voice': _voice})
 
 
-class SpeechPipe(object):
+class SpeechPipe:
     """Stands in for the fallback-voice process the speech module expects:
     `.stdin.write()/.flush()` send lines to the bridge, `.kill()` (used when
     voice settings change) leaves the bridge running; the speech module then
@@ -216,7 +216,7 @@ def _tick():
         try:
             _mackeys.tick(send)
         except Exception as ex:
-            log('keys tick failed: {!r}'.format(ex))
+            log(f'keys tick failed: {ex!r}')
     if now - _last_state_time >= STATE_INTERVAL:
         _last_state_time = now
         _publish_state()
@@ -234,7 +234,7 @@ def _install_tick():
         try:
             _tick()
         except Exception as ex:
-            log('tick failed: {!r}'.format(ex))
+            log(f'tick failed: {ex!r}')
         return result
 
     on_tick._simsight_bridge = True
@@ -266,7 +266,7 @@ def _read_commands():
     except BlockingIOError:
         return
     except Exception as ex:
-        log('read failed: {!r}'.format(ex))
+        log(f'read failed: {ex!r}')
         return
     if not chunk:
         return
@@ -281,7 +281,7 @@ def _handle(line):
     try:
         cmd = json.loads(line.decode('utf-8'))
     except Exception as ex:
-        log('bad command: {!r}'.format(ex))
+        log(f'bad command: {ex!r}')
         return
     cmd_id = cmd.get('id', '')
     extra = {}
@@ -291,7 +291,7 @@ def _handle(line):
         if len(answer) > 2:
             extra = answer[2]
     except Exception as ex:
-        log('command failed: {!r}'.format(ex))
+        log(f'command failed: {ex!r}')
         ok, reason = False, 'error'
     outcome = {'ok': True} if ok else {'reason': reason}
     result = {'id': cmd_id, 'outcome': outcome}
@@ -419,7 +419,7 @@ def _set_speed(name):
         clock_commands.set_speed(name)
         return True
     except Exception as ex:
-        log('clock.setspeed failed, using the clock directly: {!r}'.format(ex))
+        log(f'clock.setspeed failed, using the clock directly: {ex!r}')
     import services
     from clock import ClockSpeedMode, GameSpeedChangeSource
 
@@ -456,7 +456,7 @@ def _request_localization():
         if key in cache or key in _loc_requested:
             continue
         _loc_requested.add(key)
-        scanner._send_ui('A11y|loc|{}|{}'.format(key, key))
+        scanner._send_ui(f'A11y|loc|{key}|{key}')
 
 
 def _loc_value(value):
@@ -498,10 +498,10 @@ def _fill_tokens(template, tokens):
         if name == 'SimLastName':
             return last
         if name in ('SimName', 'SimFullName'):
-            return '{} {}'.format(first, last).strip()
+            return f'{first} {last}'.strip()
         if name in ('Number', 'Money'):
             n = getattr(t, 'number', 0) or 0
-            text = str(int(n)) if float(n).is_integer() else '{:g}'.format(n)
+            text = str(int(n)) if float(n).is_integer() else f'{n:g}'
             return ('§' + text) if name == 'Money' else text
         return _token_text(t)
 
@@ -746,7 +746,7 @@ def _career(info, entry):
         try:
             span, start, _end = career.get_next_work_time()
             if start is not None:
-                entry['nextShift'] = '{} {}'.format(t.day_text(start), t.clock_text(start))
+                entry['nextShift'] = f'{t.day_text(start)} {t.clock_text(start)}'
         except Exception:
             pass
         return
@@ -792,7 +792,7 @@ def _goals(info):
                     goals['milestoneSteps'] = _objectives(milestone, tracker)
                     break
         except Exception as ex:
-            log('aspiration of {} unavailable: {!r}'.format(info.first_name, ex))
+            log(f'aspiration of {info.first_name} unavailable: {ex!r}')
     whims = getattr(info, 'whim_tracker', None)
     if whims is not None:
         wants = []
@@ -834,7 +834,7 @@ def _goals(info):
                     if steps:
                         goals['promotionSteps'] = steps
             except Exception as ex:
-                log('work goals of {} unavailable: {!r}'.format(info.first_name, ex))
+                log(f'work goals of {info.first_name} unavailable: {ex!r}')
     return goals
 
 
@@ -898,7 +898,7 @@ def _relationships(info):
                 max(abs(f), abs(r)) + (100 if labels else 0),
                 {
                     'simId': str(other.sim_id),
-                    'name': '{} {}'.format(other.first_name, other.last_name).strip(),
+                    'name': f'{other.first_name} {other.last_name}'.strip(),
                     'friendship': f,
                     'romance': r,
                     'labels': labels,
@@ -971,7 +971,7 @@ def _sim(info, client):
     try:
         _career(info, entry)
     except Exception as ex:
-        log('career of {} unavailable: {!r}'.format(info.first_name, ex))
+        log(f'career of {info.first_name} unavailable: {ex!r}')
     for key, fn in (
         ('relationships', lambda: _relationships(info)),
         ('skills', lambda: _skills(info)),
@@ -982,7 +982,7 @@ def _sim(info, client):
             if value:
                 entry[key] = value
         except Exception as ex:
-            log('{} of {} unavailable: {!r}'.format(key, info.first_name, ex))
+            log(f'{key} of {info.first_name} unavailable: {ex!r}')
     for key, fn in (
         ('mood', lambda: _mood(info)),
         ('needs', lambda: _needs(info)),
@@ -996,7 +996,7 @@ def _sim(info, client):
             if value:
                 entry[key] = value
         except Exception as ex:
-            log('{} of {} unavailable: {!r}'.format(key, info.first_name, ex))
+            log(f'{key} of {info.first_name} unavailable: {ex!r}')
     return entry
 
 
@@ -1053,7 +1053,7 @@ def _house():
             _house_cache['map'] = house
             _house_cache['rooms'] = dict((r['id'], r) for r in (house or {}).get('rooms', []))
         except Exception as ex:
-            log('house map failed: {!r}'.format(ex))
+            log(f'house map failed: {ex!r}')
             _house_cache['rooms'] = {}
     return _house_cache['rooms']
 
@@ -1071,7 +1071,7 @@ def _room_ref(obj):
             return None
         level = int(obj.level)
         rid = plus_rooms.room_id_at(obj.position.x, obj.position.z, level, obj.position.y)
-        room = rooms.get('{}:{}'.format(rid, level)) or rooms.get('outside:0')
+        room = rooms.get(f'{rid}:{level}') or rooms.get('outside:0')
     except Exception:
         return None
     if room is None:
@@ -1100,7 +1100,7 @@ def _visitors(household):
                 continue
             entry = {
                 'simId': str(sim.sim_info.sim_id),
-                'name': '{} {}'.format(sim.sim_info.first_name, sim.sim_info.last_name).strip(),
+                'name': f'{sim.sim_info.first_name} {sim.sim_info.last_name}'.strip(),
             }
             room = _room_ref(sim)
             if room is not None:
@@ -1157,7 +1157,7 @@ def _set_camera(sim_id, mode):
                 obj_position=pos, camera_position=eye, client=client
             )
         except Exception as ex:
-            log('close camera failed: {!r}'.format(ex))
+            log(f'close camera failed: {ex!r}')
     camera.focus_on_sim(sim=sim, follow=True, client=client)
     return True, ''
 
@@ -1255,7 +1255,7 @@ def list_inventory():
                 }
             )
         except Exception as ex:
-            log('inventory item skipped: {!r}'.format(ex))
+            log(f'inventory item skipped: {ex!r}')
     return True, '', {'inventory': items}
 
 
@@ -1297,7 +1297,7 @@ _route_seen = {}  # (sim id, action) -> monotonic time, to skip repeats
 
 
 def _install_route_fail():
-    import interactions.utils.route_fail as route_fail
+    from interactions.utils import route_fail
 
     original = route_fail.route_failure
     if getattr(original, '_simsight_phone', False):
@@ -1307,7 +1307,7 @@ def _install_route_fail():
         try:
             _report_route_fail(sim, interaction, failure_reason, failure_object_id)
         except Exception as ex:
-            log('route failure report failed: {!r}'.format(ex))
+            log(f'route failure report failed: {ex!r}')
         return original(sim, interaction, failure_reason, failure_object_id, *args, **kwargs)
 
     route_failure._simsight_phone = True
@@ -1342,8 +1342,8 @@ def _report_route_fail(sim, interaction, failure_reason, failure_object_id):
         if obj is not None and not getattr(obj, 'is_sim', False):
             obj_name = _object_name(obj)
         elif obj is not None:
-            obj_name = '{} {}'.format(obj.sim_info.first_name, obj.sim_info.last_name).strip()
-    log('route failure: {} {} ({}, {})'.format(info.first_name, action, reason, obj_name))
+            obj_name = f'{obj.sim_info.first_name} {obj.sim_info.last_name}'.strip()
+    log(f'route failure: {info.first_name} {action} ({reason}, {obj_name})')
     send(
         {
             'event': {
@@ -1375,7 +1375,7 @@ def _problems():
     try:
         _problem_cache['items'] = _scan_problems()
     except Exception as ex:
-        log('problems failed: {!r}'.format(ex))
+        log(f'problems failed: {ex!r}')
         _problem_cache['items'] = []
     return _problem_cache['items']
 
@@ -1478,7 +1478,7 @@ def _open_dialogs():
     try:
         return _dialogs.active()
     except Exception as ex:
-        log('dialogs failed: {!r}'.format(ex))
+        log(f'dialogs failed: {ex!r}')
         return []
 
 
@@ -1487,7 +1487,7 @@ def _publish_state():
     try:
         state = build_state()
     except Exception as ex:
-        log('state failed: {!r}'.format(ex))
+        log(f'state failed: {ex!r}')
         return
     body = json.dumps(state, sort_keys=True, ensure_ascii=False)
     if body == _last_state_json:
@@ -1590,7 +1590,7 @@ def list_targets():
     targets = [
         {
             'id': str(sim.id),
-            'name': '{} {}'.format(sim.sim_info.first_name, sim.sim_info.last_name).strip(),
+            'name': f'{sim.sim_info.first_name} {sim.sim_info.last_name}'.strip(),
             'isSim': True,
             'isSelf': True,
             'group': 'SIMS',
@@ -1611,7 +1611,7 @@ def list_targets():
         targets.append(
             {
                 'id': str(other.id),
-                'name': '{} {}'.format(info.first_name, info.last_name).strip(),
+                'name': f'{info.first_name} {info.last_name}'.strip(),
                 'isSim': True,
                 'group': 'SIMS',
                 'distance': int(round(d)),
@@ -1677,7 +1677,6 @@ def _category_root(category):
 
 def get_interactions(target_id):
     import services
-    import sims4.resources
     from interactions.choices import ChoiceMenu
     from server.pick_info import PickInfo, PickType
 
@@ -1726,7 +1725,7 @@ def get_interactions(target_id):
             try:
                 sim.fill_choices_menu_with_si_state_aops(target, context, menu, None)
             except Exception as ex:
-                log('social rows unavailable: {!r}'.format(ex))
+                log(f'social rows unavailable: {ex!r}')
     return _menu_rows(target_id, sim, menu)
 
 
@@ -1780,7 +1779,7 @@ def _menu_rows(target_id, sim, menu):
             )
             options[str(option_id)] = (aop, item.context)
         except Exception as ex:
-            log('menu row skipped: {!r}'.format(ex))
+            log(f'menu row skipped: {ex!r}')
     _menus.clear()  # only the latest menu can be run
     _menus[str(target_id)] = options
     return True, '', {'interactions': rows, 'namesPending': pending or _loc_misses != misses}
@@ -1794,10 +1793,10 @@ def run_interaction(target_id, option_id):
     try:
         result = aop.test_and_execute(context)
     except Exception as ex:
-        log('interaction failed: {!r}'.format(ex))
+        log(f'interaction failed: {ex!r}')
         return False, 'error'
     if not result:
-        log('interaction refused: {}'.format(result))
+        log(f'interaction refused: {result}')
         return False, 'refused'
     return True, ''
 
@@ -1825,7 +1824,7 @@ def _open_on_mac(url, said):
         speech.speak(said, explicit=True)
         return True
     except Exception as ex:
-        log('open {} failed: {!r}'.format(url, ex))
+        log(f'open {url} failed: {ex!r}')
         return False
 
 
@@ -1854,7 +1853,7 @@ try:
         """Open SimSight setup on the Mac (phone address, meeting point)."""
         return open_setup_page()
 except Exception as _ex:
-    log('companion command unavailable: {!r}'.format(_ex))
+    log(f'companion command unavailable: {_ex!r}')
 
 
 # ---------------------------------------------------------------- startup
@@ -1868,27 +1867,27 @@ if IS_WINDOWS:
         import ctypes as _ctypes
     except Exception as _ex:
         IS_WINDOWS = False  # no way to read the pipe without blocking: no companion
-        log('companion unavailable on Windows: {!r}'.format(_ex))
+        log(f'companion unavailable on Windows: {_ex!r}')
 if IS_MAC:
     try:
         import simsight_mackeys as _mackeys
     except Exception as _ex:
         _mackeys = None
-        log('keyboard unavailable: {!r}'.format(_ex))
+        log(f'keyboard unavailable: {_ex!r}')
 if IS_MAC or IS_WINDOWS:
     try:
         _install_route_fail()
     except Exception as _ex:
-        log('route failure hook unavailable: {!r}'.format(_ex))
+        log(f'route failure hook unavailable: {_ex!r}')
     try:
         import simsight_dialogs as _dialogs
 
         _dialogs.install()
     except Exception as _ex:
         _dialogs = None
-        log('dialogs unavailable: {!r}'.format(_ex))
+        log(f'dialogs unavailable: {_ex!r}')
     try:
         _install_tick()
         start()
     except Exception as _ex:
-        log('install failed: {!r}'.format(_ex))
+        log(f'install failed: {_ex!r}')

@@ -14,7 +14,7 @@ AGE_CHOICES = (
 MAX_HOUSEHOLD = 8
 
 
-class _Draft(object):
+class _Draft:
     def __init__(self):
         self.age = None
         self.gender = None
@@ -23,7 +23,7 @@ class _Draft(object):
         self.traits = []
 
 
-class _Fake(object):
+class _Fake:
     """Stands in for a Sim when checking which traits fit an age and gender."""
 
     def __init__(self, age, gender):
@@ -51,7 +51,8 @@ def _age_name(age):
 
 
 def personality_traits(age, gender):
-    import services, sims4.resources
+    import services
+    import sims4.resources
 
     fake = _Fake(age, gender)
     out = []
@@ -111,9 +112,7 @@ def pick_traits(title, age, gender, limit, token_sim, on_done, chosen=None):
         hint = 'To stop here, choose Done at the end of the list.'
     else:
         hint = 'Press Enter on a trait to choose it. Traits that clash with ones already chosen are left out.'
-    core.choose(
-        title, 'Trait {} of {}. {}'.format(len(chosen) + 1, limit, hint), rows, picked, tag='sims'
-    )
+    core.choose(title, f'Trait {len(chosen) + 1} of {limit}. {hint}', rows, picked, tag='sims')
 
 
 def _trait_rows(traits, token_sim, selected=()):
@@ -176,12 +175,12 @@ def open_menu():
             'Choose age, gender, name and traits. The game gives the Sim a random look.',
             'new',
         ),
-        ("Change {}'s name".format(name), 'Type a new first and last name.', 'name'),
-        ("Change {}'s traits".format(name), 'Choose new personality traits.', 'traits'),
-        ("Change {}'s aspiration".format(name), 'Choose a new life goal.', 'aspiration'),
-        ('Describe {}'.format(name), 'Age, gender, traits, aspiration and career.', 'describe'),
+        (f"Change {name}'s name", 'Type a new first and last name.', 'name'),
+        (f"Change {name}'s traits", 'Choose new personality traits.', 'traits'),
+        (f"Change {name}'s aspiration", 'Choose a new life goal.', 'aspiration'),
+        (f'Describe {name}', 'Age, gender, traits, aspiration and career.', 'describe'),
         (
-            "Open the game's Create a Sim for {}".format(name),
+            f"Open the game's Create a Sim for {name}",
             'The full game screen, mostly needs a mouse. Use it only with sighted help.',
             'cas',
         ),
@@ -214,7 +213,7 @@ def _menu_pick(value):
 
             client = core.client()
             sims4.commands.client_cheat(
-                'sims.exit2cas {} {} {}'.format(sim.id, info.household_id, sim.id), client.id
+                f'sims.exit2cas {sim.id} {info.household_id} {sim.id}', client.id
             )
         except Exception:
             core.log_exc('open cas')
@@ -258,8 +257,8 @@ def describe(info):
         core.log_exc('describe career')
     if rows:
         core.choose(
-            'About {}'.format(info.first_name),
-            '{}. {}.'.format(core.sim_name(info), _age_name(info.age)),
+            f'About {info.first_name}',
+            f'{core.sim_name(info)}. {_age_name(info.age)}.',
             rows,
             lambda v: None,
             tag='sims',
@@ -283,7 +282,7 @@ def _rename(info):
                 info.resend_full_name()
             except Exception:
                 pass
-            core.speak('Renamed to {}.'.format(core.sim_name(info)))
+            core.speak(f'Renamed to {core.sim_name(info)}.')
 
         core.ask_text('Last name', 'Type the last name.', info.last_name, got_last)
 
@@ -316,9 +315,7 @@ def _edit_traits(info):
     rows = [
         (
             'Choose new traits',
-            "Replaces all of {}'s current traits. You choose them one at a time.".format(
-                info.first_name
-            ),
+            f"Replaces all of {info.first_name}'s current traits. You choose them one at a time.",
             'new',
         )
     ]
@@ -327,7 +324,7 @@ def _edit_traits(info):
     def start(value):
         if value == 'new':
             pick_traits(
-                'New traits for {}'.format(info.first_name),
+                f'New traits for {info.first_name}',
                 info.age,
                 info.gender,
                 limit,
@@ -336,10 +333,8 @@ def _edit_traits(info):
             )
 
     core.choose(
-        'Traits for {}'.format(info.first_name),
-        "{} has these traits now. Choose 'Choose new traits' to replace them.".format(
-            info.first_name
-        ),
+        f'Traits for {info.first_name}',
+        f"{info.first_name} has these traits now. Choose 'Choose new traits' to replace them.",
         rows,
         start,
         tag='sims',
@@ -350,7 +345,8 @@ def _edit_traits(info):
 
 
 def aspiration_tracks(info):
-    import services, sims4.resources
+    import services
+    import sims4.resources
 
     out = []
     for track in services.get_instance_manager(
@@ -413,7 +409,7 @@ def choose_aspiration(info, then=None):
             core.post(then)
 
     core.choose(
-        'Aspiration for {}'.format(info.first_name),
+        f'Aspiration for {info.first_name}',
         'An aspiration is a life goal. It gives the Sim goals to work on and rewards.',
         rows,
         picked,
@@ -512,8 +508,8 @@ def _create():
         position = sim.position if sim is not None else None
         SimSpawner.spawn_sim(info, position)
         client.add_selectable_sim_info(info)
-        core.log('created sim {} ({})'.format(core.sim_name(info), info.sim_id))
-        core.speak('{} has joined the household.'.format(core.sim_name(info)))
+        core.log(f'created sim {core.sim_name(info)} ({info.sim_id})')
+        core.speak(f'{core.sim_name(info)} has joined the household.')
     except Exception:
         core.log_exc('create sim')
         core.speak('Sorry, the game could not create the Sim.')

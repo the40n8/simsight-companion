@@ -32,7 +32,7 @@ def _room_map(refresh=False):
             }
             _cache_at = now
         except Exception as ex:
-            _log('lookup failed: {!r}'.format(ex))
+            _log(f'lookup failed: {ex!r}')
     return _cache
 
 

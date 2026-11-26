@@ -15,7 +15,7 @@ import simsight_settings as settings
 import simsight_speech as speech
 
 
-class Row(object):
+class Row:
     __slots__ = ('key', 'kind', 'term', 'choices', 'lo', 'hi', 'step', 'help')
 
     def __init__(self, key, kind, term, choices=(), lo=0, hi=0, step=1, help=''):
@@ -275,7 +275,7 @@ def _apply(row, value):
     if key == 'speech_mode':
         speech.speech_mode = value
         settings.set(key, value)
-        speech.log_line('speech mode -> {} (menu)'.format(value))
+        speech.log_line(f'speech mode -> {value} (menu)')
     elif key == 'braille_mode':
         speech.braille_mode = value
         settings.set(key, value)
@@ -309,12 +309,12 @@ def _apply(row, value):
 
             travel.apply_setting()
         except Exception as ex:
-            speech.log_line('menu: travel setting notice failed: {!r}'.format(ex))
+            speech.log_line(f'menu: travel setting notice failed: {ex!r}')
     elif key == 'scanner_mode':
         try:
             _keys().set_scanner_mode(bool(value))
         except Exception as ex:
-            speech.log_line('menu: scanner mode failed: {!r}'.format(ex))
+            speech.log_line(f'menu: scanner mode failed: {ex!r}')
     elif key == 'build_controls':
         settings.set(key, bool(value))
         try:
@@ -322,7 +322,7 @@ def _apply(row, value):
 
             build.apply_setting()
         except Exception as ex:
-            speech.log_line('menu: build controls notice failed: {!r}'.format(ex))
+            speech.log_line(f'menu: build controls notice failed: {ex!r}')
     elif key == 'scanner':
         settings.set(key, bool(value))
         if value:
@@ -454,7 +454,7 @@ def _run_action(row):
             try:
                 _apply(setting_row, settings.get(setting_row.key))
             except Exception as ex:
-                speech.log_line('menu: reload apply {} failed: {!r}'.format(setting_row.key, ex))
+                speech.log_line(f'menu: reload apply {setting_row.key} failed: {ex!r}')
         try:
             speech.retry_screen_reader()
         except Exception:
@@ -506,7 +506,7 @@ def _join(*strings):
 
         return LocalizationHelperTuning.get_comma_separated_list(*strings)
     except Exception as ex:
-        speech.log_line('menu: comma list failed: {!r}'.format(ex))
+        speech.log_line(f'menu: comma list failed: {ex!r}')
         return strings[0]
 
 
@@ -518,7 +518,7 @@ def _cancel_dialog(dialog_id):
 
         services.ui_dialog_service().dialog_cancel(dialog_id)
     except Exception as ex:
-        speech.log_line('menu: cancel dialog {} failed: {!r}'.format(dialog_id, ex))
+        speech.log_line(f'menu: cancel dialog {dialog_id} failed: {ex!r}')
 
 
 def _picker(title, text, text_only=False, localized_title=None):
@@ -578,7 +578,7 @@ def _show_settings_window():
             if row.kind == 'action':
                 name = _label(row)
             else:
-                name = '{}: {}'.format(_label(row), _value_text(row))
+                name = f'{_label(row)}: {_value_text(row)}'
             dialog.add_row(
                 BasePickerRow(
                     option_id=position,
@@ -596,7 +596,7 @@ def _show_settings_window():
         _visual_id = dialog.dialog_id
         return True
     except Exception as ex:
-        speech.log_line('menu: settings window failed: {!r}'.format(ex))
+        speech.log_line(f'menu: settings window failed: {ex!r}')
         return False
 
 
@@ -611,7 +611,7 @@ def _on_settings_pick(dialog):
     try:
         tags = list(dialog.get_result_tags())
     except Exception as ex:
-        speech.log_line('menu: pick result failed: {!r}'.format(ex))
+        speech.log_line(f'menu: pick result failed: {ex!r}')
         return
     if not tags:
         return
@@ -647,9 +647,7 @@ def _show_scanner_window(group=None):
         total = sum(len(entries) for _key, entries in groups)
         dialog = _picker(
             'Scanner',
-            '{} things in {} categories around the active Sim. Pick a row to move the scanner there.'.format(
-                total, len(groups)
-            ),
+            f'{total} things in {len(groups)} categories around the active Sim. Pick a row to move the scanner there.',
         )
         if dialog is None:
             return False
@@ -677,7 +675,7 @@ def _show_scanner_window(group=None):
             option += 1
             for position, entry in enumerate(entries):
                 name, icon_info = _entry_name(entry, manager)
-                where = '{}. {} of {}'.format(scanner.place_text(entry), position + 1, len(entries))
+                where = f'{scanner.place_text(entry)}. {position + 1} of {len(entries)}'
                 if entry is current_entry:
                     where = '>> ' + where
                 if len(subs) > 1:
@@ -700,10 +698,10 @@ def _show_scanner_window(group=None):
         dialog.add_listener(_on_scanner_pick)
         dialog.show_dialog()
         _scan_visual_id = dialog.dialog_id
-        speech.log_line('menu: scanner window with {} rows'.format(option))
+        speech.log_line(f'menu: scanner window with {option} rows')
         return True
     except Exception as ex:
-        speech.log_line('menu: scanner window failed: {!r}'.format(ex))
+        speech.log_line(f'menu: scanner window failed: {ex!r}')
         return False
 
 
@@ -736,7 +734,7 @@ def _entry_name(entry, manager):
         try:
             return LocalizationHelperTuning.get_object_name(obj), icon_info
         except Exception as ex:
-            speech.log_line('menu: object name failed: {!r}'.format(ex))
+            speech.log_line(f'menu: object name failed: {ex!r}')
     if entry.name:
         return _raw(entry.name), icon_info
     if entry.name_hash:
@@ -754,7 +752,7 @@ def _on_scanner_pick(dialog):
     try:
         tags = list(dialog.get_result_tags())
     except Exception as ex:
-        speech.log_line('menu: scanner pick failed: {!r}'.format(ex))
+        speech.log_line(f'menu: scanner pick failed: {ex!r}')
         return
     if not tags:
         return
@@ -767,7 +765,7 @@ def _on_scanner_pick(dialog):
         elif tag[0] == 'item':
             scanner.select_item(tag[1], tag[2])
     except Exception as ex:
-        speech.log_line('menu: scanner select failed: {!r}'.format(ex))
+        speech.log_line(f'menu: scanner select failed: {ex!r}')
 
 
 # First-install popup deferred. Forget dialog ids when changing zones.
@@ -827,4 +825,4 @@ def a11y_scanview(_connection=None):
 try:
     _install_zone_hook()
 except Exception as _zone_ex:
-    speech.log_line('menu: zone hook install failed: {!r}'.format(_zone_ex))
+    speech.log_line(f'menu: zone hook install failed: {_zone_ex!r}')

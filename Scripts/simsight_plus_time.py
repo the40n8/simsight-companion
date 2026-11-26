@@ -11,8 +11,8 @@ def clock_text(dt):
     suffix = 'AM' if h < 12 else 'PM'
     h12 = h % 12 or 12
     if m == 0:
-        return '{} {}'.format(h12, suffix)
-    return '{}:{:02d} {}'.format(h12, m, suffix)
+        return f'{h12} {suffix}'
+    return f'{h12}:{m:02d} {suffix}'
 
 
 def day_text(dt):
@@ -32,7 +32,7 @@ def speed_text():
             ClockSpeedMode.SPEED3: 'Ultra fast speed',
             ClockSpeedMode.SUPER_SPEED3: 'Super speed, everyone is asleep or away',
             ClockSpeedMode.INTERACTION_STARTUP_SPEED: 'Normal speed',
-        }.get(speed, 'Speed {}'.format(int(speed)))
+        }.get(speed, f'Speed {int(speed)}')
     except Exception:
         core.log_exc('speed')
         return ''
@@ -41,7 +41,7 @@ def speed_text():
 def _span_text(span):
     minutes = int(round(span.in_minutes()))
     if minutes < 60:
-        return '{} minutes'.format(minutes)
+        return f'{minutes} minutes'
     hours, mins = divmod(minutes, 60)
     if hours >= 24:
         days = hours // 24
@@ -52,7 +52,7 @@ def _span_text(span):
         return text
     text = '{} hour{}'.format(hours, '' if hours == 1 else 's')
     if mins:
-        text += ' {} minutes'.format(mins)
+        text += f' {mins} minutes'
     return text
 
 
@@ -77,18 +77,16 @@ def work_lines(sim_info, include_none=False):
         word = _career_word(career)
         try:
             if career.currently_at_work:
-                lines.append('{} is at {} now'.format(sim_info.first_name, word))
+                lines.append(f'{sim_info.first_name} is at {word} now')
                 continue
             if career.is_work_time:
-                lines.append('{} should be at {} now'.format(sim_info.first_name, word))
+                lines.append(f'{sim_info.first_name} should be at {word} now')
                 continue
             (span, start, end) = career.get_next_work_time()
             if span is None or start is None:
                 continue
             lines.append(
-                '{} {} in {}, {} at {}'.format(
-                    sim_info.first_name, word, _span_text(span), day_text(start), clock_text(start)
-                )
+                f'{sim_info.first_name} {word} in {_span_text(span)}, {day_text(start)} at {clock_text(start)}'
             )
         except Exception:
             core.log_exc('work lines')
@@ -100,19 +98,19 @@ def read_time():
     import services
 
     now = services.time_service().sim_now
-    parts = ['{} {}'.format(day_text(now), clock_text(now)), speed_text()]
+    parts = [f'{day_text(now)} {clock_text(now)}', speed_text()]
     for info in core.household_sims(instanced_only=False):
         parts.extend(work_lines(info))
     hh = services.active_household()
     if hh is not None:
         try:
-            parts.append('Household money {:,} simoleons'.format(int(hh.funds.money)))
+            parts.append(f'Household money {int(hh.funds.money):,} simoleons')
         except Exception:
             pass
         try:
             owed = int(hh.bills_manager.current_payment_owed or 0)
             if owed > 0:
-                parts.append('Unpaid bills {:,} simoleons. Pay them at the mailbox'.format(owed))
+                parts.append(f'Unpaid bills {owed:,} simoleons. Pay them at the mailbox')
         except Exception:
             pass
     core.speak('. '.join(p for p in parts if p) + '.')
@@ -143,12 +141,7 @@ def _check():
                     if 0 < mins <= 60 and _reminded.get(key) != stamp:
                         _reminded[key] = stamp
                         msgs.append(
-                            '{} has {} in {}, at {}'.format(
-                                info.first_name,
-                                _career_word(career),
-                                _span_text(span),
-                                clock_text(start),
-                            )
+                            f'{info.first_name} has {_career_word(career)} in {_span_text(span)}, at {clock_text(start)}'
                         )
                 except Exception:
                     core.log_exc('work reminder')
@@ -158,9 +151,7 @@ def _check():
             owed = int(hh.bills_manager.current_payment_owed or 0) if hh is not None else 0
             if owed > 0 and not _bills_announced[0]:
                 _bills_announced[0] = True
-                msgs.append(
-                    'Bills have arrived: {:,} simoleons. Pay them at the mailbox'.format(owed)
-                )
+                msgs.append(f'Bills have arrived: {owed:,} simoleons. Pay them at the mailbox')
             elif owed <= 0:
                 _bills_announced[0] = False
         except Exception:

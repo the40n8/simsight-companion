@@ -2,7 +2,8 @@
 # by pointing at a start corner and an end corner on the lot grid. The player moves a cursor with
 # Alt+arrows and hears where it is; Alt+S marks the start, Alt+D draws with the chosen tool.
 # The drawing itself is the game's own tool driven by a real mouse drag (see simsight_plus_build).
-import threading, time
+import threading
+import time
 import simsight_plus_core as core
 import simsight_plus_build as build
 
@@ -104,7 +105,7 @@ def _from_start(e, n):
 def _where(full=False):
     e, n = _state['e'], _state['n']
     area = _area_text(e, n)
-    text = '{} from west, {} from north. {}.'.format(e, n, area[:1].upper() + area[1:])
+    text = f'{e} from west, {n} from north. {area[:1].upper() + area[1:]}.'
     dirs = _wall_dirs(e, n)
     if dirs:
         text += ' On a wall going ' + ', '.join(dirs) + '.' if full else ' On a wall.'
@@ -166,7 +167,7 @@ def choose_tool():
     def picked(tool):
         if tool in ('wall', 'room'):
             _state['tool'], _state['style'] = tool, None
-            core.speak('Tool: {}. '.format(TOOLS[tool]) + _hint())
+            core.speak(f'Tool: {TOOLS[tool]}. ' + _hint())
             return
         _pick_style(tool)
 
@@ -185,7 +186,7 @@ def _pick_style(tool):
     def work():
         items = build.fetch_catalog(ptype, tags, 'none')
         if not items:
-            core.post(core.speak, 'I could not get the list of {}s.'.format(tool))
+            core.post(core.speak, f'I could not get the list of {tool}s.')
             return
         rows = []
         for name, price, colors in items:
@@ -199,12 +200,12 @@ def _pick_style(tool):
         def chosen(name):
             _state['tool'] = tool
             _state['style'] = (ptype, tags, name)
-            core.speak('Tool: {}, {}. '.format(TOOLS[tool], name) + _hint())
+            core.speak(f'Tool: {TOOLS[tool]}, {name}. ' + _hint())
 
         core.post(
             core.choose,
             'Choose a ' + tool,
-            '{} to choose from.'.format(len(rows)),
+            f'{len(rows)} to choose from.',
             rows,
             chosen,
             'build',
@@ -293,16 +294,12 @@ def _draw():
         return
     if tool in ('wall', 'fence') and e != s[0] and n != s[1]:
         core.speak(
-            'A {} goes straight. Move the cursor straight east, west, north or south of the start.'.format(
-                tool
-            )
+            f'A {tool} goes straight. Move the cursor straight east, west, north or south of the start.'
         )
         return
     if tool in ('room', 'roof') and (e == s[0] or n == s[1]):
         core.speak(
-            'A {} needs two opposite corners. Move the cursor so it is both across and down from the start.'.format(
-                tool
-            )
+            f'A {tool} needs two opposite corners. Move the cursor so it is both across and down from the start.'
         )
         return
     if tool in ('roof', 'fence') and not _state['style']:
@@ -359,7 +356,7 @@ def _draw_worker(tool, a, b):
                 return
             box = (min(a[0], b[0]), min(a[1], b[1]), max(a[0], b[0]), max(a[1], b[1]))
             res = roof_worker(box, level)
-            core.log('draw: roof {} result {}'.format(box, res))
+            core.log(f'draw: roof {box} result {res}')
             _say(_roof_result(res, box))
         elif tool == 'room':
             if not house._pick_tool('Room Tool'):
@@ -376,7 +373,7 @@ def _draw_worker(tool, a, b):
             elif box == 'open':
                 _say('The walls were built, but they did not make a closed room.')
             else:
-                _say('Built a {} by {} meter room.'.format(box[2] - box[0], box[3] - box[1]))
+                _say(f'Built a {box[2] - box[0]} by {box[3] - box[1]} meter room.')
         else:
             if tool == 'wall':
                 if not house._pick_tool('Wall Tool'):
@@ -393,15 +390,15 @@ def _draw_worker(tool, a, b):
                 [f.world(*a), f.world(*b)],
                 level,
                 lambda s: build.drag(s[0], s[1]),
-                '{} {}->{}'.format(tool, a, b),
+                f'{tool} {a}->{b}',
                 overview=True,
             )
             time.sleep(0.8)
             spent = money - (build.on_main(build.funds) or 0)
-            core.log('draw: {} {}->{} ok={} spent={}'.format(tool, a, b, ok, spent))
+            core.log(f'draw: {tool} {a}->{b} ok={ok} spent={spent}')
             what = {'wall': 'wall', 'fence': 'fence', 'roof': 'roof'}[tool]
             if ok and spent > 0:
-                _say('Built the {}. It cost {:,} simoleons.'.format(what, spent))
+                _say(f'Built the {what}. It cost {spent:,} simoleons.')
             elif ok:
                 reason = build._last_error['text'] if build._last_error['at'] > started else ''
                 _say(
@@ -459,9 +456,7 @@ def roof_whole_house():
             build._busy[0] = True
             _state['style'] = (4, '', name)
             core.speak(
-                'Putting a {} over the house, {} by {} meters. Please wait.'.format(
-                    name, box[2] - box[0], box[3] - box[1]
-                )
+                f'Putting a {name} over the house, {box[2] - box[0]} by {box[3] - box[1]} meters. Please wait.'
             )
             saved = _state['tool']
             _state['tool'] = 'roof'
@@ -488,7 +483,7 @@ def _draw_roof_box(box, level=0):
             _say('I could not choose that roof in the catalog.')
             return
         res = roof_worker(box, level)
-        core.log('roof: box {} result {}'.format(box, res))
+        core.log(f'roof: box {box} result {res}')
         _say(_roof_result(res, box))
     except Exception:
         core.log_exc('roof job')
@@ -627,7 +622,9 @@ def _handle_point(side, r):
 def _roof_camera(f, box, level=0):
     """Look at the middle of the house from high above its north side, so the whole roof and all four
     handles are on screen, away from the toolbar at the top."""
-    import camera, terrain, sims4.math
+    import camera
+    import terrain
+    import sims4.math
 
     # Aimed a little north of the middle: the near (north) handle ends up low on the screen.
     (x, z) = f.world((box[0] + box[2]) / 2.0, (box[1] + box[3]) / 2.0 - 1.5)
@@ -716,7 +713,7 @@ def roof_worker(box, level=0):
         if a is None or b is None:
             return 'noscreen'
         found = _find_handle(*a)
-        core.log('roof: {} handle expected {} found {}'.format(side, a, found))
+        core.log(f'roof: {side} handle expected {a} found {found}')
         if found is None:
             return 'nohandle'
         _drag_screen(found, (found[0] + b[0] - a[0], found[1] + b[1] - a[1]))
@@ -729,7 +726,7 @@ def roof_worker(box, level=0):
         p = _screen_of(f, e, n, HANDLE_UP + up)
         build.cursor_off()
         found = _find_handle(*p, radius=25) if p else None
-        core.log('roof: check {} expected {} found {}'.format(side, p, found))
+        core.log(f'roof: check {side} expected {p} found {found}')
         if found is None:
             return 'unsure'
     return True
@@ -738,7 +735,7 @@ def roof_worker(box, level=0):
 def _roof_result(res, box):
     w, d = box[2] - box[0], box[3] - box[1]
     if res is True:
-        return 'The roof is on, {} by {} meters.'.format(w, d)
+        return f'The roof is on, {w} by {d} meters.'
     if res == 'unsure':
         return 'I put the roof down and stretched it, but I could not check its size. Undo it if it sounds wrong.'
     if res == 'nohandle':

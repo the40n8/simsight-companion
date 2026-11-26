@@ -311,7 +311,7 @@ def tick():
         try:
             _dispatch(channel, payload)
         except Exception as ex:
-            log('handler failed: {} {!r}'.format(channel, ex))
+            log(f'handler failed: {channel} {ex!r}')
 
 
 def _connection(conn):
@@ -336,7 +336,7 @@ def _connection(conn):
             if now >= next_check:
                 next_check = now + 0.5
                 if _preference_moved():
-                    log('UI Socket closed: the settings now ask for port {}'.format(_wanted))
+                    log(f'UI Socket closed: the settings now ask for port {_wanted}')
                     return 'moved'
             if data is None:
                 continue
@@ -349,7 +349,7 @@ def _connection(conn):
                         _incoming.clear()
                         _connected = True
                     greeted = True
-                    log('UI Socket connected (outbound only, port {})'.format(_port))
+                    log(f'UI Socket connected (outbound only, port {_port})')
                     continue
                 post = parse_post(line)
                 if post is None:
@@ -391,7 +391,7 @@ def _bind(port):
         PORT_KEYBOARD_FULL_MENUS: 'keyboard on, simplified menus off',
         PORT_SPEECH: 'speech only',
     }.get(port, 'unknown')
-    log('same-process-only loopback listener ready on port {} ({})'.format(port, meaning))
+    log(f'same-process-only loopback listener ready on port {port} ({meaning})')
     return listener
 
 
@@ -405,11 +405,7 @@ def _open_listener(port):
     except Exception as ex:
         if port != PORT_KEYBOARD_FULL_MENUS:
             raise
-        log(
-            'port {} unavailable ({!r}); simplified menus stay on until a save loads'.format(
-                port, ex
-            )
-        )
+        log(f'port {port} unavailable ({ex!r}); simplified menus stay on until a save loads')
         return PORT_KEYBOARD, _bind(PORT_KEYBOARD)
 
 
@@ -438,7 +434,7 @@ def _move_listener(listener):
     try:
         port, replacement = _open_listener(_wanted)
     except Exception as ex:
-        log('listener stays on port {}: {!r}'.format(_port, ex))
+        log(f'listener stays on port {_port}: {ex!r}')
         return listener
     listener.close()
     _port = port
@@ -466,7 +462,7 @@ def _serve():
                 if address[0] == '127.0.0.1' and same_process_peer(address[1], _port):
                     moved = _connection(conn) == 'moved'
             except Exception as ex:
-                log('Socket session ended: {!r}'.format(ex))
+                log(f'Socket session ended: {ex!r}')
             finally:
                 conn.close()
             if moved:
@@ -474,7 +470,7 @@ def _serve():
                 # land on the port it was just closed for.
                 listener = _move_listener(listener)
     except Exception as ex:
-        log('Socket unavailable: {!r}'.format(ex))
+        log(f'Socket unavailable: {ex!r}')
     finally:
         if listener is not None:
             listener.close()
@@ -498,7 +494,7 @@ def install():
         try:
             tick()
         except Exception as ex:
-            log('core tick failed: {!r}'.format(ex))
+            log(f'core tick failed: {ex!r}')
         return result
 
     core.on_tick = on_tick
@@ -511,7 +507,7 @@ def install():
 
 
 try:
-    import sims4.core_services
+    import sims4.core_services  # noqa: F401 (only checks that the game is there)
 except ImportError:
     pass
 else:

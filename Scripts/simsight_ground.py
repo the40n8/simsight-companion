@@ -44,19 +44,15 @@ def open_floor_menu():
         # game creates TerrainPoint on this world's routing surface/level.
         # Reuse the client's request counter and normal pie-menu lifecycle.
         sent = scanner._send_ui(
-            'A11y|pick|0|{}|{}||{:.3f}|{:.3f}|{:.3f}|{}'.format(
-                int(PickType.PICK_FLOOR), lot_id, x, y, z, level
-            )
+            f'A11y|pick|0|{int(PickType.PICK_FLOOR)}|{lot_id}||{x:.3f}|{y:.3f}|{z:.3f}|{level}'
         )
         speech.log_line(
-            'floor actions: sim={} zone={} lot={} level={} point=({:.3f},{:.3f},{:.3f}) sent={}'.format(
-                sim.id, services.current_zone_id(), lot_id, level, x, y, z, sent
-            )
+            f'floor actions: sim={sim.id} zone={services.current_zone_id()} lot={lot_id} level={level} point=({x:.3f},{y:.3f},{z:.3f}) sent={sent}'
         )
         if not sent:
             speech.speak('The floor menu could not be requested.', explicit=True)
         return bool(sent)
     except Exception as ex:
-        speech.log_line('floor actions: request failed {!r}'.format(ex))
+        speech.log_line(f'floor actions: request failed {ex!r}')
         speech.speak('The floor menu is unavailable here.', explicit=True)
         return False

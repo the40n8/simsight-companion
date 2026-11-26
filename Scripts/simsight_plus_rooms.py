@@ -34,9 +34,9 @@ def floor_name(level):
     if level == 0:
         return 'ground floor'
     if level < 0:
-        return 'basement' if level == -1 else 'basement level {}'.format(-level)
+        return 'basement' if level == -1 else f'basement level {-level}'
     return {1: 'first floor up', 2: 'second floor up', 3: 'third floor up'}.get(
-        level, 'floor {}'.format(level)
+        level, f'floor {level}'
     )
 
 
@@ -61,7 +61,10 @@ def tag_names(obj):
 
 
 def room_id_at(x, z, level, y=None):
-    import build_buy, services, terrain, sims4.math
+    import build_buy
+    import services
+    import terrain
+    import sims4.math
 
     if y is None:
         try:
@@ -84,7 +87,7 @@ def _obj_room(obj):
         return 0
 
 
-class Room(object):
+class Room:
     def __init__(self, rid, level):
         self.rid = rid
         self.level = level
@@ -108,8 +111,8 @@ class Room(object):
         w = int(round(max(xs) - min(xs))) + 1
         d = int(round(max(zs) - min(zs))) + 1
         if w * d == n:
-            return '{} by {} meters'.format(w, d)
-        return 'about {} square meters'.format(n)
+            return f'{w} by {d} meters'
+        return f'about {n} square meters'
 
 
 def _scan_rooms_base():
@@ -128,7 +131,7 @@ def _scan_rooms_base():
     try:
         levels = range(int(lot.min_level), int(lot.max_level) + 1)
     except Exception:
-        levels = range(0, 3)
+        levels = range(3)
     rooms = {}
     for level in levels:
         for i in range(nu):
@@ -178,9 +181,7 @@ def _scan_rooms_base():
             nv,
             len(out),
             ', '.join(
-                '{}({} tiles, {} objs, level {})'.format(
-                    r.name, len(r.tiles), len(r.objects), r.level
-                )
+                f'{r.name}({len(r.tiles)} tiles, {len(r.objects)} objs, level {r.level})'
                 for r in out
             ),
         )
@@ -218,7 +219,7 @@ def _load_names():
     _names_loaded[0] = True
     try:
         if os.path.isfile(NAMES_PATH):
-            with open(NAMES_PATH, 'r', encoding='utf-8') as f:
+            with open(NAMES_PATH, encoding='utf-8') as f:
                 for line in f:
                     parts = line.rstrip('\n').split('\t')
                     if len(parts) == 7:
@@ -282,7 +283,7 @@ def _name_rooms(rooms):
     for room in sorted(rooms, key=lambda r: (r.level, -len(r.tiles))):
         if counts[room.name] > 1:
             numbered[room.name] = numbered.get(room.name, 0) + 1
-            room.name = '{} {}'.format(room.name, numbered[room.name])
+            room.name = f'{room.name} {numbered[room.name]}'
 
 
 def _where_text(room, sim):
@@ -292,7 +293,7 @@ def _where_text(room, sim):
     text = floor_name(room.level)
     if sim in room.sims or dist < 1:
         return 'you are here, ' + text
-    return '{} meters {}, {}'.format(dist, bearing(dx, dz), text)
+    return f'{dist} meters {bearing(dx, dz)}, {text}'
 
 
 @core.hotkey(ord('R'), 'rooms')
@@ -317,7 +318,7 @@ def open_rooms():
         rows.append((room.name, desc, room))
     core.choose(
         'Rooms',
-        '{} rooms in this house. Choose a room to hear what is in it.'.format(len(rooms)),
+        f'{len(rooms)} rooms in this house. Choose a room to hear what is in it.',
         rows,
         _open_room,
         tag='rooms',
@@ -337,7 +338,7 @@ def _open_room(room):
     for obj, label in entries:
         dx, dz = obj.position.x - sim.position.x, obj.position.z - sim.position.z
         dist = int(round(math.hypot(dx, dz)))
-        desc = 'here' if dist < 1 else '{} meters {}'.format(dist, bearing(dx, dz))
+        desc = 'here' if dist < 1 else f'{dist} meters {bearing(dx, dz)}'
         if label is None:
             try:
                 label = obj.catalog_name
@@ -351,13 +352,11 @@ def _open_room(room):
                 label = 'Object'
         rows.append((label, desc + '. Choose to see its actions.', obj, False, obj))
     if not rows:
-        core.speak('{} is empty.'.format(room.name))
+        core.speak(f'{room.name} is empty.')
         return
     core.choose(
         room.name,
-        '{}, {}. {} things. Choose one to open its actions.'.format(
-            room.name, room.size_text(), len(rows)
-        ),
+        f'{room.name}, {room.size_text()}. {len(rows)} things. Choose one to open its actions.',
         rows,
         core.open_interactions,
         tag='rooms',
@@ -385,9 +384,9 @@ def where_am_i():
         outside = None
     where = name or ('outside' if outside else 'inside')
     core.speak(
-        '{} is in the {}, {}.'.format(sim.sim_info.first_name, where, floor_name(int(sim.level)))
+        f'{sim.sim_info.first_name} is in the {where}, {floor_name(int(sim.level))}.'
         if name
-        else '{} is {}, {}.'.format(sim.sim_info.first_name, where, floor_name(int(sim.level)))
+        else f'{sim.sim_info.first_name} is {where}, {floor_name(int(sim.level))}.'
     )
 
 

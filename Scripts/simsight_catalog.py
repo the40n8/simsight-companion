@@ -110,7 +110,7 @@ def _subcategories(kind, index):
     )
 
 
-class _Arrived(object):
+class _Arrived:
     """The Plus reply handler calls set() when a list has fully arrived."""
 
     def __init__(self, on_done):
@@ -159,9 +159,9 @@ def _browse(sub, back):
 
 
 def _describe(price, colours):
-    text = '{:,} simoleons'.format(price)
+    text = f'{price:,} simoleons'
     if colours > 1:
-        text += ', {} colours'.format(colours)
+        text += f', {colours} colours'
     return text
 
 
@@ -171,7 +171,7 @@ def _items(title, items, back):
     ]
     _core().choose(
         title,
-        '{} items. Enter picks one up to place. Escape goes back.'.format(len(items)),
+        f'{len(items)} items. Enter picks one up to place. Escape goes back.',
         rows,
         _pick,
         tag=_TAG,
@@ -184,7 +184,7 @@ def _pick(index):
     build._NEXT_HINT['tree'] = _HINT
     build._cat['next'] = 'tree'
     build._cat['chosen'] = index
-    build._send_ui('A11y|plus|select|{}'.format(index))
+    build._send_ui(f'A11y|plus|select|{index}')
 
 
 def find():
@@ -209,10 +209,10 @@ def find():
 def search(text):
     def arrived(items):
         if not items:
-            _core().speak('Nothing found for {}. Try another word.'.format(text))
+            _core().speak(f'Nothing found for {text}. Try another word.')
             find()
             return
-        _items('Results for {}'.format(text), items, open_tree)
+        _items(f'Results for {text}', items, open_tree)
 
     _core().speak('Searching.')
     _request(2, '', '', text, arrived)

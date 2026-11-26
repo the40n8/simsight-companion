@@ -58,7 +58,7 @@ def direction_name(index):
     return text(*DIRECTIONS[index % 4])
 
 
-class Frame(object):
+class Frame:
     """The lot's grid: origin corner, unit axes and size in whole tiles."""
 
     def __init__(self, corners):
@@ -136,7 +136,7 @@ def frame():
         _frame, _frame_zone = Frame(list(lot.corners)), zone
         return _frame
     except Exception as ex:
-        speech.log_line('tiles: no lot frame ({!r})'.format(ex))
+        speech.log_line(f'tiles: no lot frame ({ex!r})')
         _frame = None
         return None
 
@@ -151,9 +151,7 @@ def relative(di, dj):
     parts = []
     for amount, positive, negative in ((dj, 0, 2), (di, 1, 3)):
         if amount:
-            parts.append(
-                '{} {}'.format(abs(amount), direction_name(positive if amount > 0 else negative))
-            )
+            parts.append(f'{abs(amount)} {direction_name(positive if amount > 0 else negative)}')
     return ', '.join(parts) if parts else text('here', 'tutaj')
 
 
@@ -265,7 +263,7 @@ def _raycast_context():
         sim = services.get_active_sim()
         return sim.raycast_context() if sim is not None else None
     except Exception as ex:
-        speech.log_line('tiles: no raycast context ({!r})'.format(ex))
+        speech.log_line(f'tiles: no raycast context ({ex!r})')
         return None
 
 
@@ -282,7 +280,7 @@ def walls(f, i, j, level):
             position(f, i, j, level), sims4.math.Quaternion.IDENTITY(), surface(level)
         )
     except Exception as ex:
-        speech.log_line('tiles: wall probe unavailable ({!r})'.format(ex))
+        speech.log_line(f'tiles: wall probe unavailable ({ex!r})')
         return result
     for index, (di, dj) in enumerate(STEPS):
         ni, nj = i + di, j + dj
@@ -301,7 +299,7 @@ def walls(f, i, j, level):
             else:
                 result[index] = 'open'
         except Exception as ex:
-            speech.log_line('tiles: ray test failed ({!r})'.format(ex))
+            speech.log_line(f'tiles: ray test failed ({ex!r})')
     return result
 
 
@@ -379,7 +377,7 @@ def test_fit(obj, def_id, point, angle, level, ignore=()):
         )
         result = build_buy.test_location_for_object(obj, def_id, location, list(ignore))
     except Exception as ex:
-        speech.log_line('tiles: placement test raised {!r}'.format(ex))
+        speech.log_line(f'tiles: placement test raised {ex!r}')
         return None, None
     if isinstance(result, tuple):
         ok = bool(result[0])
@@ -390,7 +388,7 @@ def test_fit(obj, def_id, point, angle, level, ignore=()):
         key = str(errors)[:160]
         if key not in _logged_errors:
             _logged_errors.add(key)
-            speech.log_line('tiles: placement refused: {}'.format(key))
+            speech.log_line(f'tiles: placement refused: {key}')
     return ok, (reason(errors) if not ok else None)
 
 

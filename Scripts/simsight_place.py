@@ -113,10 +113,10 @@ def set_product(instance_text, name):
 
         definition = services.definition_manager().get(def_id, get_fallback_definition_id=False)
     except Exception as ex:
-        speech.log_line('place: definition lookup failed for {}: {!r}'.format(def_id, ex))
+        speech.log_line(f'place: definition lookup failed for {def_id}: {ex!r}')
         definition = None
     if definition is None or getattr(definition, 'id', None) != def_id:
-        speech.log_line('place: catalog product {} is not an object definition'.format(def_id))
+        speech.log_line(f'place: catalog product {def_id} is not an object definition')
         _product = None
         return False
     _product = {'id': def_id, 'name': str(name or '').strip()[:200], 'zone': _zone_id()}
@@ -180,7 +180,7 @@ def _reason(name):
         value = getattr(Consts_pb2, name, None)
         return None if value is None else int(value)
     except Exception as ex:
-        speech.log_line('place: no funds reason {} ({!r})'.format(name, ex))
+        speech.log_line(f'place: no funds reason {name} ({ex!r})')
         return None
 
 
@@ -209,16 +209,12 @@ def _charge(amount):
             ok = True
         else:
             ok = False
-            if 0 < taken_now:
-                speech.log_line(
-                    'place: partial charge {} of {}; giving it back'.format(taken_now, amount)
-                )
+            if taken_now > 0:
+                speech.log_line(f'place: partial charge {taken_now} of {amount}; giving it back')
                 _refund(taken_now)
     else:
         ok = taken and error is None
-    speech.log_line(
-        'place: charge {} -> {} ({} to {}, error {!r})'.format(amount, ok, before, after, error)
-    )
+    speech.log_line(f'place: charge {amount} -> {ok} ({before} to {after}, error {error!r})')
     return ok
 
 
@@ -249,9 +245,7 @@ def _refund(amount):
     if paid < amount and owner is not None:
         _owed[owner] = _owed.get(owner, 0) + amount - paid
     speech.log_line(
-        'place: refund {} paid {} ({} to {}, error {!r}, owed {})'.format(
-            amount, paid, before, after, error, _owed.get(owner, 0)
-        )
+        f'place: refund {amount} paid {paid} ({before} to {after}, error {error!r}, owed {_owed.get(owner, 0)})'
     )
     return paid == amount
 
@@ -264,7 +258,7 @@ def settle_owed():
     if owed <= 0:
         return 0
     if _refund(owed):
-        speech.log_line('place: settled {} owed to household {}'.format(owed, owner))
+        speech.log_line(f'place: settled {owed} owed to household {owner}')
         return owed
     return 0
 
@@ -284,7 +278,7 @@ def requirement(def_id):
 
         flags = int(build_buy.get_object_placement_flags(def_id))
     except Exception as ex:
-        speech.log_line('place: no placement flags for {} ({!r})'.format(def_id, ex))
+        speech.log_line(f'place: no placement flags for {def_id} ({ex!r})')
         return 'unknown'
     for mask, need in (
         (FLAG_SLOT, 'slot'),
@@ -388,7 +382,7 @@ def _put_in_slot(obj, surface, slot):
         try:
             call()
         except Exception as ex:
-            speech.log_line('place: {} failed ({!r})'.format(label, ex))
+            speech.log_line(f'place: {label} failed ({ex!r})')
             continue
         if getattr(obj, 'parent', None) is not None:
             return True
@@ -415,13 +409,13 @@ def _good_location(obj, position, orientation, routing_surface, ignore=()):
         )
         result = placement.find_good_location(context)
     except Exception as ex:
-        speech.log_line('place: fgl raised {!r}'.format(ex))
+        speech.log_line(f'place: fgl raised {ex!r}')
         return None
     if result and result[0] is not None:
-        speech.log_line('place: fgl chose {}'.format(result[0]))
+        speech.log_line(f'place: fgl chose {result[0]}')
         return result[0], result[1]
     speech.log_line(
-        'place: fgl found nothing: {}'.format(result[2] if result and len(result) > 2 else result)
+        f'place: fgl found nothing: {result[2] if result and len(result) > 2 else result}'
     )
     return None
 
@@ -437,7 +431,7 @@ def _destroy(obj):
         obj.destroy(source=obj, cause='SimSight placement undo')
         return True
     except Exception as ex:
-        speech.log_line('place: destroy failed ({!r})'.format(ex))
+        speech.log_line(f'place: destroy failed ({ex!r})')
         return False
 
 
@@ -448,7 +442,7 @@ def _register(obj):
         build_buy.add_object_to_buildbuy_system(obj.id)
         return True
     except Exception as ex:
-        speech.log_line('place: add_object_to_buildbuy_system failed ({!r})'.format(ex))
+        speech.log_line(f'place: add_object_to_buildbuy_system failed ({ex!r})')
         return False
 
 
@@ -461,11 +455,11 @@ def _drop_native_hand(serial):
         import distributor.system
 
         distributor.system.Distributor.instance().add_op_with_no_owner(
-            distributor.ops.SendUIMessage('A11y|buildhand|drop|{}'.format(serial))
+            distributor.ops.SendUIMessage(f'A11y|buildhand|drop|{serial}')
         )
         return True
     except Exception as ex:
-        speech.log_line('place: could not ask the client to drop its tool ({!r})'.format(ex))
+        speech.log_line(f'place: could not ask the client to drop its tool ({ex!r})')
         return False
 
 
@@ -608,7 +602,7 @@ def guided_placement():
 def _floor_name(level):
     if level == 0:
         return _text('Ground floor', 'Parter')
-    return _text('Floor {}'.format(level), 'Piętro {}'.format(level))
+    return _text(f'Floor {level}', f'Piętro {level}')
 
 
 def _guided_current(item, owner):
@@ -646,7 +640,7 @@ def _choose_area(item, owner, level):
         price = int(definition.price)
         areas = list(_guided_areas(lot, level, surface))
     except Exception as ex:
-        speech.log_line('place: could not sample the lot ({!r})'.format(ex))
+        speech.log_line(f'place: could not sample the lot ({ex!r})')
         areas = []
     if not areas:
         _say_text('No areas found on that floor.', 'Nie znaleziono obszarów na tym piętrze.')
@@ -739,8 +733,8 @@ def _checks(position, level, key, guard, exact=False):
     money = funds()
     if money is not None and price > money:
         _say_text(
-            'Not enough money. It costs {} and you have {}.'.format(price, money),
-            'Za mało pieniędzy. Kosztuje {}, a masz {}.'.format(price, money),
+            f'Not enough money. It costs {price} and you have {money}.',
+            f'Za mało pieniędzy. Kosztuje {price}, a masz {money}.',
         )
         return None
     try:
@@ -754,7 +748,7 @@ def _checks(position, level, key, guard, exact=False):
             _say_text('That point is in a pool.', 'Ten punkt jest w basenie.')
             return None
     except Exception as ex:
-        speech.log_line('place: tile check failed ({!r})'.format(ex))
+        speech.log_line(f'place: tile check failed ({ex!r})')
         _say_text(
             'This point could not be checked, so nothing was bought.',
             'Nie udało się sprawdzić tego punktu, więc nic nie kupiono.',
@@ -815,14 +809,14 @@ def place(
         timer.daemon = True
         timer.start()
     except Exception as ex:
-        speech.log_line('place: no acknowledgement timer ({!r})'.format(ex))
+        speech.log_line(f'place: no acknowledgement timer ({ex!r})')
     return True
 
 
 def _ack_timeout(serial):
     if serial == _pending['serial'] and _pending['args'] is not None:
         _pending['args'] = None
-        speech.log_line('place: no buildhand acknowledgement for {}'.format(serial))
+        speech.log_line(f'place: no buildhand acknowledgement for {serial}')
         _say_text(
             'The Build tool did not answer. Nothing was bought.',
             'Narzędzie budowania nie odpowiedziało. Nic nie kupiono.',
@@ -843,7 +837,7 @@ def acknowledged(serial, ok):
     args, _pending['args'] = _pending['args'], None
     if time.monotonic() - _pending['at'] > ACK_SECONDS:
         # A backlogged pump may run this before the timer's own turn.
-        speech.log_line('place: acknowledgement {} arrived too late'.format(serial))
+        speech.log_line(f'place: acknowledgement {serial} arrived too late')
         _say_text(
             'The Build tool did not answer. Nothing was bought.',
             'Narzędzie budowania nie odpowiedziało. Nic nie kupiono.',
@@ -862,7 +856,7 @@ def acknowledged(serial, ok):
         or item is not _pending.get('product')
         or _household_id() != _pending.get('household')
     ):
-        speech.log_line('place: acknowledgement {} arrived after a change; dropped'.format(serial))
+        speech.log_line(f'place: acknowledgement {serial} arrived after a change; dropped')
         return False
     return _execute(*args)
 
@@ -877,7 +871,7 @@ def _execute(position, level, routing_surface, angle, key, exact=False, area=Non
 
         obj = create_object(item['id'])
     except Exception as ex:
-        speech.log_line('place: create_object raised {!r}'.format(ex))
+        speech.log_line(f'place: create_object raised {ex!r}')
         obj = None
     if obj is None:
         _say_text('The game could not create that object.', 'Gra nie mogła utworzyć tego obiektu.')
@@ -886,7 +880,7 @@ def _execute(position, level, routing_surface, angle, key, exact=False, area=Non
         args = (obj, item, price, need, position, level, routing_surface, angle, key, exact)
         return _finish(*args) if area is None else _finish(*args, area=area)
     except Exception as ex:
-        speech.log_line('place: placement raised {!r}; removing the object'.format(ex))
+        speech.log_line(f'place: placement raised {ex!r}; removing the object')
         _destroy(obj)
         _say_text(
             'The game could not place that object, so nothing was bought.',
@@ -988,8 +982,8 @@ def _finish(
         if ok is False:
             _destroy(obj)
             _say_text(
-                'It no longer fits there ({}), so nothing was bought.'.format(why),
-                'Już się tam nie mieści ({}), więc nic nie kupiono.'.format(why),
+                f'It no longer fits there ({why}), so nothing was bought.',
+                f'Już się tam nie mieści ({why}), więc nic nie kupiono.',
             )
             return False
         try:
@@ -997,7 +991,7 @@ def _finish(
                 translation=position, orientation=_yaw(angle), routing_surface=routing_surface
             )
         except Exception as ex:
-            speech.log_line('place: exact move_to raised {!r}'.format(ex))
+            speech.log_line(f'place: exact move_to raised {ex!r}')
             _destroy(obj)
             _say_text(
                 'The game could not position that object.', 'Gra nie mogła ustawić tego obiektu.'
@@ -1026,7 +1020,7 @@ def _finish(
         try:
             obj.move_to(translation=spot[0], orientation=spot[1], routing_surface=routing_surface)
         except Exception as ex:
-            speech.log_line('place: move_to raised {!r}'.format(ex))
+            speech.log_line(f'place: move_to raised {ex!r}')
             _destroy(obj)
             _say_text(
                 'The game could not position that object.', 'Gra nie mogła ustawić tego obiektu.'
@@ -1079,7 +1073,7 @@ def _after_payment(
         _last.update(obj_id=obj.id, household=owner, zone=_zone_id(), position=None)
         _repeat[0], _repeat[1] = (key,), time.monotonic()
     except Exception as ex:
-        _quiet_log('place: placed, but recording it failed ({!r})'.format(ex))
+        _quiet_log(f'place: placed, but recording it failed ({ex!r})')
     _quiet_log(
         'place: placed {} {!r} for {}'.format(getattr(obj, 'id', '?'), item.get('name'), price)
     )
@@ -1093,7 +1087,7 @@ def _after_payment(
         else:
             _announce_placed(obj, item, price, surface, position, level, key, guided=guided)
     except Exception as ex:
-        _quiet_log('place: placed, but the announcement failed ({!r})'.format(ex))
+        _quiet_log(f'place: placed, but the announcement failed ({ex!r})')
         try:
             _say_text('Placed.', 'Umieszczono.')
         except Exception:
@@ -1113,7 +1107,7 @@ def _announce_placed(obj, item, price, surface, position, level, key, guided=Fal
         landed = tile_key(obj.position, int(getattr(obj, 'level', level)))
         _repeat[0] = (key, landed)
     except Exception as ex:
-        speech.log_line('place: landed position unavailable ({!r})'.format(ex))
+        speech.log_line(f'place: landed position unavailable ({ex!r})')
     parts = [item['name'] or _product_name()]
     if surface is not None:
         parts += [_text(' placed on ', ' umieszczono na: '), _name_parts(surface)]
@@ -1133,7 +1127,7 @@ def _announce_placed(obj, item, price, surface, position, level, key, guided=Fal
                 where,
                 _text(' from the cursor', ' od kursora'),
             ]
-    parts.append(_text(', {} simoleons.'.format(price), ', {} simoleonów.'.format(price)))
+    parts.append(_text(f', {price} simoleons.', f', {price} simoleonów.'))
     if _follow(obj, level):
         parts.append(_text(' The cursor moved to it.', ' Kursor przesunięto do niego.'))
     _say(parts)
@@ -1148,7 +1142,7 @@ def _announce_exact(obj, item, price, level, key):
         _last['position'] = obj.position
         _repeat[0] = (key, tile_key(obj.position, int(getattr(obj, 'level', level))))
     except Exception as ex:
-        speech.log_line('place: landed position unavailable ({!r})'.format(ex))
+        speech.log_line(f'place: landed position unavailable ({ex!r})')
     parts = [item['name'] or _product_name(), _text(' placed', ' umieszczono')]
     f = tiles.frame()
     if f is not None:
@@ -1158,8 +1152,8 @@ def _announce_exact(obj, item, price, level, key):
             facing = f.facing_of(sims4.math.yaw_quaternion_to_angle(obj.orientation))
             parts.append(
                 _text(
-                    ', facing {}'.format(tiles.direction_name(facing)),
-                    ', skierowany na {}'.format(tiles.direction_name(facing)),
+                    f', facing {tiles.direction_name(facing)}',
+                    f', skierowany na {tiles.direction_name(facing)}',
                 )
             )
         except Exception:
@@ -1176,7 +1170,7 @@ def _announce_exact(obj, item, price, level, key):
                     ', zajmuje pól: {}: to i {}'.format(len(covered), '; '.join(others)),
                 )
             )
-    parts.append(_text(', {} simoleons.'.format(price), ', {} simoleonów.'.format(price)))
+    parts.append(_text(f', {price} simoleons.', f', {price} simoleonów.'))
     if _follow(obj, level):
         parts.append(_text(' The cursor is on it.', ' Kursor jest na nim.'))
     _say(parts)
@@ -1189,7 +1183,7 @@ def _follow(obj, level):
 
         return bool(grid.focus_position(obj.position, int(getattr(obj, 'level', level))))
     except Exception as ex:
-        speech.log_line('place: cursor did not follow ({!r})'.format(ex))
+        speech.log_line(f'place: cursor did not follow ({ex!r})')
         return False
 
 
@@ -1244,7 +1238,7 @@ def rotate(step):
         obj.move_to(translation=spot[0], orientation=spot[1])
         _last['position'] = obj.position
     except Exception as ex:
-        speech.log_line('place: rotate failed ({!r})'.format(ex))
+        speech.log_line(f'place: rotate failed ({ex!r})')
         _say_text('Could not rotate it.', 'Nie udało się go obrócić.')
         return False
     _say_text(
@@ -1296,8 +1290,8 @@ def undo():
                 [
                     name,
                     _text(
-                        ' removed, {} simoleons refunded.'.format(price),
-                        ' usunięto, zwrócono {} simoleonów.'.format(price),
+                        f' removed, {price} simoleons refunded.',
+                        f' usunięto, zwrócono {price} simoleonów.',
                     ),
                 ]
             )
@@ -1354,7 +1348,7 @@ def _occupied(obj):
             for _item in inventory:
                 return True
     except Exception as ex:
-        speech.log_line('place: occupancy check failed ({!r})'.format(ex))
+        speech.log_line(f'place: occupancy check failed ({ex!r})')
         return True  # cannot tell: never risk what it holds
     return False
 
@@ -1378,7 +1372,7 @@ def sell_refusal(obj):
         if owner and owner != _household_id():
             return 'foreign'
     except Exception as ex:
-        speech.log_line('place: sell check failed ({!r})'.format(ex))
+        speech.log_line(f'place: sell check failed ({ex!r})')
         return 'hidden'
     return None
 
@@ -1407,8 +1401,8 @@ def sell(obj):
                 _text('Sell ', 'Sprzedać: '),
                 name,
                 _text(
-                    ' for {} simoleons? Press again to confirm.'.format(value),
-                    ' za {} simoleonów? Naciśnij ponownie, aby potwierdzić.'.format(value),
+                    f' for {value} simoleons? Press again to confirm.',
+                    f' za {value} simoleonów? Naciśnij ponownie, aby potwierdzić.',
                 ),
             ]
         )
@@ -1435,8 +1429,8 @@ def sell(obj):
             [
                 name,
                 _text(
-                    ' sold for {} simoleons.'.format(value),
-                    ' sprzedano za {} simoleonów.'.format(value),
+                    f' sold for {value} simoleons.',
+                    f' sprzedano za {value} simoleonów.',
                 ),
             ]
         )

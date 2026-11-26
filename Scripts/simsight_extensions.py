@@ -38,5 +38,5 @@ def install():
             if explicit:
                 module.install()
         except Exception as exc:
-            speech.log_line('local extension {} failed: {!r}'.format(name, exc))
+            speech.log_line(f'local extension {name} failed: {exc!r}')
     speech.log_line('local extensions installed')

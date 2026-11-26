@@ -284,7 +284,7 @@ def action_queue():
     try:
         entries = _queue_entries(sim)
     except Exception as ex:
-        speech.log_line('hub: queue read failed: {!r}'.format(ex))
+        speech.log_line(f'hub: queue read failed: {ex!r}')
         _say('action unavailable')
         return False
     sim_id = sim.id
@@ -375,7 +375,7 @@ def _price_text(amount, currency):
         except Exception:
             name = ''
         unit = lang.t('galactic credits') if 'galactic' in name else ''
-    return '{:,} {}'.format(amount, unit).strip()
+    return f'{amount:,} {unit}'.strip()
 
 
 def _inventory_item(obj_id):
@@ -658,7 +658,7 @@ def events_window():
     try:
         events = _events()
     except Exception as ex:
-        speech.log_line('hub: events unavailable ({!r})'.format(ex))
+        speech.log_line(f'hub: events unavailable ({ex!r})')
         _say('action unavailable')
         return False
     if not events:
@@ -738,7 +738,7 @@ def end_event(situation_id, send_home, end):
                 manager.make_sim_leave(sim)
                 sent += 1
             except Exception as ex:
-                speech.log_line('hub: could not send a guest home ({!r})'.format(ex))
+                speech.log_line(f'hub: could not send a guest home ({ex!r})')
     ended = False
     if end:
         try:
@@ -746,7 +746,7 @@ def end_event(situation_id, send_home, end):
             manager.destroy_situation_by_id(situation_id)
             ended = True
         except Exception as ex:
-            speech.log_line('hub: could not end the event ({!r})'.format(ex))
+            speech.log_line(f'hub: could not end the event ({ex!r})')
     parts = []
     if send_home:
         parts.append(lang.t('guests sent home').format(sent))

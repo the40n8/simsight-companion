@@ -78,8 +78,8 @@ def read_needs():
         core.speak('Needs are not available for this Sim.')
         return
     needs.sort()
-    text = ', '.join('{} {} percent {}'.format(label, p, word(p)) for (p, label) in needs)
-    core.speak('{} needs, lowest first: {}.'.format(sim.sim_info.first_name, text))
+    text = ', '.join(f'{label} {p} percent {word(p)}' for (p, label) in needs)
+    core.speak(f'{sim.sim_info.first_name} needs, lowest first: {text}.')
 
 
 def _check():

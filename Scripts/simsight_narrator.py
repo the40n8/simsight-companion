@@ -259,7 +259,7 @@ def a11y_rawdiag(mode: str = 'on', _connection=None):
 
 def _process(decoded, channel='?'):
     if _rawdiag:
-        speech.log_line('RAWDIAG[{}]: {}'.format(channel, ascii(decoded)))
+        speech.log_line(f'RAWDIAG[{channel}]: {ascii(decoded)}')
     if FIELD_SEP not in decoded and '|' not in decoded[:12]:
         return _clean_glyphs(decoded)
     segments = _fields_to_segments(decoded)
@@ -398,7 +398,7 @@ def _clock_funds():
 
         return hub.funds_text()
     except Exception as ex:
-        speech.log_line('clock: funds unavailable ({!r})'.format(ex))
+        speech.log_line(f'clock: funds unavailable ({ex!r})')
         return ''
 
 
@@ -520,7 +520,7 @@ def a11y_speak_enc(text: str = '', _connection=None):
     try:
         final = _process(decoded, 'tooltip')
     except Exception as ex:
-        speech.log_line('process failed ({!r}); speaking raw'.format(ex))
+        speech.log_line(f'process failed ({ex!r}); speaking raw')
         final = _clean_glyphs(decoded.replace(FIELD_SEP, '. '))
     head = _take_row_head()
     delay = _tooltip_delay()
@@ -546,7 +546,7 @@ def a11y_widget_enc(text: str = '', _connection=None):
     try:
         final = _process(decoded, 'widget')
     except Exception as ex:
-        speech.log_line('process failed ({!r}); speaking raw'.format(ex))
+        speech.log_line(f'process failed ({ex!r}); speaking raw')
         final = _clean_glyphs(decoded.replace(FIELD_SEP, '. '))
     # This row spoke for itself, so a description arriving behind it can be
     # deferred; it also supersedes any older row still waiting.
@@ -589,7 +589,7 @@ def a11y_context_enc(text: str = '', _connection=None):
 
             keys.apply_modal_state(suffix, 'context')
         except Exception as ex:
-            speech.log_line('context: modal state not applied: {!r}'.format(ex))
+            speech.log_line(f'context: modal state not applied: {ex!r}')
     return True
 
 
@@ -630,8 +630,8 @@ def a11y_inspect_inventory(_connection=None):
                 )
             )
         except Exception as ex:
-            speech.log_line('Inventory inspect: item unavailable {!r}'.format(ex))
-    output('Inventory snapshot: {} entries (limit 100); see SimSight log.'.format(count))
+            speech.log_line(f'Inventory inspect: item unavailable {ex!r}')
+    output(f'Inventory snapshot: {count} entries (limit 100); see SimSight log.')
     return True
 
 
@@ -656,7 +656,7 @@ def a11y_inspect_ui(delay: float = 0, _connection=None):
     else:
         keys._send('A11yInspect')
     sims4.commands.CheatOutput(_connection)(
-        'Keyboard focus snapshot in {:.0f} seconds; see SimSight log.'.format(delay)
+        f'Keyboard focus snapshot in {delay:.0f} seconds; see SimSight log.'
     )
     return True
 
@@ -804,7 +804,7 @@ def a11y_event_enc(text: str = '', _connection=None):
     try:
         final = _process(decoded, 'event')
     except Exception as ex:
-        speech.log_line('process failed ({!r}); speaking raw'.format(ex))
+        speech.log_line(f'process failed ({ex!r}); speaking raw')
         final = _clean_glyphs(decoded.replace(FIELD_SEP, '. '))
     speech.speak(final, source='event')
     return True
@@ -850,7 +850,7 @@ def a11y_simaction_enc(text: str = '', _connection=None):
     try:
         final = _process(decoded, 'simaction')
     except Exception as ex:
-        speech.log_line('process failed ({!r}); speaking raw'.format(ex))
+        speech.log_line(f'process failed ({ex!r}); speaking raw')
         final = _clean_glyphs(decoded.replace(FIELD_SEP, '. '))
     speech.speak(final, source='event')
     return True
@@ -868,7 +868,7 @@ def _push_autofocus():
         op = distributor.ops.SendUIMessage('A11yKeyboardOn' if state else 'A11yKeyboardOff')
         distributor.system.Distributor.instance().add_op_with_no_owner(op)
     except Exception as ex:
-        speech.log_line('autofocus push failed: {!r}'.format(ex))
+        speech.log_line(f'autofocus push failed: {ex!r}')
     push_simplified_menus()
 
 
@@ -887,7 +887,7 @@ def push_simplified_menus():
         )
         return True
     except Exception as ex:
-        speech.log_line('simplified menus notice failed: {!r}'.format(ex))
+        speech.log_line(f'simplified menus notice failed: {ex!r}')
         return False
 
 
@@ -903,13 +903,12 @@ def a11y_autofocus(mode: str = '', _connection=None):
 
         output('simsight: automatic focus is part of keyboard navigation; use simsight.keys.')
         return keys.a11y_keys(m, _connection=_connection)
-    else:
-        output(
-            'simsight: keyboard navigation and automatic focus are {}'.format(
-                'ON' if settings.get('keyboard', True) else 'OFF'
-            )
+    output(
+        'simsight: keyboard navigation and automatic focus are {}'.format(
+            'ON' if settings.get('keyboard', True) else 'OFF'
         )
-        output('simsight: use simsight.keys on|off')
+    )
+    output('simsight: use simsight.keys on|off')
     return True
 
 
@@ -928,9 +927,9 @@ def a11y_speechmode(mode: str = '', _connection=None):
         m = 'manual'
     if m in speech._VALID_MODES:
         speech.set_mode(m)
-        output('simsight: speech mode {}'.format(m))
+        output(f'simsight: speech mode {m}')
     else:
-        output('simsight: speech mode is {}'.format(speech.speech_mode))
+        output(f'simsight: speech mode is {speech.speech_mode}')
         output('simsight: usage simsight.speechmode hover|manual|beeps|off')
     return True
 
@@ -959,15 +958,11 @@ def a11y_tooltipdelay(seconds: str = '', _connection=None):
             output('simsight: tooltip delay OFF (descriptions read immediately)')
             speech.speak('Tooltip delay off.', explicit=True)
         else:
-            output('simsight: tooltip delay {:g} seconds'.format(value))
-            speech.speak('Tooltip delay {:g} seconds.'.format(value), explicit=True)
+            output(f'simsight: tooltip delay {value:g} seconds')
+            speech.speak(f'Tooltip delay {value:g} seconds.', explicit=True)
         return True
     delay = _tooltip_delay()
-    output(
-        'simsight: tooltip delay is {}'.format(
-            'off' if delay <= 0 else '{:g} seconds'.format(delay)
-        )
-    )
+    output('simsight: tooltip delay is {}'.format('off' if delay <= 0 else f'{delay:g} seconds'))
     output('simsight: usage simsight.tooltipdelay <seconds|off>')
     return True
 
@@ -986,7 +981,7 @@ def a11y_voice(*args, _connection=None):
         try:
             value = int(parts[1])
         except ValueError:
-            output('simsight: {} must be a number'.format(sub))
+            output(f'simsight: {sub} must be a number')
             return False
         if sub == 'rate':
             value = max(-10, min(10, value))
@@ -995,17 +990,17 @@ def a11y_voice(*args, _connection=None):
             value = max(0, min(100, value))
             settings.set('sapi_volume', value)
         speech.restart_sapi()
-        output('simsight: SAPI {} set to {}'.format(sub, value))
-        speech.speak('Voice {} {}.'.format(sub, value), explicit=True)
+        output(f'simsight: SAPI {sub} set to {value}')
+        speech.speak(f'Voice {sub} {value}.', explicit=True)
         return True
     if sub == 'name' and len(parts) >= 2:
         name = ' '.join(parts[1:])
         settings.set('sapi_voice', name)
         speech.restart_sapi()
         output(
-            'simsight: SAPI voice set to "{}" (partial name, not case-'
+            f'simsight: SAPI voice set to "{name}" (partial name, not case-'
             'sensitive: david, zira or hazel; default voice if nothing '
-            'matches)'.format(name)
+            'matches)'
         )
         speech.speak('Voice changed.', explicit=True)
         return True
@@ -1015,7 +1010,7 @@ def a11y_voice(*args, _connection=None):
             output('simsight: could not list voices')
             return True
         for name in names:
-            output('simsight: voice: {}'.format(name))
+            output(f'simsight: voice: {name}')
         speech.speak('{} voices installed. {}'.format(len(names), '. '.join(names)), explicit=True)
         return True
     if sub == 'reset':
@@ -1045,7 +1040,7 @@ def a11y_voice(*args, _connection=None):
 
 @sims4.commands.Command('simsight.mark', 'a11y.mark', command_type=sims4.commands.CommandType.Live)
 def a11y_mark(name: str = '', _connection=None):
-    speech.log_line('MARK: live TooltipManager copy is from "{}"'.format(name))
+    speech.log_line(f'MARK: live TooltipManager copy is from "{name}"')
     try:
         import simsight_startup as startup
 
@@ -1068,7 +1063,7 @@ def _install_zone_hook():
         try:
             _push_autofocus()
         except Exception as ex:
-            speech.log_line('autofocus zone push failed: {!r}'.format(ex))
+            speech.log_line(f'autofocus zone push failed: {ex!r}')
         return result
 
     zone.Zone.on_loading_screen_animation_finished = (
@@ -1079,7 +1074,7 @@ def _install_zone_hook():
 try:
     _install_zone_hook()
 except Exception as _zone_ex:
-    speech.log_line('narrator zone hook install failed: {!r}'.format(_zone_ex))
+    speech.log_line(f'narrator zone hook install failed: {_zone_ex!r}')
 
 
 @sims4.commands.Command(
@@ -1096,11 +1091,9 @@ def a11y_speak(*args, _connection=None):
 def a11y_test(_connection=None):
     output = sims4.commands.CheatOutput(_connection)
     backend = speech.init()
-    speech.speak(
-        'Narration test successful. The active backend is {}.'.format(backend), explicit=True
-    )
-    output('simsight: spoke test sentence via backend "{}"'.format(backend))
-    output('simsight: log file at {}'.format(speech.LOG_PATH))
+    speech.speak(f'Narration test successful. The active backend is {backend}.', explicit=True)
+    output(f'simsight: spoke test sentence via backend "{backend}"')
+    output(f'simsight: log file at {speech.LOG_PATH}')
     return True
 
 
@@ -1112,7 +1105,7 @@ def a11y_braille(mode: str = '', _connection=None):
     output = sims4.commands.CheatOutput(_connection)
     valid = ('concise', 'full', 'only', 'off')
     if mode.lower() not in valid:
-        output('a11y braille mode: {}'.format(speech.braille_mode))
+        output(f'a11y braille mode: {speech.braille_mode}')
         output('a11y braille display detected: {}'.format('yes' if speech.has_braille() else 'no'))
         output('simsight: usage simsight.braille <{}>'.format('|'.join(valid)))
         output('   concise = speak everything, braille the label')
@@ -1122,8 +1115,8 @@ def a11y_braille(mode: str = '', _connection=None):
         return True
     speech.braille_mode = mode.lower()
     settings.set('braille_mode', speech.braille_mode)
-    output('simsight: braille mode set to {}'.format(speech.braille_mode))
-    speech.speak('Braille mode {}.'.format(speech.braille_mode), explicit=True)
+    output(f'simsight: braille mode set to {speech.braille_mode}')
+    speech.speak(f'Braille mode {speech.braille_mode}.', explicit=True)
     return True
 
 
@@ -1136,7 +1129,7 @@ def a11y_log(mode: str = '', _connection=None):
         speech.log_enabled = True
         settings.set('logging', True)
         speech.log_line('logging enabled via simsight.log')
-        output('simsight: logging ON -> {}'.format(speech.LOG_PATH))
+        output(f'simsight: logging ON -> {speech.LOG_PATH}')
         speech.speak('Logging on.', explicit=True)
     elif m in ('off', 'false', '0'):
         speech.log_line('logging disabled via simsight.log')
@@ -1193,22 +1186,22 @@ def a11y_reload(_connection=None):
 
         travel.apply_setting()
     except Exception as ex:
-        speech.log_line('reload: travel list notice failed: {!r}'.format(ex))
+        speech.log_line(f'reload: travel list notice failed: {ex!r}')
     try:
         import simsight_build as build
 
         build.apply_setting()
     except Exception as ex:
-        speech.log_line('reload: build controls notice failed: {!r}'.format(ex))
+        speech.log_line(f'reload: build controls notice failed: {ex!r}')
     try:
         import simsight_keys as keys
 
         keys.apply_scanner_setting()
     except Exception as ex:
-        speech.log_line('reload: scanner mode notice failed: {!r}'.format(ex))
+        speech.log_line(f'reload: scanner mode notice failed: {ex!r}')
     for err in settings.load_errors:
         output('simsight: warning: ' + err)
-    output('simsight: settings reloaded from {}'.format(settings.PATH))
+    output(f'simsight: settings reloaded from {settings.PATH}')
     if settings.load_errors:
         speech.speak(
             'Settings reloaded with {} warnings. {}'.format(
@@ -1276,9 +1269,9 @@ def a11y_settings(_connection=None):
         lines.append('keyboard navigation unavailable')
     lines.append('speech mode {}'.format(speech.speech_mode.replace('_', ' ')))
     delay = _tooltip_delay()
-    lines.append('tooltip delay {}'.format('off' if delay <= 0 else '{:g} seconds'.format(delay)))
+    lines.append('tooltip delay {}'.format('off' if delay <= 0 else f'{delay:g} seconds'))
     lines.append('auto focus {}'.format('on' if settings.get('auto_focus') else 'off'))
-    lines.append('braille mode {}'.format(speech.braille_mode))
+    lines.append(f'braille mode {speech.braille_mode}')
     lines.append('verbosity {}'.format(settings.get('verbosity')))
     lines.append('logging {}'.format('on' if speech.log_enabled else 'off'))
     for line in lines:
@@ -1292,7 +1285,7 @@ def a11y_settings(_connection=None):
             settings.get('sapi_voice') or 'default',
         )
     )
-    output('simsight: settings file: {}'.format(settings.PATH))
+    output(f'simsight: settings file: {settings.PATH}')
     for err in settings.load_errors:
         output('simsight: warning: ' + err)
     speech.speak('. '.join(lines) + '.', explicit=True)
@@ -1304,7 +1297,7 @@ def a11y_settings(_connection=None):
 )
 def a11y_status(_connection=None):
     output = sims4.commands.CheatOutput(_connection)
-    output('a11y backend: {}'.format(speech.backend_name()))
+    output(f'a11y backend: {speech.backend_name()}')
     output(
         'a11y screen reader: {}'.format(
             getattr(getattr(speech, '_prism', None), 'name', None) or 'none; Windows fallback'

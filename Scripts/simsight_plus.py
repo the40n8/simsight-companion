@@ -44,7 +44,7 @@ def _load():
             loaded.append(name)
         except Exception as ex:
             failed.append(name)
-            speech.log_line('plus: {} did not load ({!r})'.format(name, ex))
+            speech.log_line(f'plus: {name} did not load ({ex!r})')
 
 
 _load()

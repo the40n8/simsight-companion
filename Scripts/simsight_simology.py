@@ -177,7 +177,7 @@ def milestones_window():
     try:
         groups = _read(info)
     except Exception as ex:
-        speech.log_line('simology: milestones unavailable ({!r})'.format(ex))
+        speech.log_line(f'simology: milestones unavailable ({ex!r})')
         _say('action unavailable')
         return False
     if not groups:
@@ -212,7 +212,7 @@ def milestone_category(sim_id, category):
     try:
         items = (_read(info) or {}).get(category, [])
     except Exception as ex:
-        speech.log_line('simology: milestone category unavailable ({!r})'.format(ex))
+        speech.log_line(f'simology: milestone category unavailable ({ex!r})')
         _say('action unavailable')
         return False
     rows = []
@@ -305,7 +305,7 @@ def values_window():
     try:
         stats = _life_skills(info)
     except Exception as ex:
-        speech.log_line('simology: character values unavailable ({!r})'.format(ex))
+        speech.log_line(f'simology: character values unavailable ({ex!r})')
         _say('action unavailable')
         return False
     rows = []
@@ -316,7 +316,7 @@ def values_window():
         try:
             detail = value_detail(stat, info)
         except Exception as ex:
-            speech.log_line('simology: value {} unreadable ({!r})'.format(type(stat).__name__, ex))
+            speech.log_line(f'simology: value {type(stat).__name__} unreadable ({ex!r})')
             continue
         # Reading only: Enter reopens the list.
         rows.append((name, detail, values_window))

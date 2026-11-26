@@ -42,7 +42,7 @@ _owner = None
 _last_drain = 0.0
 
 
-class _Owner(object):
+class _Owner:
     """Something for the alarm to own: it refuses None and holds it weakly."""
 
 
@@ -99,29 +99,29 @@ def start():
             travel.announce_setting()
             travel.start_lease()
         except Exception as ex:
-            speech.log_line('pump: travel readiness start failed: {!r}'.format(ex))
+            speech.log_line(f'pump: travel readiness start failed: {ex!r}')
         try:
             import simsight_build as build
 
             build.announce_controls()
         except Exception as ex:
-            speech.log_line('pump: build controls notice failed: {!r}'.format(ex))
+            speech.log_line(f'pump: build controls notice failed: {ex!r}')
         try:
             import simsight_narrator as narrator
 
             narrator.push_simplified_menus()
         except Exception as ex:
-            speech.log_line('pump: simplified menus notice failed: {!r}'.format(ex))
+            speech.log_line(f'pump: simplified menus notice failed: {ex!r}')
         try:
             import simsight_keys as keys
 
             keys.scanner_zone_started()
         except Exception as ex:
-            speech.log_line('pump: scanner mode notice failed: {!r}'.format(ex))
+            speech.log_line(f'pump: scanner mode notice failed: {ex!r}')
         return True
     except Exception as ex:
         _handle = None
-        speech.log_line('pump: start failed: {!r}'.format(ex))
+        speech.log_line(f'pump: start failed: {ex!r}')
         return False
 
 
@@ -162,7 +162,7 @@ def _install_zone_hook():
         try:
             start()
         except Exception as ex:
-            speech.log_line('pump: zone start failed: {!r}'.format(ex))
+            speech.log_line(f'pump: zone start failed: {ex!r}')
         return result
 
     zone.Zone.on_loading_screen_animation_finished = a11y_pump_on_loading_screen_animation_finished
@@ -171,4 +171,4 @@ def _install_zone_hook():
 try:
     _install_zone_hook()
 except Exception as _zone_ex:
-    speech.log_line('pump: zone hook install failed: {!r}'.format(_zone_ex))
+    speech.log_line(f'pump: zone hook install failed: {_zone_ex!r}')

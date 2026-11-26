@@ -2,7 +2,9 @@
 # The player says what kind of room it is; we buy the cheapest good item of each kind it needs
 # (picked by name from the Buy catalog) and let SimSight place each one, starting in the middle
 # of the room and then along the walls, away from doors.
-import math, threading, time
+import math
+import threading
+import time
 import simsight_plus_core as core
 import simsight_plus_build as build
 
@@ -104,10 +106,7 @@ def furnish_room():
     if not all_rooms:
         core.speak('There are no rooms yet.')
         return
-    rows = [
-        (r.name, '{}, {} things in it now.'.format(r.size_text(), len(r.objects)), r)
-        for r in all_rooms
-    ]
+    rows = [(r.name, f'{r.size_text()}, {len(r.objects)} things in it now.', r) for r in all_rooms]
 
     def got_room(room):
         guess = _guess_set(room.name)
@@ -115,7 +114,7 @@ def furnish_room():
         for i, (label, keys) in enumerate(SETS):
             things = ', '.join(ITEMS[k][0].lower() for k in keys)
             cost = sum(PRICES.get(k, 0) for k in keys)
-            srows.append((label, 'Buys: {}. About {:,} simoleons.'.format(things, cost), i))
+            srows.append((label, f'Buys: {things}. About {cost:,} simoleons.', i))
         if guess is not None:
             srows.insert(0, srows.pop(guess))
 
@@ -123,8 +122,8 @@ def furnish_room():
             _furnish(room, SETS[i])
 
         core.choose(
-            'Furnish the {}'.format(room.name),
-            'What kind of room is it? You have {:,} simoleons.'.format(build.funds() or 0),
+            f'Furnish the {room.name}',
+            f'What kind of room is it? You have {build.funds() or 0:,} simoleons.',
             srows,
             got_set,
             tag='build',
@@ -202,7 +201,8 @@ def _spots(room):
 def _face_into_room(place, room):
     """The game may turn an object while finding room for it. If its front now faces a wall,
     turn it to face into the room."""
-    import services, sims4.math
+    import services
+    import sims4.math
 
     try:
         obj = services.object_manager().get(place._last.get('obj_id'))
@@ -221,7 +221,7 @@ def _face_into_room(place, room):
         (de, dn) = ((1 if de > 0 else -1), 0) if abs(de) > abs(dn) else (0, (1 if dn > 0 else -1))
         q = sims4.math.angle_to_yaw_quaternion(math.atan2(de, -dn))
         obj.move_to(translation=obj.position, orientation=q, routing_surface=obj.routing_surface)
-        core.log('furnish: turned {} to face into the room'.format(obj.id))
+        core.log(f'furnish: turned {obj.id} to face into the room')
     except Exception:
         core.log_exc('face into room')
 
@@ -236,10 +236,13 @@ def _furnish(room, item_set):
         core.speak('Still working on the last build step.')
         return
     build._busy[0] = True
-    core.speak('Furnishing the {} as a {}. Please wait.'.format(room.name, label.lower()))
+    core.speak(f'Furnishing the {room.name} as a {label.lower()}. Please wait.')
 
     def work():
-        import routing, services, terrain, sims4.math
+        import routing
+        import services
+        import terrain
+        import sims4.math
         import simsight_place as place
 
         bought, missed = [], []

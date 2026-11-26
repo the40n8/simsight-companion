@@ -10,7 +10,6 @@ import json
 import math
 import os
 import threading
-import time
 from urllib.parse import unquote
 import sims4.commands
 import simsight_speech as speech
@@ -366,7 +365,7 @@ def mouse(flags, data=0):
     if flags == _build.LEFT_UP:
         u.mouse_event(flags, 0, 0, data, 0)
         _local.down = False
-        return
+        return None
     if flags != _build.LEFT_DOWN:
         return _original_mouse(flags, data)
     try:

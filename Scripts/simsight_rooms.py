@@ -46,14 +46,14 @@ def _load():
         return
     _loaded = True
     try:
-        with open(_path(), 'r', encoding='utf-8') as stream:
+        with open(_path(), encoding='utf-8') as stream:
             data = json.load(stream)
         if isinstance(data, dict):
             _labels = {str(k): str(v)[:60] for k, v in data.items() if str(v).strip()}
     except FileNotFoundError:
         pass
     except Exception as ex:
-        _log('label load failed: {!r}'.format(ex))
+        _log(f'label load failed: {ex!r}')
 
 
 def _save():
@@ -65,7 +65,7 @@ def _save():
         os.replace(temporary, path)
         return True
     except Exception as ex:
-        _log('label save failed: {!r}'.format(ex))
+        _log(f'label save failed: {ex!r}')
         try:
             if os.path.isfile(temporary):
                 os.remove(temporary)
@@ -86,7 +86,7 @@ def _save_slot():
 def _key(room_id, level):
     import services
 
-    return '{}:{}:{}:{}'.format(_save_slot(), services.current_zone_id(), int(level), int(room_id))
+    return f'{_save_slot()}:{services.current_zone_id()}:{int(level)}:{int(room_id)}'
 
 
 def label_for(room_id, level):
@@ -108,7 +108,7 @@ def display_name(room_id, level):
 
         return inferred_name(room_id, level)
     except Exception as exc:
-        _log('inferred room name unavailable: {!r}'.format(exc))
+        _log(f'inferred room name unavailable: {exc!r}')
         return None
 
 
@@ -164,7 +164,7 @@ def set_current_label(label):
             _labels[key] = old
         speech.speak('The room label could not be saved.', explicit=True)
         return False
-    speech.speak('Room labelled {}.'.format(value), explicit=True)
+    speech.speak(f'Room labelled {value}.', explicit=True)
     return True
 
 
@@ -182,7 +182,7 @@ def _picker_result(dialog):
         if tags:
             set_current_label(PRESETS[int(tags[0])])
     except Exception as ex:
-        _log('picker result failed: {!r}'.format(ex))
+        _log(f'picker result failed: {ex!r}')
 
 
 def show_picker():
@@ -223,7 +223,7 @@ def show_picker():
         _picker_room = room
         return True
     except Exception as ex:
-        _log('picker failed: {!r}'.format(ex))
+        _log(f'picker failed: {ex!r}')
         speech.speak('The room label list could not be opened.', explicit=True)
         return False
 
@@ -273,7 +273,7 @@ def wall_context(frame):
                     ).format(here)
                 )
     except Exception as ex:
-        _log('wall room context failed: {!r}'.format(ex))
+        _log(f'wall room context failed: {ex!r}')
     return parts
 
 
@@ -286,4 +286,4 @@ try:
     def roomlabel_command(label: str = '', _connection=None):
         return set_current_label(label)
 except Exception as ex:
-    _log('room label command unavailable: {!r}'.format(ex))
+    _log(f'room label command unavailable: {ex!r}')

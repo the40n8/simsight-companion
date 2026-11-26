@@ -29,14 +29,14 @@ def _load_labels():
         return
     _labels = {}
     try:
-        with open(_label_path(), 'r', encoding='utf-8') as stream:
+        with open(_label_path(), encoding='utf-8') as stream:
             data = json.load(stream)
         if isinstance(data, dict):
             _labels = {str(k): str(v)[:60] for k, v in data.items() if str(v).strip()}
     except FileNotFoundError:
         pass
     except Exception as ex:
-        _log('label load failed: {!r}'.format(ex))
+        _log(f'label load failed: {ex!r}')
 
 
 def _save_labels():
@@ -48,7 +48,7 @@ def _save_labels():
         os.replace(temporary, path)
         return True
     except Exception as ex:
-        _log('label save failed: {!r}'.format(ex))
+        _log(f'label save failed: {ex!r}')
         return False
 
 
@@ -256,7 +256,7 @@ def room_parts(frame):
 
             parts = list(parts) + [_describe_tile(grid._tile[0], grid._tile[1], grid._level) + ' ']
         except Exception as ex:
-            _log('tile announcement failed: {!r}'.format(ex))
+            _log(f'tile announcement failed: {ex!r}')
     return parts, facts
 
 
@@ -309,9 +309,7 @@ def label_current_building():
             _labels.pop(building['signature'], None)
         if _save_labels():
             _cache = None
-            core.speak(
-                'Building labelled {}.'.format(value) if value else 'Building label cleared.'
-            )
+            core.speak(f'Building labelled {value}.' if value else 'Building label cleared.')
         else:
             core.speak('The building label could not be saved.')
 
@@ -332,11 +330,7 @@ def register_box_label(box, levels, name):
         None,
     )
     if not match:
-        _log(
-            'planned building label not assigned; box={} levels={} name={!r}'.format(
-                box, levels, name
-            )
-        )
+        _log(f'planned building label not assigned; box={box} levels={levels} name={name!r}')
         return False
     _load_labels()
     _labels[match['signature']] = ' '.join(name.strip().split())[:60]

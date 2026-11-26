@@ -28,12 +28,12 @@ def _record(dialog_msg):
         import simsight_plus_time as t
 
         now = services.time_service().sim_now
-        when = '{} {}'.format(t.day_text(now), t.clock_text(now))
+        when = f'{t.day_text(now)} {t.clock_text(now)}'
     except Exception:
         pass
     _history.append((when, title, text))
     del _history[:-MAX]
-    core.log('notification recorded ({} kept)'.format(len(_history)))
+    core.log(f'notification recorded ({len(_history)} kept)')
 
 
 def _install():
@@ -66,10 +66,10 @@ def open_history():
     for n, (when, title, text) in enumerate(reversed(_history)):
         label = text if text is not None else title
         desc = title if (text is not None and title is not None) else None
-        rows.append((label, desc if desc is not None else 'Received {}'.format(when), n))
+        rows.append((label, desc if desc is not None else f'Received {when}', n))
     core.choose(
         'Notifications',
-        'Newest first. {} kept.'.format(len(_history)),
+        f'Newest first. {len(_history)} kept.',
         rows,
         lambda v: None,
         tag='notify',

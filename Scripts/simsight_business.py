@@ -67,7 +67,7 @@ def business_lines(manager):
     ]
     stars = _value(manager.get_star_rating)
     if stars is not None:
-        lines.append(lang.t('business stars').format('{:g}'.format(round(float(stars), 1))))
+        lines.append(lang.t('business stars').format(f'{round(float(stars), 1):g}'))
     funds = _value(lambda: manager.funds.money)
     if funds is not None:
         lines.append(lang.t('business funds').format(_money(funds)))
@@ -107,7 +107,7 @@ def businesses_window():
     try:
         managers = _managers()
     except Exception as ex:
-        speech.log_line('business: unavailable ({!r})'.format(ex))
+        speech.log_line(f'business: unavailable ({ex!r})')
         _say('action unavailable')
         return False
     if managers is None:
@@ -118,7 +118,7 @@ def businesses_window():
         try:
             text = ' '.join(business_lines(manager))
         except Exception as ex:
-            speech.log_line('business: {} unreadable ({!r})'.format(type(manager).__name__, ex))
+            speech.log_line(f'business: {type(manager).__name__} unreadable ({ex!r})')
             continue
         rows.append((menu._raw(business_name(manager)), menu._raw(text), _open_panel))
     if not rows:

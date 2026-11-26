@@ -1,6 +1,5 @@
 """Experimental native basement drawing, isolated from ordinary room workers."""
 
-import configparser
 import math
 import threading
 import time
@@ -192,7 +191,7 @@ def _draw(want, overview):
             _build.drag(screen[0], screen[1])
 
         performed = _build.point_and_act(
-            points, 0, action, 'experimental basement {}'.format(wanted), overview=overview
+            points, 0, action, f'experimental basement {wanted}', overview=overview
         )
         if not performed:
             return 'noscreen'
@@ -305,9 +304,7 @@ def _start_room(wanted):
             else:
                 _core.post(
                     _core.speak,
-                    'The basement room was not completed: {}. No further rooms were attempted.'.format(
-                        result
-                    ),
+                    f'The basement room was not completed: {result}. No further rooms were attempted.',
                 )
         finally:
             _build._busy[0] = False
@@ -388,9 +385,7 @@ def _inspect():
             _log('inspect', basement_rooms=basements, native_floor=info)
             _core.post(
                 _core.speak,
-                'Logged current floor bounds and {} basement rooms. Nothing was built or selected.'.format(
-                    len(basements)
-                ),
+                f'Logged current floor bounds and {len(basements)} basement rooms. Nothing was built or selected.',
             )
         except Exception as exc:
             _log('inspect-failed', error=str(exc))

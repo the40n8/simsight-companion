@@ -16,13 +16,13 @@ import sims4.commands
 import simsight_lang as lang
 import simsight_settings as settings
 import simsight_speech as speech
-import simsight_phone  # install the incoming-call observer at startup
+import simsight_phone  # noqa: F401 - side effect: install the incoming-call observer at startup
 import simsight_hub  # register the common-actions commands
-import simsight_careerlog  # doctor career research log (logging only)
-import simsight_modui  # mod menu census (logging only)
-import simsight_rooms  # the simsight.roomlabel console command (Build cursor room labels)
-import simsight_holidays  # Seasons: announce a holiday when its day starts
-import simsight_plus  # SimSight Plus features (Alt keys), merged 2026-10-08
+import simsight_careerlog  # noqa: F401 - side effect: doctor career research log (logging only)
+import simsight_modui  # noqa: F401 - side effect: mod menu census (logging only)
+import simsight_rooms  # noqa: F401 - side effect: the simsight.roomlabel console command (Build cursor room labels)
+import simsight_holidays  # noqa: F401 - side effect: Seasons: announce a holiday when its day starts
+import simsight_plus  # noqa: F401 - side effect: SimSight Plus features (Alt keys), merged 2026-10-08
 
 try:
     # NOTE: the bundled ctypes package ships only the core modules, so
@@ -265,7 +265,7 @@ def fence_opening_input():
             if user32.GetAsyncKeyState(vk) & 0x8001:
                 _opening_keys.add(vk)
     except Exception as ex:
-        speech.log_line('keys: opening input snapshot unavailable: {!r}'.format(ex))
+        speech.log_line(f'keys: opening input snapshot unavailable: {ex!r}')
 
 
 @sims4.commands.Command(
@@ -287,7 +287,7 @@ def _log_route(reason, intent):
     now = time.monotonic()
     if now - _route_logged.get(reason, 0.0) >= 1.0:
         _route_logged[reason] = now
-        speech.log_line('keys: chord {} {}'.format(intent, reason))
+        speech.log_line(f'keys: chord {intent} {reason}')
 
 
 @sims4.commands.Command(
@@ -306,7 +306,7 @@ def apply_modal_state(state, source):
     if isinstance(state, int) and not isinstance(state, bool) and state in (0, 1, 10, 11):
         # sims4.commands converts only str arguments; a payload a caller
         # already turned into a number arrives as one.
-        state = '{:02d}'.format(state)
+        state = f'{state:02d}'
     if isinstance(state, str) and state in ('0', '1'):
         # Live evidence 2026-09-25: the native command path drops the
         # leading zero, so Flash's '00' and '01' arrive as '0' and '1'.
@@ -320,14 +320,12 @@ def apply_modal_state(state, source):
         state = state[:2]
     if state not in ('00', '01', '10', '11'):
         speech.log_line(
-            'keys: modal state rejected {} {} ({})'.format(
-                type(state).__name__, repr(state)[:24], source
-            )
+            f'keys: modal state rejected {type(state).__name__} {repr(state)[:24]} ({source})'
         )
         return False
     before = ('1' if _modal_active else '0') + ('1' if _editing_active else '0')
     if before != state:
-        speech.log_line('keys: modal {}->{} ({})'.format(before, state, source))
+        speech.log_line(f'keys: modal {before}->{state} ({source})')
     if _modal_active and state[0] == '0':
         _input_epoch += 1  # the owner closed: queued modal navigation is stale
     if (state[0] == '1' and not _modal_active) or (_editing_active and state[1] == '0'):
@@ -357,9 +355,7 @@ def _set_blocking(value, source):
     global _blocking_explicit
     if value != _blocking_explicit:
         speech.log_line(
-            'keys: blocking {}->{} ({})'.format(
-                _blocking_text(_blocking_explicit), _blocking_text(value), source
-            )
+            f'keys: blocking {_blocking_text(_blocking_explicit)}->{_blocking_text(value)} ({source})'
         )
     _blocking_explicit = value
 
@@ -388,9 +384,7 @@ def a11y_blocking(state: str = '1', _connection=None):
     if isinstance(state, int) and not isinstance(state, bool) and state in (0, 1):
         state = str(state)
     if state not in ('0', '1'):
-        speech.log_line(
-            'keys: blocking rejected {} {}'.format(type(state).__name__, repr(state)[:24])
-        )
+        speech.log_line(f'keys: blocking rejected {type(state).__name__} {repr(state)[:24]}')
         return False
     _set_blocking(state == '1', 'blocking')
     return True
@@ -414,19 +408,19 @@ def _announce_ui_settings():
 
         build.announce_controls()
     except Exception as ex:
-        speech.log_line('keys: build controls notice failed: {!r}'.format(ex))
+        speech.log_line(f'keys: build controls notice failed: {ex!r}')
     try:
         import simsight_travel as travel
 
         travel.announce_setting()
     except Exception as ex:
-        speech.log_line('keys: travel list notice failed: {!r}'.format(ex))
+        speech.log_line(f'keys: travel list notice failed: {ex!r}')
     try:
         import simsight_narrator as narrator
 
         narrator.push_simplified_menus()
     except Exception as ex:
-        speech.log_line('keys: simplified menus notice failed: {!r}'.format(ex))
+        speech.log_line(f'keys: simplified menus notice failed: {ex!r}')
     _announce_scanner_mode()
     if _scanner_live:
         _scanner_call('update_camera_follow')
@@ -437,7 +431,7 @@ def _announce_scanner_mode():
     try:
         _deliver('A11y|scannermode|' + ('on' if _scanner_effective() else 'off'))
     except Exception as ex:
-        speech.log_line('keys: scanner mode notice failed: {!r}'.format(ex))
+        speech.log_line(f'keys: scanner mode notice failed: {ex!r}')
 
 
 def _scanner_effective():
@@ -504,7 +498,7 @@ def apply_scanner_setting(announce_change=False):
         if grid.active():
             grid.leave()  # one cursor at a time: the grid also uses arrows
     except Exception as ex:
-        speech.log_line('keys: grid leave failed: {!r}'.format(ex))
+        speech.log_line(f'keys: grid leave failed: {ex!r}')
     fence_opening_input()  # the toggle's Space must not also act
     _scanner_suspended = False
     # "Scanner" is spoken when Flash confirms it owns the keys, never before.
@@ -559,9 +553,7 @@ def a11y_buildgridowner(state: str = '0', _connection=None):
         return False
     owner = state == '1'
     if owner != _build_grid_owner:
-        speech.log_line(
-            'keys: Build cursor owner {}->{}'.format(int(_build_grid_owner), int(owner))
-        )
+        speech.log_line(f'keys: Build cursor owner {int(_build_grid_owner)}->{int(owner)}')
         _build_grid_owner = owner
         _input_epoch += 1  # a key queued under the old owner must not act
     return True
@@ -627,15 +619,13 @@ def a11y_scannerowner(state: str = '0', _connection=None):
     if isinstance(state, int) and not isinstance(state, bool) and state in (0, 1):
         state = str(state)
     if state not in ('0', '1'):
-        speech.log_line(
-            'keys: scanner owner rejected {} {}'.format(type(state).__name__, repr(state)[:24])
-        )
+        speech.log_line(f'keys: scanner owner rejected {type(state).__name__} {repr(state)[:24]}')
         return False
     global _input_epoch
     owner = state == '1'
     changed = owner != _scanner_owner
     if changed:
-        speech.log_line('keys: scanner owner {}->{}'.format(int(_scanner_owner), int(owner)))
+        speech.log_line(f'keys: scanner owner {int(_scanner_owner)}->{int(owner)}')
         _scanner_owner = owner
         # A scanner key queued under the old owner must not act under the
         # next one (a menu can open and close before the pump turn).
@@ -680,7 +670,7 @@ def _scanner_call(name, *args):
         if fn is not None:
             return fn(*args)
     except Exception as ex:
-        speech.log_line('keys: scanner.{} failed: {!r}'.format(name, ex))
+        speech.log_line(f'keys: scanner.{name} failed: {ex!r}')
     return None
 
 
@@ -695,13 +685,11 @@ def a11y_scannerlive(state: str = '0', _connection=None):
     if isinstance(state, int) and not isinstance(state, bool) and state in (0, 1):
         state = str(state)
     if state not in ('0', '1'):
-        speech.log_line(
-            'keys: scanner live rejected {} {}'.format(type(state).__name__, repr(state)[:24])
-        )
+        speech.log_line(f'keys: scanner live rejected {type(state).__name__} {repr(state)[:24]}')
         return False
     live = state == '1' and _scanner_effective()
     if live != _scanner_live:
-        speech.log_line('keys: scanner live {}->{}'.format(int(_scanner_live), int(live)))
+        speech.log_line(f'keys: scanner live {int(_scanner_live)}->{int(live)}')
     _scanner_live = live
     # Every report goes through: a zone reset on the camera side must be
     # able to resume from the next report even when this flag did not move.
@@ -736,7 +724,7 @@ def _send_owned(message_name):
             import simsight_startup as startup
 
             if startup.send_navigation(message_name):
-                return
+                return None
         except ImportError:
             pass
         import simsight_pump as pump
@@ -744,7 +732,7 @@ def _send_owned(message_name):
         if not pump.post(_deliver_activation, message_name, epoch):
             speech.log_line('keys: navigation unavailable (simulation pump inactive)')
     except Exception as ex:
-        speech.log_line('keys: send {} failed: {!r}'.format(message_name, ex))
+        speech.log_line(f'keys: send {message_name} failed: {ex!r}')
 
 
 def _deliver_activation(message_name, epoch):
@@ -760,7 +748,7 @@ def _send(message_name):
         try:
             speech.repeat_last()
         except Exception as ex:
-            speech.log_line('keys: repeat failed: {!r}'.format(ex))
+            speech.log_line(f'keys: repeat failed: {ex!r}')
         return
     if message_name.startswith('A11yBuildGrid:'):
         try:
@@ -769,7 +757,7 @@ def _send(message_name):
             if not pump.post(_build_grid_key, message_name[len('A11yBuildGrid:') :], _input_epoch):
                 speech.log_line('keys: Build cursor unavailable (simulation pump inactive)')
         except Exception as ex:
-            speech.log_line('keys: send {} failed: {!r}'.format(message_name, ex))
+            speech.log_line(f'keys: send {message_name} failed: {ex!r}')
         return
     if message_name.startswith('A11yScanner:'):
         try:
@@ -778,13 +766,13 @@ def _send(message_name):
             if not pump.post(_scanner_key, message_name[len('A11yScanner:') :], _input_epoch):
                 speech.log_line('keys: navigation unavailable (simulation pump inactive)')
         except Exception as ex:
-            speech.log_line('keys: send {} failed: {!r}'.format(message_name, ex))
+            speech.log_line(f'keys: send {message_name} failed: {ex!r}')
         return
     if message_name == 'A11ySpeechMode':
         try:
             speech.cycle_mode()
         except Exception as ex:
-            speech.log_line('keys: speech mode cycle failed: {!r}'.format(ex))
+            speech.log_line(f'keys: speech mode cycle failed: {ex!r}')
         return
     try:
         try:
@@ -806,7 +794,7 @@ def _send(message_name):
             if message_name != 'A11y|lease':
                 speech.log_line('keys: navigation unavailable (simulation pump inactive)')
     except Exception as ex:
-        speech.log_line('keys: send {} failed: {!r}'.format(message_name, ex))
+        speech.log_line(f'keys: send {message_name} failed: {ex!r}')
 
 
 _altgr_layouts = {}
@@ -1025,7 +1013,7 @@ def _hook_loop():
             _hook_installs += 1
             speech.log_line(
                 'keys: swallow hook {} (install #{})'.format(
-                    'installed' if handle else 'FAILED err={}'.format(ctypes.get_last_error()),
+                    'installed' if handle else f'FAILED err={ctypes.get_last_error()}',
                     _hook_installs,
                 )
             )
@@ -1040,7 +1028,7 @@ def _hook_loop():
                     pass
                 _hook_handle = None
                 _hook_state.clear()
-                speech.log_line('keys: swallow hook removed ({})'.format(reason))
+                speech.log_line(f'keys: swallow hook removed ({reason})')
 
         # The hook is system-wide and its callback needs the GIL, so while it
         # is installed every keystroke in every program waits on the game.
@@ -1073,7 +1061,7 @@ def _hook_loop():
                     install()
         remove('polling stopped')
     except Exception as ex:
-        speech.log_line('keys: swallow hook thread failed: {!r}'.format(ex))
+        speech.log_line(f'keys: swallow hook thread failed: {ex!r}')
     finally:
         # A failed message loop must not leave a hook blocking all input.
         if _hook_handle:
@@ -1278,7 +1266,7 @@ def _chord(intent):
         else:
             _log_route('lost: simulation pump inactive', intent)
     except Exception as ex:
-        speech.log_line('keys: chord {} failed: {!r}'.format(intent, ex))
+        speech.log_line(f'keys: chord {intent} failed: {ex!r}')
 
 
 def _toggle_logging():
@@ -1290,7 +1278,7 @@ def _toggle_logging():
         row = next(item for item in menu.ROWS if item.key == 'logging')
         menu._change(row, 1)
     except Exception as ex:
-        speech.log_line('keys: logging toggle failed: {!r}'.format(ex))
+        speech.log_line(f'keys: logging toggle failed: {ex!r}')
         return False
     speech.speak(
         '{}: {}'.format(lang.t('logging'), lang.t('on') if speech.log_enabled else lang.t('off')),
@@ -1363,7 +1351,7 @@ def _switch_household_sim(index, epoch):
         client = manager.get_first_client() if manager is not None else None
         sims = list(client.selectable_sims) if client is not None else []
     except Exception as ex:
-        speech.log_line('keys: household lookup failed: {!r}'.format(ex))
+        speech.log_line(f'keys: household lookup failed: {ex!r}')
         sims = []
     if not 1 <= index <= len(sims):
         speech.speak(lang.t('sim unavailable'), explicit=True)
@@ -1513,7 +1501,7 @@ def _log_fire(intent, source):
     throttled to one per second, which hides a double or a lost press;
     this one is not. source: edge (the hook saw the press), hook (the
     hook's key state), held (Windows' key state) or tap (a press bit)."""
-    speech.log_line('keys: chord {} fired ({})'.format(intent, source))
+    speech.log_line(f'keys: chord {intent} fired ({source})')
 
 
 def _key_reader(user32):
@@ -1530,7 +1518,7 @@ def _key_reader(user32):
             reader.restype = ctypes.c_short
             return reader
     except Exception as ex:
-        speech.log_line('keys: GIL-holding key reader unavailable ({!r})'.format(ex))
+        speech.log_line(f'keys: GIL-holding key reader unavailable ({ex!r})')
     return user32.GetAsyncKeyState
 
 
@@ -1587,7 +1575,7 @@ def _loop():
                     )
                 for vk in plain:
                     if was_down.get(('plain', vk), False):
-                        _send('A11y|keyup|{}'.format(vk))
+                        _send(f'A11y|keyup|{vk}')
                 was_down.clear()
                 pressed_at.clear()
                 last_fire.clear()
@@ -1613,7 +1601,7 @@ def _loop():
 
                     pump.post(_announce_ui_settings)
                 except Exception as ex:
-                    speech.log_line('keys: settings heartbeat failed: {!r}'.format(ex))
+                    speech.log_line(f'keys: settings heartbeat failed: {ex!r}')
                 last_lease = now
             # Snapshots first (the swallow snapshot takes a lock and may
             # wait), then the modifiers and every key back to back through
@@ -1728,9 +1716,7 @@ def _loop():
                     and now - chord_seen_at < 0.5
                 ):
                     speech.log_line(
-                        'keys: trace {} press read with Ctrl+Alt up (held after the read: {})'.format(
-                            CHORD_NAMES.get(vk, hex(vk)), int(chord_end)
-                        )
+                        f'keys: trace {CHORD_NAMES.get(vk, hex(vk))} press read with Ctrl+Alt up (held after the read: {int(chord_end)})'
                     )
                 # A fresh tap/observed hook edge can recover a stale held bit,
                 # but the held bit alone cannot start a second shortcut.
@@ -1789,7 +1775,7 @@ def _loop():
                     # a new physical press. Never synthesize another click.
                     if not held:
                         _opening_keys.discard(vk)
-                        _send('A11y|keyup|{}'.format(vk))
+                        _send(f'A11y|keyup|{vk}')
                     was_down[key] = held
                     continue
                 if chord:
@@ -1799,7 +1785,7 @@ def _loop():
                     # leave GetAsyncKeyState stale, so a live hook wins.
                     chord_held = bool(_hook_state[vk]) if hook_alive and vk in _hook_state else held
                     if not chord_held and (was_down.get(key, False) or tapped):
-                        _send('A11y|keyup|{}'.format(vk))
+                        _send(f'A11y|keyup|{vk}')
                     was_down[key] = chord_held
                     continue
                 if down and not was_down.get(key, False):
@@ -1816,10 +1802,10 @@ def _loop():
                     _send(message)
                     last_fire[key] = now
                 if not held and (was_down.get(key, False) or tapped):
-                    _send('A11y|keyup|{}'.format(vk))
+                    _send(f'A11y|keyup|{vk}')
                 was_down[key] = held
         except Exception as ex:
-            speech.log_line('keys: poll error: {!r}'.format(ex))
+            speech.log_line(f'keys: poll error: {ex!r}')
             time.sleep(1.0)
         time.sleep(_POLL_SECONDS)
     speech.log_line('keys: polling stopped')
@@ -1873,7 +1859,7 @@ def a11y_keys(mode: str = 'on', _connection=None):
     for message, (label, combos) in BINDINGS.items():
         output('   {}: {}'.format(label, ' or '.join(_describe(vk, alt) for (vk, alt) in combos)))
     for vk, (intent, _rep) in CHORDS.items():
-        output('   {}: Ctrl+Alt+{}'.format(intent, CHORD_NAMES.get(vk, hex(vk))))
+        output(f'   {intent}: Ctrl+Alt+{CHORD_NAMES.get(vk, hex(vk))}')
     output('   needs: Ctrl+Shift+N; accessibility menu: Ctrl+Alt+H')
     speech.speak('Keyboard navigation on.', explicit=True)
     return True
@@ -1909,4 +1895,4 @@ try:
     else:
         speech.log_line('keys: keyboard navigation disabled by settings')
 except Exception as _ex:
-    speech.log_line('keys: autostart failed: {!r}'.format(_ex))
+    speech.log_line(f'keys: autostart failed: {_ex!r}')

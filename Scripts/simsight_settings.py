@@ -297,7 +297,7 @@ def _parse_bool(raw, option):
         return True
     if low in _FALSE_WORDS:
         return False
-    load_errors.append('"{}" is not on/off for {}; keeping default'.format(raw, option))
+    load_errors.append(f'"{raw}" is not on/off for {option}; keeping default')
     return None
 
 
@@ -308,9 +308,7 @@ def _apply_value(key, raw):
         # An accidentally indented line below this option was glued onto its
         # value by INI continuation rules; recover the first line and say so.
         first = raw.splitlines()[0].strip()
-        load_errors.append(
-            '{} had an extra indented line glued to it; using "{}"'.format(key, first)
-        )
+        load_errors.append(f'{key} had an extra indented line glued to it; using "{first}"')
         raw = first
     if not raw:
         return
@@ -324,7 +322,7 @@ def _apply_value(key, raw):
         if name in SCANNER_RANGES:
             _stored[key] = name
         else:
-            load_errors.append('unknown scanner range "{}"; keeping default'.format(raw))
+            load_errors.append(f'unknown scanner range "{raw}"; keeping default')
         return
     if key == 'speech_mode':
         mode = raw.lower().replace('-', '_').replace(' ', '_')
@@ -336,27 +334,27 @@ def _apply_value(key, raw):
         if mode in ('hover', 'manual', 'beeps', 'off'):
             _stored[key] = mode
         else:
-            load_errors.append('unknown speech mode "{}"; keeping default'.format(raw))
+            load_errors.append(f'unknown speech mode "{raw}"; keeping default')
         return
     if key == 'braille_mode':
         mode = raw.lower()
         if mode in ('concise', 'full', 'only', 'off'):
             _stored[key] = mode
         else:
-            load_errors.append('unknown braille mode "{}"; keeping default'.format(raw))
+            load_errors.append(f'unknown braille mode "{raw}"; keeping default')
         return
     if key == 'verbosity':
         level = raw.lower()
         if level in ('full', 'brief'):
             _stored[key] = level
         else:
-            load_errors.append('unknown verbosity "{}"; keeping default'.format(raw))
+            load_errors.append(f'unknown verbosity "{raw}"; keeping default')
         return
     if key == 'tooltip_delay':
         try:
             value = float(raw)
         except ValueError:
-            load_errors.append('tooltip delay must be a number of seconds, not "{}"'.format(raw))
+            load_errors.append(f'tooltip delay must be a number of seconds, not "{raw}"')
             return
         _stored[key] = max(0.0, min(10.0, value))
         return
@@ -364,7 +362,7 @@ def _apply_value(key, raw):
         try:
             value = int(raw)
         except ValueError:
-            load_errors.append('{} must be a number, not "{}"'.format(key, raw))
+            load_errors.append(f'{key} must be a number, not "{raw}"')
             return
         if key == 'sapi_rate':
             _stored[key] = max(-10, min(10, value))
@@ -386,16 +384,16 @@ def _load_cfg():
         empty_lines_in_values=False,
     )
     try:
-        with open(PATH, 'r', encoding='utf-8') as handle:
+        with open(PATH, encoding='utf-8') as handle:
             try:
                 parser.read_file(handle)
             except configparser.ParsingError as ex:
                 for lineno, line in getattr(ex, 'errors', []):
                     load_errors.append(
-                        'line {} is not "option = value" and was skipped: {}'.format(lineno, line)
+                        f'line {lineno} is not "option = value" and was skipped: {line}'
                     )
     except Exception as ex:
-        load_errors.append('settings file unreadable ({!r}); using defaults'.format(ex))
+        load_errors.append(f'settings file unreadable ({ex!r}); using defaults')
         return
     normalized = {}
     for section in parser.sections():
@@ -430,7 +428,7 @@ def _fmt_seconds(value):
         return str(value)
     if number == int(number):
         return str(int(number))
-    return '{:g}'.format(number)
+    return f'{number:g}'
 
 
 def _render(stored):
@@ -495,7 +493,7 @@ def _save():
         try:
             import simsight_speech as speech
 
-            speech.log_line('settings: save failed: {!r}'.format(ex))
+            speech.log_line(f'settings: save failed: {ex!r}')
         except Exception:
             pass
         return False

@@ -51,9 +51,7 @@ def answer_picker(dialog, picked_results):
         maximum = None
     if len(picked) < minimum or (maximum is not None and maximum > 0 and len(picked) > maximum):
         speech.log_line(
-            'native: {} picked is outside dialog {} limits ({} to {})'.format(
-                len(picked), dialog.dialog_id, minimum, maximum
-            )
+            f'native: {len(picked)} picked is outside dialog {dialog.dialog_id} limits ({minimum} to {maximum})'
         )
         return False
     try:
@@ -61,16 +59,14 @@ def answer_picker(dialog, picked_results):
 
         service = _service()
         if not service.dialog_pick_result(dialog.dialog_id, picked_results=picked):
-            speech.log_line(
-                'native: dialog {} refused the pick {}'.format(dialog.dialog_id, picked)
-            )
+            speech.log_line(f'native: dialog {dialog.dialog_id} refused the pick {picked}')
             return False
         if not service.dialog_respond(dialog.dialog_id, ButtonType.DIALOG_RESPONSE_OK):
-            speech.log_line('native: dialog {} refused OK'.format(dialog.dialog_id))
+            speech.log_line(f'native: dialog {dialog.dialog_id} refused OK')
             return False
         return True
     except Exception as ex:
-        speech.log_line('native: answering dialog {} failed ({!r})'.format(dialog.dialog_id, ex))
+        speech.log_line(f'native: answering dialog {dialog.dialog_id} failed ({ex!r})')
         return False
 
 
@@ -88,7 +84,7 @@ def show_reason(tooltip, sim):
         notification.show_dialog()
         return True
     except Exception as ex:
-        speech.log_line('native: reason unavailable ({!r})'.format(ex))
+        speech.log_line(f'native: reason unavailable ({ex!r})')
         return False
 
 

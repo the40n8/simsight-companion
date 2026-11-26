@@ -81,14 +81,14 @@ def _buff_fields(buff):
     ):
         value = getattr(buff, field, None)
         if value:
-            parts.append('{}={}'.format(field, _short(value)))
+            parts.append(f'{field}={_short(value)}')
     interactions = getattr(buff, 'interactions', None)
     if interactions:
         try:
             names = [_name(a) for a in getattr(interactions, 'interaction_items', ()) or ()]
         except Exception:
             names = []
-        parts.append('interactions={}'.format(names or _short(interactions)))
+        parts.append(f'interactions={names or _short(interactions)}')
     return ', '.join(parts) or 'no presentation fields'
 
 
@@ -100,9 +100,9 @@ def _short(value):
 def _describe_symptom(symptom):
     lines = []
     for buff in getattr(symptom, 'associated_buffs', ()) or ():
-        lines.append('    buff {}: {}'.format(_name(buff), _buff_fields(buff)))
+        lines.append(f'    buff {_name(buff)}: {_buff_fields(buff)}')
     for stat in getattr(symptom, 'associated_statistics', ()) or ():
-        lines.append('    statistic {}'.format(_name(stat)))
+        lines.append(f'    statistic {_name(stat)}')
     return lines
 
 
@@ -114,7 +114,7 @@ def _wrap_method(cls, name, after):
         try:
             after(self, args, kwargs)
         except Exception as ex:
-            _log('{}.{} log failed: {!r}'.format(cls.__name__, name, ex))
+            _log(f'{cls.__name__}.{name} log failed: {ex!r}')
         return result
 
     wrapper.__name__ = original.__name__
@@ -129,7 +129,7 @@ def _wrap_classmethod(cls, name, after):
         try:
             after(klass, args, kwargs)
         except Exception as ex:
-            _log('{}.{} log failed: {!r}'.format(cls.__name__, name, ex))
+            _log(f'{cls.__name__}.{name} log failed: {ex!r}')
         return result
 
     wrapper.__name__ = original.__name__
@@ -150,16 +150,16 @@ def _install_sickness():
             )
         )
         for symptom in getattr(klass, 'symptoms', ()) or ():
-            _log('  symptom {}'.format(_name(symptom)))
+            _log(f'  symptom {_name(symptom)}')
             for line in _describe_symptom(symptom):
                 _log(line)
         for buff in getattr(klass, 'associated_buffs', ()) or ():
-            _log('  sickness buff {}: {}'.format(_name(buff), _buff_fields(buff)))
+            _log(f'  sickness buff {_name(buff)}: {_buff_fields(buff)}')
         stat = getattr(klass, 'diagnosis_stat', None)
         _log('  diagnosis stat {} visible={}'.format(_name(stat), getattr(stat, 'visible', None)))
         try:
             order = [_name(s) for s in klass.get_ordered_symptoms()]
-            _log('  discovery order {}'.format(order))
+            _log(f'  discovery order {order}')
         except Exception:
             pass
         _log(
@@ -213,7 +213,7 @@ def _install_cues():
     def headline(klass, args, kwargs):
         info = args[0] if args else kwargs.get('sim_info')
         if _sick(info):
-            _log('headline {} on {}: value={}'.format(_name(klass), _who(info), args[1:2]))
+            _log(f'headline {_name(klass)} on {_who(info)}: value={args[1:2]}')
 
     _wrap_classmethod(Headline, 'send_headline_message', headline)
 
@@ -243,11 +243,7 @@ def _install_patients():
         state = args[0] if args else None
         patient = situation.get_patient() if hasattr(situation, 'get_patient') else None
         _log(
-            'patient situation {} for {}: state {}'.format(
-                _name(type(situation)),
-                _who(patient),
-                _name(type(state)) if state is not None else None,
-            )
+            f'patient situation {_name(type(situation))} for {_who(patient)}: state {_name(type(state)) if state is not None else None}'
         )
 
     _wrap_method(PatientSituationBase, '_change_state', changed)
@@ -262,11 +258,11 @@ def install():
         try:
             part()
         except Exception as ex:
-            speech.log_line('doctor: {} unavailable ({!r})'.format(part.__name__, ex))
+            speech.log_line(f'doctor: {part.__name__} unavailable ({ex!r})')
     return True
 
 
 try:
     install()
 except Exception as _install_ex:
-    speech.log_line('doctor: install failed: {!r}'.format(_install_ex))
+    speech.log_line(f'doctor: install failed: {_install_ex!r}')

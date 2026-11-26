@@ -88,7 +88,7 @@ MENU_KEYS = {
 }
 
 
-class Entry(object):
+class Entry:
     __slots__ = (
         'obj_id',
         'is_sim',
@@ -204,7 +204,7 @@ _loc_lock = threading.Lock()
 _announce_seq = [0]
 
 
-class _Pending(object):
+class _Pending:
     def __init__(self, parts, seq):
         self.parts = parts
         self.seq = seq
@@ -223,7 +223,7 @@ def _send_ui(name):
         distributor.system.Distributor.instance().add_op_with_no_owner(op)
         return True
     except Exception as ex:
-        speech.log_line('scanner: send {} failed: {!r}'.format(name, ex))
+        speech.log_line(f'scanner: send {name} failed: {ex!r}')
         return False
 
 
@@ -271,7 +271,7 @@ def _speak_parts(parts):
             pending.timer.daemon = True
             pending.timer.start()
     for key in need_send:
-        _send_ui('A11y|loc|{}|{}'.format(key, key))
+        _send_ui(f'A11y|loc|{key}|{key}')
     if not pending.missing:
         _finish(pending)
 
@@ -288,7 +288,7 @@ def a11y_loc_enc(text: str = '', _connection=None):
         key = int(head)
         resolved = _decode_percent(body).strip()
     except Exception as ex:
-        speech.log_line('scanner: bad loc reply {!r}: {!r}'.format(text[:60], ex))
+        speech.log_line(f'scanner: bad loc reply {text[:60]!r}: {ex!r}')
         return True
     ready = []
     with _loc_lock:
@@ -681,7 +681,7 @@ def cycle_range(delta):
     index = names.index(_range()[0])
     name = names[(index + (1 if delta > 0 else -1)) % len(names)]
     settings.set('scanner_range', name)
-    speech.log_line('scanner: range {}'.format(name))
+    speech.log_line(f'scanner: range {name}')
     try:
         import services
 
@@ -692,7 +692,7 @@ def cycle_range(delta):
         speech.speak(lang.t('no lot loaded'), explicit=True)
         return False
     found = _scan(preserve=True)
-    parts = ['Scanner range: {}. '.format(name)]
+    parts = [f'Scanner range: {name}. ']
     parts.extend(_tree_parts() if found else ['Nothing in this range. '])
     _speak_parts(parts)
     return True
@@ -704,7 +704,7 @@ def apply_range_setting():
         if enabled() and _groups:
             _scan(preserve=True)
     except Exception as ex:
-        speech.log_line('scanner: range refresh failed: {!r}'.format(ex))
+        speech.log_line(f'scanner: range refresh failed: {ex!r}')
 
 
 def _scan(preserve=False):
@@ -742,7 +742,7 @@ def _scan(preserve=False):
             if other is not sim:
                 sims.append(other)
     except Exception as ex:
-        speech.log_line('scanner: sim listing failed: {!r}'.format(ex))
+        speech.log_line(f'scanner: sim listing failed: {ex!r}')
     roles = _patient_roles()
     for other in sims:
         try:
@@ -751,7 +751,7 @@ def _scan(preserve=False):
             entry.role = roles.get(other.id, '')
             _by_group.setdefault(group, []).append(entry)
         except Exception as ex:
-            speech.log_line('scanner: sim entry failed: {!r}'.format(ex))
+            speech.log_line(f'scanner: sim entry failed: {ex!r}')
     count = 0
     examined = 0
     in_range = 0
@@ -759,7 +759,7 @@ def _scan(preserve=False):
     try:
         objects = list(services.object_manager().get_valid_objects_gen())
     except Exception as ex:
-        speech.log_line('scanner: object listing failed: {!r}'.format(ex))
+        speech.log_line(f'scanner: object listing failed: {ex!r}')
         objects = []
     limit = _range_limit()
     candidates = []
@@ -829,14 +829,11 @@ def _scan(preserve=False):
     _apply_range()
     _groups = [key for key in (YOURSELF, SIMS, OBJECTS) if _by_group.get(key)]
     summary = ' '.join(
-        '{}:{}/{}'.format(key, len(_by_group[key]), len(_subs_in(_by_group[key])))
-        for key in _groups
+        f'{key}:{len(_by_group[key])}/{len(_subs_in(_by_group[key]))}' for key in _groups
     )
     if summary != _last_summary or not preserve:
         speech.log_line(
-            'scanner: {} sims, {} objects, {} categories (items/subcategories): {}'.format(
-                len(_by_group.get(SIMS, ())), count, len(_groups), summary
-            )
+            f'scanner: {len(_by_group.get(SIMS, ()))} sims, {count} objects, {len(_groups)} categories (items/subcategories): {summary}'
         )
         _last_summary = summary
     if not preserve:
@@ -1096,7 +1093,7 @@ def _start_refresh():
             # The previous zone may already have destroyed its timeline.
             pass
 
-    class RefreshOwner(object):
+    class RefreshOwner:
         pass
 
     _refresh_owner = RefreshOwner()
@@ -1370,23 +1367,12 @@ def _do_open():
             lot_id = 0
         first = (entry.first_name or '').replace('|', ' ')
         sent = _send_ui(
-            'A11y|pick|{}|{}|{}|{}|{:.3f}|{:.3f}|{:.3f}|{}'.format(
-                obj.id,
-                int(pick_type),
-                lot_id,
-                first,
-                float(pos.x),
-                float(pos.y),
-                float(pos.z),
-                level,
-            )
+            f'A11y|pick|{obj.id}|{int(pick_type)}|{lot_id}|{first}|{float(pos.x):.3f}|{float(pos.y):.3f}|{float(pos.z):.3f}|{level}'
         )
     except Exception as ex:
-        speech.log_line('scanner: open menu failed: {!r}'.format(ex))
+        speech.log_line(f'scanner: open menu failed: {ex!r}')
         sent = False
-    speech.log_line(
-        'scanner: menu requested for {} (sim={}) sent={}'.format(entry.obj_id, entry.is_sim, sent)
-    )
+    speech.log_line(f'scanner: menu requested for {entry.obj_id} (sim={entry.is_sim}) sent={sent}')
 
 
 @sims4.commands.Command(
@@ -1425,7 +1411,7 @@ def _dispatch(intent):
     elif intent in ('scopeprev', 'scopenext'):
         cycle_range(1 if intent == 'scopenext' else -1)
     else:
-        speech.log_line('scanner: unknown intent {!r}'.format(intent))
+        speech.log_line(f'scanner: unknown intent {intent!r}')
 
 
 def on_key(intent, on_simulation_thread=False):
@@ -1449,7 +1435,7 @@ def on_key(intent, on_simulation_thread=False):
 
             keys._send(MENU_KEYS[intent])
         except Exception as ex:
-            speech.log_line('scanner: menu key failed: {!r}'.format(ex))
+            speech.log_line(f'scanner: menu key failed: {ex!r}')
         return
     if on_simulation_thread:
         # The world-chord callback has already crossed onto the simulation.
@@ -1468,7 +1454,7 @@ def _log_route(reason, intent):
     now = time.monotonic()
     if now - _route_logged.get(reason, 0.0) >= 1.0:
         _route_logged[reason] = now
-        speech.log_line('scanner: chord {} {}'.format(intent, reason))
+        speech.log_line(f'scanner: chord {intent} {reason}')
 
 
 def note_menu_open():
@@ -1512,9 +1498,7 @@ def a11y_scan(action: str = 'rescan', _connection=None):
         output('simsight: scanner is off (cfg [features] scanner)')
         return True
     _dispatch(action.lower())
-    output(
-        'simsight: scanner {} -> {} categories, pump {}'.format(action, len(_groups), pump.status())
-    )
+    output(f'simsight: scanner {action} -> {len(_groups)} categories, pump {pump.status()}')
     return True
 
 
@@ -1548,7 +1532,7 @@ def _install_zone_hook():
         try:
             _start_refresh()
         except Exception as ex:
-            speech.log_line('scanner: refresh alarm failed: {!r}'.format(ex))
+            speech.log_line(f'scanner: refresh alarm failed: {ex!r}')
         with _loc_lock:
             _loc_cache.clear()
             _loc_waiting.clear()
@@ -1564,7 +1548,7 @@ def _install_zone_hook():
 try:
     _install_zone_hook()
 except Exception as _zone_ex:
-    speech.log_line('scanner: zone hook install failed: {!r}'.format(_zone_ex))
+    speech.log_line(f'scanner: zone hook install failed: {_zone_ex!r}')
 
 
 # Install only the remaining local extensions after module initialization,
@@ -1575,4 +1559,4 @@ try:
 
     simsight_plus_core.post(simsight_extensions.install)
 except Exception as _extensions_error:
-    speech.log_line('local extensions could not be queued: {!r}'.format(_extensions_error))
+    speech.log_line(f'local extensions could not be queued: {_extensions_error!r}')

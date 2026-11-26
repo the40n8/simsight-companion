@@ -66,7 +66,7 @@ def _selected_kind():
             if tag_name in tags:
                 return item, details
     except Exception as ex:
-        _log('selected chair classification failed: {!r}'.format(ex))
+        _log(f'selected chair classification failed: {ex!r}')
     return None
 
 
@@ -172,7 +172,7 @@ def fit_parts(frame, with_facing=True, objects=None):
         try:
             parts.extend(_hint_parts(frame))
         except Exception as ex:
-            _log('announcement failed: {!r}'.format(ex))
+            _log(f'announcement failed: {ex!r}')
     return parts
 
 

@@ -109,19 +109,13 @@ def describe_lot():
     rooms, frame = _rooms(), build.frame()
     all_cells = set().union(*(_room_cells(r) for r in rooms)) if rooms else set()
     buildings = _components(all_cells)
-    parts = ['Lot {} by {} metres.'.format(frame.width, frame.depth)]
+    parts = [f'Lot {frame.width} by {frame.depth} metres.']
     for number, cells in enumerate(buildings, 1):
         xs, zs = [p[0] for p in cells], [p[1] for p in cells]
         box = (min(xs), min(zs), max(xs) + 1, max(zs) + 1)
-        label = 'Main building' if number == 1 else 'Building {}'.format(number)
+        label = 'Main building' if number == 1 else f'Building {number}'
         parts.append(
-            '{} {}, {}, footprint {} by {} metres.'.format(
-                label,
-                _position(box, frame.width, frame.depth),
-                _cells_shape(cells),
-                box[2] - box[0],
-                box[3] - box[1],
-            )
+            f'{label} {_position(box, frame.width, frame.depth)}, {_cells_shape(cells)}, footprint {box[2] - box[0]} by {box[3] - box[1]} metres.'
         )
     pool, exterior_floor = set(), set()
     for i in range(frame.width):
@@ -139,18 +133,14 @@ def describe_lot():
             xs, zs = [p[0] for p in cells], [p[1] for p in cells]
             box = (min(xs), min(zs), max(xs) + 1, max(zs) + 1)
             parts.append(
-                'Pool {}, approximately {} by {} metres.'.format(
-                    _position(box, frame.width, frame.depth), box[2] - box[0], box[3] - box[1]
-                )
+                f'Pool {_position(box, frame.width, frame.depth)}, approximately {box[2] - box[0]} by {box[3] - box[1]} metres.'
             )
     if exterior_floor:
         for cells in _components(exterior_floor)[:4]:
             xs, zs = [p[0] for p in cells], [p[1] for p in cells]
             box = (min(xs), min(zs), max(xs) + 1, max(zs) + 1)
             parts.append(
-                'Possible patio, porch, deck or path {}, {} square metres; exterior flooring alone cannot distinguish its purpose.'.format(
-                    _position(box, frame.width, frame.depth), len(cells)
-                )
+                f'Possible patio, porch, deck or path {_position(box, frame.width, frame.depth)}, {len(cells)} square metres; exterior flooring alone cannot distinguish its purpose.'
             )
     plants = []
     for obj in services.object_manager().values():
@@ -166,9 +156,7 @@ def describe_lot():
         xs, zs = [p[0] for p in plants], [p[1] for p in plants]
         box = (min(xs), min(zs), max(xs) + 1, max(zs) + 1)
         parts.append(
-            'Possible garden or landscaped plant cluster {}, {} detected plants.'.format(
-                _position(box, frame.width, frame.depth), len(plants)
-            )
+            f'Possible garden or landscaped plant cluster {_position(box, frame.width, frame.depth)}, {len(plants)} detected plants.'
         )
     if not buildings:
         parts.append('No enclosed building footprint detected.')
@@ -244,15 +232,15 @@ def _doors(room, by_id, frame):
 def _room_text(room, all_rooms, frame):
     x1, z1, x2, z2 = _box(room)
     by_id = {(r.rid, r.level): r.name for r in all_rooms}
-    text = '{}, {}, {} by {} metres'.format(room.name, _shape(room), x2 - x1, z2 - z1)
+    text = f'{room.name}, {_shape(room)}, {x2 - x1} by {z2 - z1} metres'
     doors = _doors(room, by_id, frame)
     if doors:
-        text += '. Doors: ' + '; '.join('{} wall to {}'.format(side, dest) for side, dest in doors)
+        text += '. Doors: ' + '; '.join(f'{side} wall to {dest}' for side, dest in doors)
     major = []
     for obj in room.objects:
         kind = _kind(obj)
         if kind:
-            major.append('{} on the {} side'.format(kind, _side(room, obj)))
+            major.append(f'{kind} on the {_side(room, obj)} side')
     if major:
         text += '. ' + '; '.join(major[:12])
     return text + '.'
@@ -275,17 +263,13 @@ def describe_build():
         max(b[2] for b in boxes),
         max(b[3] for b in boxes),
     )
-    summary = (
-        '{} floors, {} rooms. Overall enclosed footprint approximately {} by {} metres.'.format(
-            len(levels), len(rooms), house[2] - house[0], house[3] - house[1]
-        )
-    )
+    summary = f'{len(levels)} floors, {len(rooms)} rooms. Overall enclosed footprint approximately {house[2] - house[0]} by {house[3] - house[1]} metres.'
     rows = []
     for level in levels:
         floor_rooms = [r for r in rooms if r.level == level]
         rows.append(
             (
-                'Floor {}'.format(level),
+                f'Floor {level}',
                 '{} rooms: {}.'.format(len(floor_rooms), ', '.join(r.name for r in floor_rooms)),
                 floor_rooms,
             )
@@ -294,7 +278,7 @@ def describe_build():
     def floor_chosen(floor_rooms):
         rrows = [(r.name, _room_text(r, rooms, frame), r) for r in floor_rooms]
         core.choose(
-            'Rooms on floor {}'.format(floor_rooms[0].level),
+            f'Rooms on floor {floor_rooms[0].level}',
             'Choose a room for its geometry, doors and major furniture.',
             rrows,
             lambda r: core.speak(_room_text(r, rooms, frame)),
@@ -336,9 +320,7 @@ def _target_rows():
     rows += [
         (
             r.name,
-            '{}, {} by {} metres.'.format(
-                _shape(r), _box(r)[2] - _box(r)[0], _box(r)[3] - _box(r)[1]
-            ),
+            f'{_shape(r)}, {_box(r)[2] - _box(r)[0]} by {_box(r)[3] - _box(r)[1]} metres.',
             (_box(r), r.level, [r.name], _shape(r) in ('rectangular', 'roughly square')),
         )
         for r in top_rooms
@@ -357,11 +339,7 @@ def roof_builder():
     def target_chosen(target):
         box, level, names, safe = target
         if not safe:
-            _log(
-                'roof refused: non-rectangular target level {} rooms {} box {}'.format(
-                    level, names, box
-                )
-            )
+            _log(f'roof refused: non-rectangular target level {level} rooms {names} box {box}')
             core.speak(
                 'This footprint is not rectangular or square. Automatic L and T shaped roofing is disabled until it has been tested. Nothing was placed.'
             )
@@ -444,7 +422,7 @@ def roof_builder_for_box(box, level, names):
     box = tuple(box)
     names = list(names)
     width, depth = box[2] - box[0], box[3] - box[1]
-    _log('targeted roof chooser level={} box={} rooms={}'.format(level, box, names))
+    _log(f'targeted roof chooser level={level} box={box} rooms={names}')
     kinds = [
         ('Flat roof', 'Uses the completed room ceiling as the roof deck.', 'flat'),
         ('Gabled roof', 'Triangular-prism roof with a ridge along the longest side.', 'gable'),
@@ -506,9 +484,7 @@ def _choose_roof_style(kind, box, level, names, overhang=0):
         matched = [it for it in items if any(w in str(it[0]).lower() for w in words)]
         choices = matched or items
         _log(
-            'roof catalog kind={} entries={}'.format(
-                kind, [(str(name), price, colors) for name, price, colors in choices]
-            )
+            f'roof catalog kind={kind} entries={[(str(name), price, colors) for name, price, colors in choices]}'
         )
         rows = [
             (
@@ -529,9 +505,7 @@ def _choose_roof_style(kind, box, level, names, overhang=0):
             draw._state['style'] = (4, '', name)
             _plans.append((kind, box, level, tuple(names), name))
             _log(
-                'roof request kind={} style={!r} level={} box={} overhang={} rooms={}'.format(
-                    kind, name, level, box, overhang, names
-                )
+                f'roof request kind={kind} style={name!r} level={level} box={box} overhang={overhang} rooms={names}'
             )
             core.speak(
                 'Placing {} over {}. Please wait and let go of Alt.'.format(name, ', '.join(names))
@@ -542,8 +516,8 @@ def _choose_roof_style(kind, box, level, names, overhang=0):
 
         core.post(
             core.choose,
-            '{} styles'.format(kind.capitalize()),
-            '{} matching styles.'.format(len(rows)),
+            f'{kind.capitalize()} styles',
+            f'{len(rows)} matching styles.',
             rows,
             chosen,
             'build',
@@ -585,8 +559,8 @@ def chimney_assistant():
     for room, obj in fireplaces:
         rows.append(
             (
-                'Fireplace in {}'.format(room.name),
-                'On the {} side; roof point directly above it.'.format(_side(room, obj)),
+                f'Fireplace in {room.name}',
+                f'On the {_side(room, obj)} side; roof point directly above it.',
                 (room, obj),
             )
         )
@@ -608,7 +582,7 @@ def chimney_assistant():
             moved = grid.focus_position(obj.position, roof_level)
         except Exception as ex:
             moved = False
-            _log('chimney cursor move failed: {!r}'.format(ex))
+            _log(f'chimney cursor move failed: {ex!r}')
         _log(
             'chimney target fireplace={} room={!r} roof_level={} tile=({}, {}) moved={}'.format(
                 getattr(obj, 'id', '?'),
@@ -625,7 +599,7 @@ def chimney_assistant():
                 room.name,
                 int(round(east)),
                 int(round(north)),
-                'The Build cursor is positioned there on roof level {}.'.format(roof_level)
+                f'The Build cursor is positioned there on roof level {roof_level}.'
                 if moved
                 else 'The cursor could not be moved, so nothing was changed.',
             )

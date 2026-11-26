@@ -67,7 +67,7 @@ def install():
             try:
                 _note(dialog_msg)
             except Exception as ex:
-                _log('notification skipped: {!r}'.format(ex))
+                _log(f'notification skipped: {ex!r}')
             return distribute(self, dialog_type, dialog_msg, **kwargs)
 
         distribute_dialog._simsight_phone = True
@@ -158,7 +158,7 @@ def _sim_name(sim_id):
 
         info = services.sim_info_manager().get(int(sim_id))
         if info is not None:
-            return '{} {}'.format(info.first_name, info.last_name).strip()
+            return f'{info.first_name} {info.last_name}'.strip()
     except Exception:
         pass
     return ''
@@ -215,7 +215,7 @@ def _msg_rows(msg):
             entry['description'] = (
                 '§{} · {}'.format(price, entry['description'])
                 if entry['description']
-                else '§{}'.format(price)
+                else f'§{price}'
             )
         if not enabled and base.HasField('tooltip'):
             entry['reason'] = _text(base.tooltip)
@@ -248,7 +248,7 @@ def _rows(dialog, msg=None):
                 entry['name'] = _sim_name(row.sim_id)
             out.append(entry)
         except Exception as ex:
-            _log('row skipped: {!r}'.format(ex))
+            _log(f'row skipped: {ex!r}')
     return out
 
 
@@ -305,7 +305,7 @@ def active():
         try:
             out.append(_dialog(dialog_id, live[dialog_id], msg))
         except Exception as ex:
-            _log('dialog {} unreadable: {!r}'.format(dialog_id, ex))
+            _log(f'dialog {dialog_id} unreadable: {ex!r}')
     return out
 
 
@@ -355,8 +355,6 @@ def respond(dialog_id, choice_id, row_ids, text):
         service.dialog_text_input(key, name or 'value', text)
     service.dialog_respond(key, choice)
     _log(
-        'answered {} ({}) with {} rows {}; still open: {}'.format(
-            key, type(dialog).__name__, choice, list(row_ids), service.get_dialog(key) is not None
-        )
+        f'answered {key} ({type(dialog).__name__}) with {choice} rows {list(row_ids)}; still open: {service.get_dialog(key) is not None}'
     )
     return True, ''

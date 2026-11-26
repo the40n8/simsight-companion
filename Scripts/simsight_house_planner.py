@@ -1,6 +1,5 @@
 """Configurable, conservative stacked-house plans for SimSight Plus."""
 
-import math
 import threading
 import time
 
@@ -47,7 +46,9 @@ def _client_to_screen(x, y):
 
 def _room_overview(points, level, attempt):
     """Simulation thread: widen the view without moving the room bounds."""
-    import camera, terrain, sims4.math
+    import camera
+    import terrain
+    import sims4.math
 
     xs, zs = [p[0] for p in points], [p[1] for p in points]
     cx = (min(xs) + max(xs)) / 2.0
@@ -84,9 +85,7 @@ def overview_point_and_act(
             projected = [build.project(x, z, level, height=height) for x, z in points]
             clear = all(p is not None and build._clear_of_panels(p) for p in projected)
             _log(
-                'room framing attempt={} level={} bounds={} screen={} stage={} clear={}'.format(
-                    attempt + 1, level, points, projected, build._stage_size(), clear
-                )
+                f'room framing attempt={attempt + 1} level={level} bounds={points} screen={projected} stage={build._stage_size()} clear={clear}'
             )
             if clear:
                 build.cursor_off()
@@ -115,7 +114,7 @@ def _limits():
 
         return int(build_buy.get_lowest_level_allowed()), int(build_buy.get_highest_level_allowed())
     except Exception as ex:
-        _log('floor limits unavailable: {!r}'.format(ex))
+        _log(f'floor limits unavailable: {ex!r}')
         return -1, 3
 
 
@@ -137,7 +136,7 @@ def _clean_names(text, count, level, attic=False):
     for i, name in enumerate(names):
         seen[name] = seen.get(name, 0) + 1
         if names.count(name) > 1:
-            names[i] = '{} {}'.format(name, seen[name])
+            names[i] = f'{name} {seen[name]}'
     return names
 
 
@@ -168,7 +167,7 @@ def _build_plan(width, depth, levels, layout, names_by_level):
                 _room('room', names[0], (0, 0, width, front), level),
                 _room(
                     'hall',
-                    '{} hallway'.format('Basement' if level < 0 else 'Floor {}'.format(level + 1)),
+                    '{} hallway'.format('Basement' if level < 0 else f'Floor {level + 1}'),
                     (0, front, width, front + hall),
                     level,
                 ),
@@ -181,7 +180,7 @@ def _build_plan(width, depth, levels, layout, names_by_level):
                 _room('room', names[1], (split, 0, width, front), level),
                 _room(
                     'hall',
-                    '{} hallway'.format('Basement' if level < 0 else 'Floor {}'.format(level + 1)),
+                    '{} hallway'.format('Basement' if level < 0 else f'Floor {level + 1}'),
                     (0, front, width, front + hall),
                     level,
                 ),
@@ -232,8 +231,8 @@ def _build_plan(width, depth, levels, layout, names_by_level):
         or depth
         > (frame.depth if p.side in ('north', 'south') else frame.width) - house.SETBACK - 1
     ):
-        p.problem = 'That {} by {} house does not fit this lot with the required setbacks.'.format(
-            width, depth
+        p.problem = (
+            f'That {width} by {depth} house does not fit this lot with the required setbacks.'
         )
         return p
     house._map_plan(p, frame, along)
@@ -290,7 +289,7 @@ def _place_stair_at(top, climb, level):
             build.click(screen[0])
 
         if not build.point_and_act(
-            [point], level, act, 'stacked stairs level {} attempt {}'.format(level, attempt + 1)
+            [point], level, act, f'stacked stairs level {level} attempt {attempt + 1}'
         ):
             return 'noscreen'
         time.sleep(0.5)
@@ -304,7 +303,7 @@ def _place_stair_at(top, climb, level):
             turn = True
             continue
         info = build.on_main(house._stair_info, new[0])
-        _log('stairs level {} placed {} wanted {} climb {}'.format(level, info, want, climb))
+        _log(f'stairs level {level} placed {info} wanted {want} climb {climb}')
         if info is None:
             continue
         e, n, got = info
@@ -325,7 +324,7 @@ def _stacked_stairs(top, climb):
     for stair_top, stair_climb, lower, upper in list(_pending_stairs):
         result = _place_stair_at(stair_top, stair_climb, lower)
         results.append(result)
-        _log('transition {} to {} result {}'.format(lower, upper, result))
+        _log(f'transition {lower} to {upper} result {result}')
         if result is not True:
             break
     _pending_stairs = []
@@ -347,7 +346,7 @@ def _build_with_followup(plan):
             )
         )
     except Exception as ex:
-        _log('post-build completeness failed: {!r}'.format(ex))
+        _log(f'post-build completeness failed: {ex!r}')
     if getattr(plan, '_a11y_roof_prompt', False) and complete:
         try:
             import simsight_plus_core as core
@@ -359,7 +358,7 @@ def _build_with_followup(plan):
             )
             core.post(roofs.roof_builder)
         except Exception as ex:
-            _log('roof follow-up failed: {!r}'.format(ex))
+            _log(f'roof follow-up failed: {ex!r}')
     return result
 
 
@@ -404,9 +403,7 @@ def _review(plan, description):
     core.choose(
         'Configurable stacked house',
         description
-        + ' Estimated structural cost {:,}; household funds {:,}.'.format(
-            estimate, build.funds() or 0
-        ),
+        + f' Estimated structural cost {estimate:,}; household funds {build.funds() or 0:,}.',
         rows,
         chosen,
         tag='build',
@@ -470,7 +467,7 @@ def open_planner():
                             _review(plan, desc)
                             return
                         level = levels[index]
-                        where = 'basement' if level < 0 else 'floor {}'.format(level + 1)
+                        where = 'basement' if level < 0 else f'floor {level + 1}'
                         order = (
                             'front, back'
                             if count == 2
@@ -478,7 +475,7 @@ def open_planner():
                         )
                         is_attic = attic and level == max(levels)
                         core.ask_text(
-                            'Rooms on {}'.format(where),
+                            f'Rooms on {where}',
                             'Type {} room names separated by commas, in this order: {}.{}'.format(
                                 count,
                                 order,
@@ -542,9 +539,7 @@ def open_planner():
 
     core.choose(
         'Number of stories',
-        'The game currently reports support through floor {}. Choose an above-ground count.'.format(
-            high
-        ),
+        f'The game currently reports support through floor {high}. Choose an above-ground count.',
         floor_rows,
         floors_chosen,
         tag='build',
@@ -557,12 +552,10 @@ def shaped_stair_diagnostics():
 
     def work():
         items = build.fetch_catalog(14, '', 'none') or []
-        _log('stair catalog discovery {}'.format([(str(n), p, c) for n, p, c in items]))
+        _log(f'stair catalog discovery {[(str(n), p, c) for n, p, c in items]}')
         core.post(
             core.speak,
-            'Logged {} stair catalog entries and swatch counts. No shaped, flared, L, U or spiral stair was placed.'.format(
-                len(items)
-            ),
+            f'Logged {len(items)} stair catalog entries and swatch counts. No shaped, flared, L, U or spiral stair was placed.',
         )
 
     threading.Thread(target=work, name='a11y_stair_discovery', daemon=True).start()
