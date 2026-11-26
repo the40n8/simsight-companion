@@ -41,6 +41,10 @@ The simsight.objectnames on/off choice persists via the settings file
 (`object_names` key).
 """
 
+from __future__ import annotations
+
+from typing import Any, Callable, TypeVar
+
 import services
 import sims4.commands
 from indexed_manager import CallbackTypes
@@ -49,34 +53,38 @@ from objects.hovertip import TooltipFields
 from protocolbuffers import UI_pb2 as ui_protocols
 from sims4.localization import LocalizationHelperTuning
 
+import simsight_log
 import simsight_settings as settings
 
-_speech_mod = None
+_F = TypeVar('_F')
+
+# The game's command parser converts each argument with the type named in
+# its annotation; it needs the type itself, not the name (see _game_types).
+_ARG_TYPES: dict[str, type] = {'str': str, 'int': int, 'float': float, 'bool': bool}
+
+_DIAG_MAX_OBJECTS = 8  # simsight.objdiag lists at most this many matches
 
 
-def _speech():
-    global _speech_mod
-    if _speech_mod is None:
-        try:
-            import simsight_speech as mod
-
-            _speech_mod = mod
-        except ImportError:
-            return None
-    return _speech_mod
-
-
-def _log(message):
-    mod = _speech()
-    if mod is not None:
-        mod.log_line(message)
+def _game_types(func: _F) -> _F:
+    """Annotations are strings in this module (__future__ annotations), but
+    the game's command parser calls the annotation to convert each argument.
+    Give it back the real argument types, and nothing else, as before."""
+    notes = getattr(func, '__annotations__', {})
+    func.__annotations__ = {
+        name: _ARG_TYPES[note]
+        for name, note in notes.items()
+        if name != 'return' and note in _ARG_TYPES
+    }
+    return func
 
 
-def _speak(text):
+def _speak(text: str) -> None:
     # Only used for command feedback, which must talk in every speech mode.
-    mod = _speech()
-    if mod is not None:
-        mod.speak(text, explicit=True)
+    try:
+        import simsight_speech as speech
+    except ImportError:
+        return  # no speech module: the cheat console output still answers
+    speech.speak(text, explicit=True)
 
 
 # Style 2 renders name (+ optional description) in the standard hover panel.
@@ -136,64 +144,77 @@ _EXCLUDED_AFFORDANCES = frozenset(
     )
 )
 
-_enabled = bool(settings.get('object_names', True))
-_registered = False
-_stamped = set()
+
+class _State:
+    """What this module remembers while the game runs."""
+
+    def __init__(self) -> None:
+        self.enabled = bool(settings.get('object_names', True))
+        self.registered = False  # our ON_OBJECT_ADD callback is registered
+        self.stamped: set[int] = set()  # ids of objects we gave a name
 
 
-def _is_player_affordance(sa):
+_state = _State()
+
+
+def __getattr__(name: str) -> Any:
+    # simsight_menu and simsight_narrator read `_enabled` (module attribute
+    # lookups that fail land here, PEP 562).
+    if name == '_enabled':
+        return _state.enabled
+    raise AttributeError(name)
+
+
+def _is_player_affordance(sa: Any) -> bool:
     """Mirrors the pie menu's own no-shift gate (not debug and not cheat),
     plus visibility/user-direction, minus the situational universals."""
     try:
-        if sa.debug or sa.cheat:
-            return False
-        if not sa.visible:
-            return False
-        if not sa.allow_user_directed:
-            return False
-        if sa.guid64 in _EXCLUDED_AFFORDANCES:
-            return False
-        return True
+        return not (
+            sa.debug
+            or sa.cheat
+            or not sa.visible
+            or not sa.allow_user_directed
+            or sa.guid64 in _EXCLUDED_AFFORDANCES
+        )
     except AttributeError:
         return False
 
 
-def _has_interactions(obj):
+def _has_interactions(obj: Any) -> bool:
     """True if the object offers at least one player-facing interaction.
     super_affordances() covers both the tuned list and component-provided
     affordances; None context is safe (the behavior-affordance leg guards
     on it)."""
     try:
-        for sa in obj.super_affordances():
-            if _is_player_affordance(sa):
-                return True
-    except Exception as ex:
-        _log('objectnames: affordance check failed on {}: {!r}'.format(getattr(obj, 'id', '?'), ex))
+        return any(_is_player_affordance(sa) for sa in obj.super_affordances())
+    except Exception:
+        simsight_log.error('objectnames: affordance check failed')
     return False
 
 
-def _should_stamp(obj, force=False, inventory=False):
+def _is_visible_inventory_item(obj: Any) -> bool:
+    # A visible inventory item needs a readable name even when its
+    # affordances are inventory-only. Hidden storage is not a UI item.
+    component = getattr(obj, 'inventoryitem_component', None)
+    return component is not None and not component.is_hidden and component.is_in_inventory()
+
+
+def _should_stamp(obj: Any, force: bool = False, inventory: bool = False) -> bool:
     if obj is None:
         return False
-    if not force and obj.id in _stamped:
-        return False
-    if obj.is_sim:
+    if not force and obj.id in _state.stamped:
         return False
     # Never override a tip the game already provides (gardening, crafted,
     # heirlooms, collectibles); those are richer than a bare name.
-    if obj.hover_tip:
-        return False
-    if obj.definition is None:
+    if obj.is_sim or obj.hover_tip or obj.definition is None:
         return False
     if inventory:
-        # A visible inventory item needs a readable name even when its
-        # affordances are inventory-only. Hidden storage is not a UI item.
-        component = getattr(obj, 'inventoryitem_component', None)
-        return component is not None and not component.is_hidden and component.is_in_inventory()
+        return _is_visible_inventory_item(obj)
     return _has_interactions(obj)
 
 
-def stamp(obj, force=False, inventory=False):
+def stamp(obj: Any, force: bool = False, inventory: bool = False) -> bool:
+    """Give one object a name tip; True when it got one."""
     if not _should_stamp(obj, force, inventory):
         return False
     try:
@@ -214,88 +235,95 @@ def stamp(obj, force=False, inventory=False):
             obj.hover_tip = _STYLE
             obj.add_ui_metadata('recipe_name', name)
             obj.update_ui_metadata()
-        _stamped.add(obj.id)
+        _state.stamped.add(obj.id)
         return True
-    except Exception as ex:
-        _log('objectnames: stamp failed on {}: {!r}'.format(getattr(obj, 'id', '?'), ex))
+    except Exception:
+        simsight_log.error('objectnames: stamp failed')
         return False
 
 
-def _on_object_add(obj):
-    if _enabled:
-        stamp(obj)
+def _on_object_add(obj: Any) -> None:
+    # Called by the object manager for every new object: must never raise.
+    try:
+        if _state.enabled:
+            stamp(obj)
+    except Exception:
+        simsight_log.error('objectnames: object add')
 
 
-def stamp_all(force=False):
+def _stamp_manager(manager: Any, force: bool, inventory: bool) -> int:
+    if manager is None:
+        return 0
+    return sum(1 for obj in tuple(manager.values()) if stamp(obj, force, inventory=inventory))
+
+
+def stamp_all(force: bool = False) -> int:
     """Stamp everything on the lot.
 
     `force` re-applies to objects we stamped before whose tip has since been
     cleared (a tooltip component rebuild that came up empty disables the tip
     again if our external field was not yet in place).
     """
-    count = 0
     manager = services.object_manager()
     if manager is None:
         return 0
-    for obj in tuple(manager.values()):
-        if stamp(obj, force):
-            count += 1
-    return count + stamp_inventory(force)
+    return _stamp_manager(manager, force, inventory=False) + stamp_inventory(force)
 
 
-def stamp_inventory(force=False):
+def stamp_inventory(force: bool = False) -> int:
     """Use the existing lazy tooltip path for visible inventory names too."""
-    manager = services.inventory_manager()
+    return _stamp_manager(services.inventory_manager(), force, inventory=True)
+
+
+def enable(on: bool) -> int:
+    """Turn names on (stamps the lot, returns how many) or off (returns 0)."""
+    _state.enabled = on
+    manager = services.object_manager()
     if manager is None:
         return 0
-    count = 0
-    for obj in tuple(manager.values()):
-        if stamp(obj, force, inventory=True):
-            count += 1
-    return count
+    if on:
+        if not _state.registered:
+            manager.register_callback(CallbackTypes.ON_OBJECT_ADD, _on_object_add)
+            _state.registered = True
+        return stamp_all()
+    if _state.registered:
+        manager.unregister_callback(CallbackTypes.ON_OBJECT_ADD, _on_object_add)
+        _state.registered = False
+    return 0
 
 
-def _install_inventory_hook():
+# ---------------------------------------------------------------- game hooks
+
+
+def _install_inventory_hook() -> None:
     from objects.components.inventory_item import InventoryItemComponent
 
     original = InventoryItemComponent.on_added_to_inventory
 
-    def a11y_on_added_to_inventory(self, *args, **kwargs):
+    def a11y_on_added_to_inventory(self: Any, *args: Any, **kwargs: Any) -> Any:
         result = original(self, *args, **kwargs)
         try:
-            if _enabled:
+            if _state.enabled:
                 stamp(self.owner, inventory=True)
-        except Exception as ex:
-            _log(f'objectnames: inventory name failed: {ex!r}')
+        except Exception:
+            simsight_log.error('objectnames: inventory name')
         return result
 
     InventoryItemComponent.on_added_to_inventory = a11y_on_added_to_inventory
 
 
-try:
-    _install_inventory_hook()
-except Exception as _ex:
-    _log(f'objectnames: inventory hook install failed: {_ex!r}')
+def _tooltip_needs_our_style(component: Any) -> bool:
+    owner = component.owner
+    return bool(
+        _state.enabled
+        and owner is not None
+        and owner.id in _state.stamped
+        and not owner.hover_tip
+        and component._ui_metadata_handles
+    )
 
 
-def enable(on):
-    global _enabled, _registered
-    _enabled = on
-    manager = services.object_manager()
-    if manager is None:
-        return 0
-    if on:
-        if not _registered:
-            manager.register_callback(CallbackTypes.ON_OBJECT_ADD, _on_object_add)
-            _registered = True
-        return stamp_all()
-    if _registered:
-        manager.unregister_callback(CallbackTypes.ON_OBJECT_ADD, _on_object_add)
-        _registered = False
-    return 0
-
-
-def _install_tooltip_rebuild_hook():
+def _install_tooltip_rebuild_hook() -> None:
     """After EA's rebuild: if it produced handles (which includes our merged
     external name) but chose no style, give it ours. EA styles always win;
     a rebuild that disabled the tip (no handles) is left disabled."""
@@ -303,132 +331,124 @@ def _install_tooltip_rebuild_hook():
 
     original = TooltipComponent.update_object_tooltip
 
-    def a11y_update_object_tooltip(self):
+    def a11y_update_object_tooltip(self: Any) -> Any:
         result = original(self)
         try:
-            owner = self.owner
-            if (
-                _enabled
-                and owner is not None
-                and owner.id in _stamped
-                and not owner.hover_tip
-                and self._ui_metadata_handles
-            ):
-                owner.hover_tip = _STYLE
-                owner.update_ui_metadata()
-        except Exception as ex:
-            _log(f'objectnames: rebuild hook failed: {ex!r}')
+            if _tooltip_needs_our_style(self):
+                self.owner.hover_tip = _STYLE
+                self.owner.update_ui_metadata()
+        except Exception:
+            simsight_log.error('objectnames: rebuild hook')
         return result
 
     TooltipComponent.update_object_tooltip = a11y_update_object_tooltip
 
 
-try:
-    _install_tooltip_rebuild_hook()
-except Exception as _ex:
-    _log(f'objectnames: rebuild hook install failed: {_ex!r}')
-
-
-def _install_zone_hook():
+def _install_zone_hook() -> None:
     import zone
 
     original = zone.Zone.on_loading_screen_animation_finished
 
-    def a11y_on_loading_screen_animation_finished(self, *args, **kwargs):
+    def a11y_on_loading_screen_animation_finished(self: Any, *args: Any, **kwargs: Any) -> Any:
         result = original(self, *args, **kwargs)
         try:
-            if _enabled:
+            if _state.enabled:
                 stamped = enable(True)
-                _log(f'objectnames: stamped {stamped} objects at zone load')
-        except Exception as ex:
-            _log(f'objectnames: zone-load stamp failed: {ex!r}')
+                simsight_log.line(f'objectnames: stamped {stamped} objects at zone load')
+        except Exception:
+            simsight_log.error('objectnames: zone-load stamp')
         return result
 
     zone.Zone.on_loading_screen_animation_finished = a11y_on_loading_screen_animation_finished
 
 
-try:
-    _install_zone_hook()
-except Exception as _ex:
-    _log(f'objectnames: zone hook install failed: {_ex!r}')
+def _install(install: Callable[[], None], label: str) -> None:
+    try:
+        install()
+    except Exception:
+        simsight_log.error(f'objectnames: {label} hook install')
+
+
+_install(_install_inventory_hook, 'inventory')
+_install(_install_tooltip_rebuild_hook, 'rebuild')
+_install(_install_zone_hook, 'zone')
+
+
+# ---------------------------------------------------------------- cheat commands
+
+
+def _add_tooltip_test_lines(lines: list[str], obj: Any, component: Any) -> None:
+    try:
+        from event_testing.resolver import SingleObjectResolver
+
+        resolver = SingleObjectResolver(obj)
+        lines.append(f'   tooltip_tests_pass={bool(component.tooltip_tests.run_tests(resolver))}')
+        for i, tip in enumerate(component._get_custom_tooltips()):
+            passed = bool(tip.object_tests) and bool(tip.object_tests.run_tests(resolver))
+            lines.append(f'   custom[{i}] style={tip.tooltip_style!r} tests_pass={passed}')
+    except Exception as ex:
+        # A diagnostic: the failure is the answer, shown in the console.
+        lines.append(f'   test eval failed: {ex!r}')
+
+
+def _diag_lines(obj: Any) -> list[str]:
+    """What simsight.objdiag says about one object."""
+    head = (
+        f'objdiag: {type(obj).__name__} id={obj.id} hover_tip={obj.hover_tip!r}'
+        f' stamped={obj.id in _state.stamped} interactive={_has_interactions(obj)}'
+    )
+    lines = [head]
+    component = obj.get_component(component_types.TOOLTIP_COMPONENT)
+    if component is None:
+        lines.append('   no tooltip component')
+        return lines
+    lines.append(
+        f'   hovertip_requested={component.hovertip_requested}'
+        f' handles={sorted(component._ui_metadata_handles.keys())}'
+        f' external={sorted(component._external_field_to_data.keys())}'
+    )
+    _add_tooltip_test_lines(lines, obj, component)
+    return lines
+
+
+def _objdiag(match: str, output: Any) -> None:
+    if not match:
+        output('simsight: usage simsight.objdiag <substring of tuning name>')
+        return
+    manager = services.object_manager()
+    if manager is None:
+        output('simsight: no object manager')
+        return
+    count = 0
+    for obj in tuple(manager.values()):
+        if obj.is_sim or match.lower() not in type(obj).__name__.lower():
+            continue
+        count += 1
+        for line in _diag_lines(obj):
+            simsight_log.line(line)
+            output(line)
+        if count >= _DIAG_MAX_OBJECTS:
+            break
+    output(f'simsight: objdiag matched {count} object(s)')
 
 
 @sims4.commands.Command(
     'simsight.objdiag', 'a11y.objdiag', command_type=sims4.commands.CommandType.Live
 )
-def a11y_objdiag(match: str = '', _connection=None):
+@_game_types
+def a11y_objdiag(match: str = '', _connection: Any = None) -> bool:
     """simsight.objdiag <substring of tuning name>: log tooltip state of matching
     objects (e.g. `simsight.objdiag bedDouble`)."""
-    output = sims4.commands.CheatOutput(_connection)
-    if not match:
-        output('simsight: usage simsight.objdiag <substring of tuning name>')
-        return True
-    manager = services.object_manager()
-    if manager is None:
-        output('simsight: no object manager')
-        return True
-    count = 0
-    for obj in tuple(manager.values()):
-        if obj.is_sim:
-            continue
-        cls_name = type(obj).__name__
-        if match.lower() not in cls_name.lower():
-            continue
-        count += 1
-        lines = [
-            f'objdiag: {cls_name} id={obj.id} hover_tip={obj.hover_tip!r} stamped={obj.id in _stamped} interactive={_has_interactions(obj)}'
-        ]
-        comp = obj.get_component(component_types.TOOLTIP_COMPONENT)
-        if comp is None:
-            lines.append('   no tooltip component')
-        else:
-            lines.append(
-                f'   hovertip_requested={comp.hovertip_requested} handles={sorted(comp._ui_metadata_handles.keys())} external={sorted(comp._external_field_to_data.keys())}'
-            )
-            try:
-                from event_testing.resolver import SingleObjectResolver
-
-                resolver = SingleObjectResolver(obj)
-                lines.append(
-                    f'   tooltip_tests_pass={bool(comp.tooltip_tests.run_tests(resolver))}'
-                )
-                for i, tip in enumerate(comp._get_custom_tooltips()):
-                    passed = bool(tip.object_tests) and bool(tip.object_tests.run_tests(resolver))
-                    lines.append(f'   custom[{i}] style={tip.tooltip_style!r} tests_pass={passed}')
-            except Exception as ex:
-                lines.append(f'   test eval failed: {ex!r}')
-        for line in lines:
-            _log(line)
-            output(line)
-        if count >= 8:
-            break
-    output(f'simsight: objdiag matched {count} object(s)')
+    try:
+        _objdiag(match, sims4.commands.CheatOutput(_connection))
+    except Exception:
+        simsight_log.error('objectnames: objdiag command')
     return True
 
 
-@sims4.commands.Command(
-    'simsight.objectnames', 'a11y.objectnames', command_type=sims4.commands.CommandType.Live
-)
-def a11y_objectnames(mode: str = 'on', _connection=None):
-    output = sims4.commands.CheatOutput(_connection)
-    if mode.lower() in ('redo', 'force', 'refresh'):
-        # Re-apply over anything that lost its tip after our first pass.
-        _stamped.clear()
-        again = stamp_all(force=True)
-        output(f'simsight: re-stamped {again} objects')
-        _speak(f'Re-stamped {again} objects.')
-        return True
-    if mode.lower() in ('off', 'false', '0'):
-        enable(False)
-        settings.set('object_names', False)
-        output('simsight: object hover names OFF (restart or reload lot to clear existing tips)')
-        _speak('Object hover names off.')
-        return True
-    stamped = enable(True)
-    settings.set('object_names', True)
-    output(f'simsight: object hover names ON ({stamped} objects stamped)')
-    # Report how many objects the game currently believes carry a hover tip,
-    # which is what actually drives the tooltip appearing at all.
+def _audit_hover_tips() -> tuple[int, int]:
+    """(objects with a hover tip, objects): what the game currently believes
+    carries a tip, which is what actually drives the tooltip appearing at all."""
     tipped = 0
     total = 0
     try:
@@ -440,9 +460,41 @@ def a11y_objectnames(mode: str = 'on', _connection=None):
                 total += 1
                 if obj.hover_tip:
                     tipped += 1
-    except Exception as ex:
-        _log(f'objectnames: audit failed {ex!r}')
+    except Exception:
+        simsight_log.error('objectnames: audit')
+    return tipped, total
+
+
+def _objectnames(mode: str, output: Any) -> None:
+    if mode.lower() in ('redo', 'force', 'refresh'):
+        # Re-apply over anything that lost its tip after our first pass.
+        _state.stamped.clear()
+        again = stamp_all(force=True)
+        output(f'simsight: re-stamped {again} objects')
+        _speak(f'Re-stamped {again} objects.')
+        return
+    if mode.lower() in ('off', 'false', '0'):
+        enable(False)
+        settings.set('object_names', False)
+        output('simsight: object hover names OFF (restart or reload lot to clear existing tips)')
+        _speak('Object hover names off.')
+        return
+    stamped = enable(True)
+    settings.set('object_names', True)
+    output(f'simsight: object hover names ON ({stamped} objects stamped)')
+    tipped, total = _audit_hover_tips()
     output(f'simsight: {tipped}/{total} objects currently have a hover tip')
-    _log(f'objectnames: audit {tipped}/{total} objects have hover_tip')
+    simsight_log.line(f'objectnames: audit {tipped}/{total} objects have hover_tip')
     _speak(f'Object hover names on. {stamped} objects.')
+
+
+@sims4.commands.Command(
+    'simsight.objectnames', 'a11y.objectnames', command_type=sims4.commands.CommandType.Live
+)
+@_game_types
+def a11y_objectnames(mode: str = 'on', _connection: Any = None) -> bool:
+    try:
+        _objectnames(mode, sims4.commands.CheatOutput(_connection))
+    except Exception:
+        simsight_log.error('objectnames: objectnames command')
     return True

@@ -36,26 +36,31 @@ The keyboard router provides scanner mode and equivalent Ctrl+Alt chords.
 Native menus own navigation while open.
 """
 
+from __future__ import annotations
+
+import contextlib
 import math
 import threading
 import time
+from typing import TYPE_CHECKING, Any, Callable, TypeVar
 
 import sims4.commands
 
+import simsight_availability as availability
 import simsight_buycat as buycat
 import simsight_lang as lang
+import simsight_log
 import simsight_pump as pump
 import simsight_settings as settings
 import simsight_speech as speech
-import simsight_availability as availability
 
-# v1 used these reserved reference ids with a direct server call and the
-# client discarded the reply; v2 lets the client make the request itself.
-# Kept only as a record.
-REF_OBJECT = 0xA11E5CA1
-REF_SIM = 0xA11E5CA2
+if TYPE_CHECKING:
+    # What _speak_parts says: plain text, or ('loc', string hash) for the
+    # client to resolve in the player's language.
+    Part = str | tuple[str, int]
+    # (subcategory, catalog group, tag names, buy-category flags)
+    Classification = tuple[str, str, set[str], int]
 
-MAX_DISTANCE = 40.0  # metres: the default scanner range (RANGES); Sims are always listed
 _LOC_TIMEOUT = 0.6  # seconds to wait for the client before speaking without a name
 
 SIMS = 'SIMS'
@@ -87,8 +92,23 @@ MENU_KEYS = {
     'back': 'A11yHidePieMenu',
 }
 
+_F = TypeVar('_F')
+
+# The game's command parser converts each argument with the type named in
+# its annotation; it needs the type itself, not the name (see _game_types).
+_ARG_TYPES: dict[str, type] = {'str': str, 'int': int, 'float': float, 'bool': bool}
+
+_REFRESH_SECONDS = 2.0
+_IDLE_SECONDS = 30.0
+_CLASS_CACHE_LIMIT = 1024
+_CLASS_CACHE_SECONDS = 30.0
+_MAX_CATCH_ALL_NOTES = 12  # log lines about Misc/Build objects per full scan
+_UNRANKED = 1 << 20  # subcategories without a rank sort last
+
 
 class Entry:
+    """One Sim or object in the scanner lists."""
+
     __slots__ = (
         'obj_id',
         'is_sim',
@@ -104,19 +124,19 @@ class Entry:
         'role',
     )
 
-    def __init__(
+    def __init__(  # noqa: PLR0913, PLR0917 - one value per slot; callers pass them by position
         self,
-        obj_id,
-        is_sim,
-        name,
-        name_hash,
-        distance,
-        bearing,
-        level_delta,
-        category,
-        group,
-        first_name='',
-    ):
+        obj_id: int,
+        is_sim: bool,
+        name: str | None,
+        name_hash: int,
+        distance: float,
+        bearing: int,
+        level_delta: int,
+        category: str,
+        group: str,
+        first_name: str = '',
+    ) -> None:
         self.obj_id = obj_id
         self.is_sim = is_sim
         self.name = name  # plain text when the game has it (Sims)
@@ -131,89 +151,126 @@ class Entry:
         self.role = ''  # Sims: a spoken role such as 'patient, waiting'
 
 
-_by_group = {}  # main category key -> [Entry], subcategory order then nearest first
-_groups = []  # main category keys present, in the catalog's order
-_group_index = 0
-_item_index = 0
-_tree_level = 'groups'  # groups -> subcategories -> items
-_tree_groups = {}  # group -> last selected subcategory
-_tree_items = {}  # (group, subcategory) -> last selected object id
-_menu_open = False
-_origin_level = 0
-_last_scan = 0.0
-_last_origin = None
-_refresh_handle = None
-_refresh_owner = None
-_refresh_requested = False
-_last_summary = None
-_REFRESH_SECONDS = 2.0
-_IDLE_SECONDS = 30.0
-_last_activity = 0.0
-_CLASS_CACHE_LIMIT = 1024
-_CLASS_CACHE_SECONDS = 30.0
-_class_cache = {}
-_availability_revision = 0
-_availability_client = None
-_scan_stats = {
-    'scans': 0,
-    'total_ms': 0.0,
-    'last_ms': 0.0,
-    'max_ms': 0.0,
-    'examined': 0,
-    'in_range': 0,
-    'cache_hits': 0,
-    'cache_misses': 0,
-}
+class _Pending:
+    """An announcement waiting for the client to resolve its loc keys."""
+
+    def __init__(self, parts: list[Part], seq: int) -> None:
+        self.parts = parts
+        self.seq = seq
+        self.missing: set[int] = set()
+        self.timer: threading.Timer | None = None
+        self.done = False
 
 
-def _touch():
-    global _refresh_requested, _last_activity
-    _refresh_requested = True
-    _last_activity = time.monotonic()
+def _empty_stats() -> dict[str, float]:
+    return {
+        'scans': 0,
+        'total_ms': 0.0,
+        'last_ms': 0.0,
+        'max_ms': 0.0,
+        'examined': 0,
+        'in_range': 0,
+        'cache_hits': 0,
+        'cache_misses': 0,
+    }
 
 
-def _classification(obj, now):
+class _State:
+    """Everything the scanner remembers between keys."""
+
+    def __init__(self) -> None:
+        # main category key -> [Entry], subcategory order then nearest first
+        self.by_group: dict[str, list[Entry]] = {}
+        self.groups: list[str] = []  # main category keys present, in the catalog's order
+        self.group_index = 0
+        self.item_index = 0
+        self.tree_level = 'groups'  # groups -> subcategories -> items
+        self.tree_groups: dict[str, str] = {}  # group -> last selected subcategory
+        # (group, subcategory) -> last selected object id
+        self.tree_items: dict[tuple[str, str], int] = {}
+        self.menu_open = False  # a pie menu is open (ours or a mouse click)
+        self.origin_level = 0
+        self.last_scan = 0.0
+        self.last_origin: tuple[int, float, float] | None = None  # (sim id, x, z)
+        self.last_summary: str | None = None
+        self.refresh_handle: Any = None
+        self.refresh_owner: Any = None
+        self.refresh_requested = False
+        self.last_activity = 0.0
+        # id(definition) -> (definition, expiry, classification)
+        self.class_cache: dict[int, tuple[Any, float, Classification]] = {}
+        self.availability_revision = 0
+        self.availability_client: Any = None
+        self.scan_stats = _empty_stats()
+        self.route_logged: dict[str, float] = {}  # reason -> when last logged
+        # loc channel (guarded by _loc_lock)
+        self.announce_seq = 0
+        self.loc_waiting: dict[int, list[_Pending]] = {}  # hash -> announcements
+
+
+_state = _State()
+
+# hash -> text. Read by simsight_bridge (and its tests) as scanner._loc_cache.
+_loc_cache: dict[int, str] = {}
+_loc_lock = threading.Lock()
+
+
+def __getattr__(name: str) -> Any:
+    # simsight_availability reads `_menu_open` (module attribute lookups that
+    # fail land here, PEP 562).
+    if name == '_menu_open':
+        return _state.menu_open
+    raise AttributeError(name)
+
+
+def _game_types(func: _F) -> _F:
+    """Annotations are strings in this module (__future__ annotations), but
+    the game's command parser calls the annotation to convert each argument.
+    Give it back the real argument types, and nothing else, as before."""
+    notes = getattr(func, '__annotations__', {})
+    func.__annotations__ = {
+        name: _ARG_TYPES[note]
+        for name, note in notes.items()
+        if name != 'return' and note in _ARG_TYPES
+    }
+    return func
+
+
+def _touch() -> None:
+    _state.refresh_requested = True
+    _state.last_activity = time.monotonic()
+
+
+def _classification(obj: Any, now: float) -> Classification:
     # Only definition metadata is cached. Position, inventory/hidden state,
     # affordances and player names are read afresh on every scan.
     definition = obj.definition
     key = id(definition)
-    cached = _class_cache.get(key)
+    cache = _state.class_cache
+    stats = _state.scan_stats
+    cached = cache.get(key)
     if cached is not None and cached[0] is definition and now < cached[1]:
-        _scan_stats['cache_hits'] += 1
+        stats['cache_hits'] += 1
         return cached[2]
     names = _tag_names(obj)
     flags = _buy_flags(obj)
     category = _sub_of(names)
     result = (category, _group_of(flags, category), names, flags)
-    if len(_class_cache) >= _CLASS_CACHE_LIMIT:
-        _class_cache.clear()
-    _class_cache[key] = (definition, now + _CLASS_CACHE_SECONDS, result)
-    _scan_stats['cache_misses'] += 1
+    if len(cache) >= _CLASS_CACHE_LIMIT:
+        cache.clear()
+    cache[key] = (definition, now + _CLASS_CACHE_SECONDS, result)
+    stats['cache_misses'] += 1
     return result
 
 
-def enabled():
+def enabled() -> bool:
     return bool(settings.get('scanner', True))
 
 
 # --------------------------------------------------------------- loc channel
 
-_loc_cache = {}  # hash -> text
-_loc_waiting = {}  # hash -> [_Pending]
-_loc_lock = threading.Lock()
-_announce_seq = [0]
 
-
-class _Pending:
-    def __init__(self, parts, seq):
-        self.parts = parts
-        self.seq = seq
-        self.missing = set()
-        self.timer = None
-        self.done = False
-
-
-def _send_ui(name):
+def _send_ui(name: str) -> bool:
     """Python -> Flash message. Must be called on the simulation thread."""
     try:
         import distributor.ops
@@ -222,52 +279,63 @@ def _send_ui(name):
         op = distributor.ops.SendUIMessage(name)
         distributor.system.Distributor.instance().add_op_with_no_owner(op)
         return True
-    except Exception as ex:
-        speech.log_line(f'scanner: send {name} failed: {ex!r}')
+    except Exception:
+        simsight_log.error('scanner: send to the UI')
         return False
 
 
-def _finish(pending):
+def _clean_text(pieces: list[str]) -> str:
+    """Join spoken pieces; drop the gaps and leading punctuation that empty
+    pieces (a name the client never resolved) leave behind."""
+    text = ''.join(pieces).replace(' ,', ',').replace('  ', ' ').strip()
+    while text.startswith((',', '.')):
+        text = text[1:].strip()
+    return text
+
+
+def _finish(pending: _Pending) -> None:
     with _loc_lock:
         if pending.done:
             return
         pending.done = True
         if pending.timer is not None:
             pending.timer.cancel()
-        if pending.seq != _announce_seq[0]:
+        if pending.seq != _state.announce_seq:
             return  # superseded by a newer announcement
-        pieces = []
-        for part in pending.parts:
-            if isinstance(part, tuple):
-                pieces.append(_loc_cache.get(part[1], ''))
-            else:
-                pieces.append(part)
-    text = ''.join(pieces).replace(' ,', ',').replace('  ', ' ').strip()
-    while text.startswith(',') or text.startswith('.'):
-        text = text[1:].strip()
+        pieces = [
+            _loc_cache.get(part[1], '') if isinstance(part, tuple) else part
+            for part in pending.parts
+        ]
+    text = _clean_text(pieces)
     if text:
         speech.speak(text, source='widget')
 
 
-def _speak_parts(parts):
+def _finish_late(pending: _Pending) -> None:
+    # Timer thread: the client did not answer in time; speak what we have.
+    try:
+        _finish(pending)
+    except Exception:
+        simsight_log.error('scanner: speak after loc timeout')
+
+
+def _speak_parts(parts: list[Part]) -> None:
     """Speak a list of strings and ('loc', hash) parts once the client has
     resolved every key (or the timeout passes). Simulation thread only."""
+    need_send = []
     with _loc_lock:
-        _announce_seq[0] += 1
-        pending = _Pending(list(parts), _announce_seq[0])
+        _state.announce_seq += 1
+        pending = _Pending(list(parts), _state.announce_seq)
         for part in pending.parts:
             if isinstance(part, tuple) and part[1] and part[1] not in _loc_cache:
                 pending.missing.add(part[1])
-        if not pending.missing:
-            need_send = []
-        else:
-            need_send = []
+        if pending.missing:
             for key in pending.missing:
-                waiting = _loc_waiting.setdefault(key, [])
+                waiting = _state.loc_waiting.setdefault(key, [])
                 if not waiting:
                     need_send.append(key)
                 waiting.append(pending)
-            pending.timer = threading.Timer(_LOC_TIMEOUT, _finish, (pending,))
+            pending.timer = threading.Timer(_LOC_TIMEOUT, _finish_late, (pending,))
             pending.timer.daemon = True
             pending.timer.start()
     for key in need_send:
@@ -276,36 +344,44 @@ def _speak_parts(parts):
         _finish(pending)
 
 
-@sims4.commands.Command(
-    'simsight.loc_enc', 'a11y.loc_enc', command_type=sims4.commands.CommandType.Live
-)
-def a11y_loc_enc(text: str = '', _connection=None):
-    """Flash reply: "<hash>|<percent-encoded localized text>"."""
+def _loc_reply(text: str) -> None:
     try:
         from simsight_narrator import _decode_percent
 
         head, _sep, body = text.partition('|')
         key = int(head)
         resolved = _decode_percent(body).strip()
-    except Exception as ex:
-        speech.log_line(f'scanner: bad loc reply {text[:60]!r}: {ex!r}')
-        return True
+    except (ImportError, TypeError, ValueError) as ex:
+        simsight_log.line(f'scanner: bad loc reply {text[:60]!r}: {ex!r}')
+        return
     ready = []
     with _loc_lock:
         _loc_cache[key] = resolved
-        for pending in _loc_waiting.pop(key, ()):
+        for pending in _state.loc_waiting.pop(key, ()):
             pending.missing.discard(key)
             if not pending.missing:
                 ready.append(pending)
     for pending in ready:
         _finish(pending)
+
+
+@sims4.commands.Command(
+    'simsight.loc_enc', 'a11y.loc_enc', command_type=sims4.commands.CommandType.Live
+)
+@_game_types
+def a11y_loc_enc(text: str = '', _connection: Any = None) -> bool:
+    """Flash reply: "<hash>|<percent-encoded localized text>"."""
+    try:
+        _loc_reply(text)
+    except Exception:
+        simsight_log.error('scanner: loc reply')
     return True
 
 
 # --------------------------------------------------------------- categories
 
 
-def _tags_with(prefixes):
+def _tags_with(prefixes: tuple[str, ...]) -> list[str]:
     return [tag for tag in buycat.ORDER if tag.startswith(prefixes)]
 
 
@@ -323,8 +399,8 @@ _SUB_PRIORITY = (
 )
 
 
-def _build_rank():
-    rank = {}
+def _build_rank() -> dict[str, int]:
+    rank: dict[str, int] = {}
     for tier in _SUB_PRIORITY:
         for tag in tier:
             rank.setdefault(tag, len(rank))
@@ -345,26 +421,29 @@ _TAG_FAMILY = {
 _BUILD_PREFIXES = ('Build_', 'TerrainManip_', 'TerrainPaint_', 'BuyCat_WaterObjects_BuildMode')
 
 
-def _tag_names(obj):
+def _tag_name(tag: Any) -> str | None:
+    name = getattr(tag, 'name', None)
+    if name is not None:
+        return str(name)
+    try:
+        from tag import Tag
+
+        return str(Tag(tag).name)
+    except (ImportError, KeyError, ValueError, AttributeError):
+        return None  # a tag value this game version does not know
+
+
+def _tag_names(obj: Any) -> set[str]:
     try:
         tags = obj.definition.get_tags()
     except Exception:
+        simsight_log.error('scanner: definition tags')
         return set()
-    names = set()
-    for tag in tags or ():
-        name = getattr(tag, 'name', None)
-        if name is None:
-            try:
-                from tag import Tag
-
-                name = Tag(tag).name
-            except Exception:
-                continue
-        names.add(str(name))
-    return names
+    names = (_tag_name(tag) for tag in tags or ())
+    return {name for name in names if name is not None}
 
 
-def _sub_of(names):
+def _sub_of(names: set[str]) -> str:
     for tier in _SUB_PRIORITY:
         for tag in tier:
             if tag in names:
@@ -372,68 +451,87 @@ def _sub_of(names):
     return MISC
 
 
-def _buy_flags(obj):
+def _buy_flags(obj: Any) -> int:
     """The client's buy-category bits for the definition (0 when it has none)."""
     try:
         import build_buy
 
         flags = int(build_buy.get_object_buy_category_flags(obj.definition.id))
     except Exception:
+        simsight_log.error('scanner: buy category flags')
         return 0
     return flags & 0x7FFFFFFF  # drop DEFAULT
 
 
-def _group_of(flags, sub):
+# The native buy catalog can report zero in Live Mode. Definition tags remain
+# available there; classify only known function-tag families, from the part
+# of the tag after its family prefix.
+
+
+def _live_group_ee(suffix: str) -> str:
+    if suffix.startswith('Pet'):
+        return 'PETS'
+    if suffix.startswith('Kid') or suffix == 'MiscKids':
+        return 'KIDS'
+    if suffix == 'Transportation':
+        return 'VEHICLE'
+    if suffix == 'TVStand':
+        return 'SURFACE'
+    if suffix in ('Alarm', 'Audio', 'Clock', 'Computer', 'TV', 'MiscElectronics'):
+        return 'ELECTRONICS'
+    return 'ENTERTAINMENT'
+
+
+def _live_group_ss(suffix: str) -> str:
+    if any(word in suffix for word in ('Bed', 'Chair', 'Sofa', 'Seat', 'Barstool', 'Comfort')):
+        return 'COMFORT'
+    if any(word in suffix for word in ('Bookshelf', 'Dresser', 'Storage')):
+        return 'STORAGE'
+    return 'SURFACE'
+
+
+def _live_group_pa(suffix: str) -> str:
+    if suffix.startswith('Pet'):
+        return 'PETS'
+    if suffix in ('Shower', 'Sink', 'Toilet', 'Tub', 'PublicRestroom', 'MiscPlumbing'):
+        return 'PLUMBING'
+    return 'APPLIANCES'
+
+
+def _live_group_ld(suffix: str) -> str:
+    return 'LIGHTING' if 'Light' in suffix or 'Lamp' in suffix else 'DECOR'
+
+
+_LIVE_GROUP: dict[str, Callable[[str], str]] = {
+    'BuyCatEE_': _live_group_ee,
+    'BuyCatSS_': _live_group_ss,
+    'BuyCatPA_': _live_group_pa,
+    'BuyCatLD_': _live_group_ld,
+}
+
+
+def _group_of(flags: int, sub: str) -> str:
+    """The catalog group for buy-category flags and a subcategory tag."""
     candidates = [key for key in buycat.GROUP_ORDER if flags & buycat.GROUP_FLAG.get(key, 0)]
     if candidates:
-        for prefix, family in _TAG_FAMILY.items():
-            if sub.startswith(prefix):
-                for key in family:
-                    if key in candidates:
-                        return key
-                break
-        return candidates[0]
+        family = next((fam for prefix, fam in _TAG_FAMILY.items() if sub.startswith(prefix)), ())
+        return next((key for key in family if key in candidates), candidates[0])
     if sub.startswith(_BUILD_PREFIXES):
         return BUILD
-    # The native buy catalog can report zero in Live Mode. Definition tags
-    # remain available there; classify only known function-tag families.
     suffix = sub.split('_', 1)[-1]
-    if sub.startswith('BuyCatEE_'):
-        if suffix.startswith('Pet'):
-            return 'PETS'
-        if suffix.startswith('Kid') or suffix == 'MiscKids':
-            return 'KIDS'
-        if suffix == 'Transportation':
-            return 'VEHICLE'
-        if suffix == 'TVStand':
-            return 'SURFACE'
-        if suffix in ('Alarm', 'Audio', 'Clock', 'Computer', 'TV', 'MiscElectronics'):
-            return 'ELECTRONICS'
-        return 'ENTERTAINMENT'
-    if sub.startswith('BuyCatSS_'):
-        if any(word in suffix for word in ('Bed', 'Chair', 'Sofa', 'Seat', 'Barstool', 'Comfort')):
-            return 'COMFORT'
-        if any(word in suffix for word in ('Bookshelf', 'Dresser', 'Storage')):
-            return 'STORAGE'
-        return 'SURFACE'
-    if sub.startswith('BuyCatPA_'):
-        if suffix.startswith('Pet'):
-            return 'PETS'
-        if suffix in ('Shower', 'Sink', 'Toilet', 'Tub', 'PublicRestroom', 'MiscPlumbing'):
-            return 'PLUMBING'
-        return 'APPLIANCES'
-    if sub.startswith('BuyCatLD_'):
-        return 'LIGHTING' if 'Light' in suffix or 'Lamp' in suffix else 'DECOR'
+    for prefix, classify in _LIVE_GROUP.items():
+        if sub.startswith(prefix):
+            return classify(suffix)
     return MISC
 
 
-def _label_hash(key):
+def _label_hash(key: str) -> int:
     if key in buycat.GROUP_LABEL_HASH:
         return buycat.GROUP_LABEL_HASH[key]
     return buycat.TAG_LABEL_HASH.get(key, buycat.MISC_LABEL_HASH)
 
 
-def _label_part(key):
+def _label_part(key: str) -> Part:
     if key in GROUP_TERMS:
         return lang.t(GROUP_TERMS[key])
     return ('loc', _label_hash(key))
@@ -442,37 +540,26 @@ def _label_part(key):
 # ------------------------------------------------------------------ scanning
 
 
-def _has_interactions(obj):
-    """Objects the player could click on. Reuses the object-names census
-    filter (debug/cheat/hidden/universal affordances excluded)."""
-    try:
-        import simsight_objectnames as objectnames
-
-        return objectnames._has_interactions(obj)
-    except ImportError:
-        pass
-    try:
-        for sa in obj.super_affordances():
-            if sa.debug or sa.cheat or not sa.allow_user_directed:
-                continue
-            return True
-    except Exception:
-        pass
-    return False
-
-
-def _bearing(dx, dz):
+def _bearing(dx: float, dz: float) -> int:
+    """Compass point index (0 north, clockwise) of an offset."""
     angle = math.degrees(math.atan2(dx, dz)) % 360.0
     return int(((angle + 22.5) % 360.0) // 45) % 8
 
 
-def _sim_name_parts(sim_info):
+def _level_of(obj: Any) -> int:
+    try:
+        return int(obj.level)
+    except (AttributeError, TypeError, ValueError):
+        return 0  # no floor level: count it as the ground floor
+
+
+def _sim_name_parts(sim_info: Any) -> tuple[str | None, int]:
     """Plain names when the game stores them as text; a loc key for the few
     special Sims that only carry a name key."""
     try:
         first = str(sim_info.first_name or '')
         last = str(sim_info.last_name or '')
-    except Exception:
+    except (AttributeError, TypeError):
         first, last = '', ''
     joined = ' '.join(part for part in (first, last) if part).strip()
     if joined:
@@ -480,7 +567,7 @@ def _sim_name_parts(sim_info):
     for attr in ('full_name_key', 'first_name_key'):
         try:
             key = int(getattr(sim_info, attr, 0) or 0)
-        except Exception:
+        except (TypeError, ValueError):
             key = 0
         if key:
             return None, key
@@ -499,7 +586,7 @@ PATIENT_STAGES = {
 }
 
 
-def _patient_roles():
+def _patient_roles() -> dict[int, str]:
     """Sim id -> spoken role for every patient on the lot."""
     try:
         import services
@@ -508,6 +595,7 @@ def _patient_roles():
         manager = services.get_zone_situation_manager()
         situations = list(manager.values()) if manager is not None else []
     except Exception:
+        simsight_log.error('scanner: patient situations')
         return {}
     roles = {}
     for situation in situations:
@@ -520,52 +608,56 @@ def _patient_roles():
             state = type(getattr(situation, '_cur_state', None)).__name__
             roles[patient.id] = lang.t(PATIENT_STAGES.get(state, 'patient'))
         except Exception:
-            continue
+            simsight_log.error('scanner: patient role')
     return roles
 
 
-def _entry_for(obj, origin, origin_level, is_sim, category, group):
+def _first_name(sim_info: Any) -> str:
+    try:
+        return str(sim_info.first_name or '')
+    except (AttributeError, TypeError):
+        return ''
+
+
+def _object_name_parts(obj: Any) -> tuple[str | None, int]:
+    """(player-given name, None) or (None, catalog name key)."""
+    # A player-given name is plain text; otherwise catalog_name is the
+    # string-table key itself (an int; EA's own GSI code does hex() on it).
+    try:
+        if obj.has_custom_name():
+            custom = str(obj.custom_name or '') or None
+            if custom is not None:
+                return custom, 0
+    except (AttributeError, TypeError):
+        pass  # no custom-name support on this object: use the catalog name
+    try:
+        raw = obj.catalog_name
+        return None, int(getattr(raw, 'hash', raw)) & 0xFFFFFFFF
+    except (AttributeError, TypeError, ValueError):
+        return None, 0
+
+
+def _entry_for(  # noqa: PLR0913, PLR0917 - used by other modules with this signature
+    obj: Any, origin: Any, origin_level: int, is_sim: bool, category: str, group: str
+) -> Entry:
     pos = obj.position
     dx = float(pos.x) - float(origin.x)
     dz = float(pos.z) - float(origin.z)
     distance = math.sqrt(dx * dx + dz * dz)
-    try:
-        level_delta = int(obj.level) - origin_level
-    except Exception:
-        level_delta = 0
+    level_delta = _level_of(obj) - origin_level
     if is_sim:
         name, key = _sim_name_parts(obj.sim_info)
-        first = ''
-        try:
-            first = str(obj.sim_info.first_name or '')
-        except Exception:
-            pass
+        first = _first_name(obj.sim_info)
         return Entry(
             obj.id, True, name, key, distance, _bearing(dx, dz), level_delta, category, group, first
         )
-    # A player-given name is plain text; otherwise catalog_name is the
-    # string-table key itself (an int; EA's own GSI code does hex() on it).
-    custom = None
-    try:
-        if obj.has_custom_name():
-            custom = str(obj.custom_name or '') or None
-    except Exception:
-        custom = None
-    key = 0
-    if custom is None:
-        try:
-            raw = obj.catalog_name
-            key = int(getattr(raw, 'hash', raw)) & 0xFFFFFFFF
-        except Exception:
-            key = 0
-    return Entry(
-        obj.id, False, custom, key, distance, _bearing(dx, dz), level_delta, category, group
-    )
+    name, key = _object_name_parts(obj)
+    return Entry(obj.id, False, name, key, distance, _bearing(dx, dz), level_delta, category, group)
 
 
-def _subs_in(entries):
+def _subs_in(entries: list[Entry]) -> list[str]:
     """Subcategory keys in the order the entries are listed."""
-    seen = []
+    seen: list[str] = []
     for entry in entries:
         if entry.category not in seen:
             seen.append(entry.category)
@@ -589,19 +681,21 @@ RANGES = (
     ('this room', None, 'room'),
 )
 RANGE_NAMES = tuple(name for name, _limit, _kind in RANGES)
+_DEFAULT_RANGE = RANGES[3]
+_NO_LIMIT = 1000000.0  # metres: the lot, floor and room ranges filter later
 
 
-def _range():
+def _range() -> tuple[str, float | None, str]:
     wanted = str(settings.get('scanner_range', '40 meters') or '').strip().lower()
-    return next((mode for mode in RANGES if mode[0] == wanted), RANGES[3])
+    return next((mode for mode in RANGES if mode[0] == wanted), _DEFAULT_RANGE)
 
 
-def _range_limit():
+def _range_limit() -> float:
     limit = _range()[1]
-    return limit if limit is not None else 1000000.0
+    return limit if limit is not None else _NO_LIMIT
 
 
-def _object_for_entry(entry):
+def _object_for_entry(entry: Entry) -> Any:
     try:
         import services
 
@@ -612,19 +706,21 @@ def _object_for_entry(entry):
         if info is not None:
             return info.get_sim_instance()
     except Exception:
-        return None
+        simsight_log.error('scanner: object lookup')
+    return None
 
 
-def _on_active_lot(obj):
+def _on_active_lot(obj: Any) -> bool:
     try:
         import services
 
         return bool(services.active_lot().is_position_on_lot(obj.position))
     except Exception:
+        simsight_log.error('scanner: active lot check')
         return False
 
 
-def _room_id(obj):
+def _room_id(obj: Any) -> Any:
     try:
         import build_buy
         import services
@@ -633,10 +729,11 @@ def _room_id(obj):
             services.current_zone_id(), obj.position, int(getattr(obj, 'level', 0) or 0)
         )
     except Exception:
+        simsight_log.error('scanner: room id')
         return None
 
 
-def _in_range(entry, active_room):
+def _in_range(entry: Entry, active_room: Any) -> bool:
     _name, limit, kind = _range()
     if limit is not None:
         return bool(getattr(entry, 'is_sim', False)) or entry.distance <= limit
@@ -654,283 +751,323 @@ def _in_range(entry, active_room):
     return _room_id(obj) == active_room
 
 
-def _apply_range():
+def _active_room() -> Any:
+    try:
+        import services
+
+        return _room_id(services.get_active_sim())
+    except Exception:
+        simsight_log.error('scanner: active room')
+        return None
+
+
+def _apply_range() -> None:
     """Filter the fresh lists to the chosen range, inside _scan, so the
     scanner's own focus restore runs on the filtered lists."""
     if _range()[1] is not None:
         return  # metre ranges were applied while collecting
-    active_room = None
-    if _range()[2] == 'room':
-        try:
-            import services
-
-            active_room = _room_id(services.get_active_sim())
-        except Exception:
-            active_room = None
-    for key in list(_by_group):
-        kept = [entry for entry in _by_group[key] if _in_range(entry, active_room)]
+    active_room = _active_room() if _range()[2] == 'room' else None
+    by_group = _state.by_group
+    for key in list(by_group):
+        kept = [entry for entry in by_group[key] if _in_range(entry, active_room)]
         if kept:
-            _by_group[key] = kept
+            by_group[key] = kept
         else:
-            del _by_group[key]
+            del by_group[key]
 
 
-def cycle_range(delta):
+def _has_active_sim() -> bool:
+    try:
+        import services
+
+        return services.get_active_sim() is not None
+    except Exception:
+        simsight_log.error('scanner: active Sim check')
+        return False
+
+
+def cycle_range(delta: int) -> bool:
     """Ctrl+Alt+comma / period. Simulation thread."""
     names = list(RANGE_NAMES)
     index = names.index(_range()[0])
     name = names[(index + (1 if delta > 0 else -1)) % len(names)]
     settings.set('scanner_range', name)
-    speech.log_line(f'scanner: range {name}')
-    try:
-        import services
-
-        has_sim = services.get_active_sim() is not None
-    except Exception:
-        has_sim = False
-    if not has_sim:
+    simsight_log.line(f'scanner: range {name}')
+    if not _has_active_sim():
         speech.speak(lang.t('no lot loaded'), explicit=True)
         return False
     found = _scan(preserve=True)
-    parts = [f'Scanner range: {name}. ']
+    parts: list[Part] = [f'Scanner range: {name}. ']
     parts.extend(_tree_parts() if found else ['Nothing in this range. '])
     _speak_parts(parts)
     return True
 
 
-def apply_range_setting():
+def apply_range_setting() -> None:
     """The settings menu changed the range: refresh a live scanner list."""
     try:
-        if enabled() and _groups:
+        if enabled() and _state.groups:
             _scan(preserve=True)
-    except Exception as ex:
-        speech.log_line(f'scanner: range refresh failed: {ex!r}')
+    except Exception:
+        simsight_log.error('scanner: range refresh')
 
 
-def _scan(preserve=False):
+def _add_sims(services: Any, sim: Any, origin: Any) -> None:
+    """List the active Sim (Yourself) and every other instanced Sim."""
+    sims = [sim]
+    try:
+        sims.extend(
+            other for other in services.sim_info_manager().instanced_sims_gen() if other is not sim
+        )
+    except Exception:
+        simsight_log.error('scanner: sim listing')
+    roles = _patient_roles()
+    for other in sims:
+        _add_sim(other, YOURSELF if other is sim else SIMS, origin, roles)
+
+
+def _add_sim(sim: Any, group: str, origin: Any, roles: dict[int, str]) -> None:
+    try:
+        entry = _entry_for(sim, origin, _state.origin_level, True, group, group)
+        entry.role = roles.get(sim.id, '')
+        _state.by_group.setdefault(group, []).append(entry)
+    except Exception:
+        simsight_log.error('scanner: sim entry')
+
+
+def _is_listable(obj: Any) -> bool:
+    """Not in an inventory and not hidden."""
+    checker = getattr(obj, 'is_in_inventory', None)
+    if checker is not None and checker():
+        return False
+    return not obj.is_hidden()
+
+
+def _squared_distance(obj: Any, origin: Any) -> float:
+    pos = obj.position
+    dx = float(pos.x) - float(origin.x)
+    dz = float(pos.z) - float(origin.z)
+    return dx * dx + dz * dz
+
+
+def _nearby_objects(services: Any, origin: Any, limit: float) -> tuple[list[Any], int, int]:
+    """(objects to list, nearest first; objects examined; objects in range)."""
+    try:
+        objects = list(services.object_manager().get_valid_objects_gen())
+    except Exception:
+        simsight_log.error('scanner: object listing')
+        objects = []
+    candidates = []
+    in_range = 0
+    for obj in objects:
+        try:
+            if getattr(obj, 'is_sim', False) or getattr(obj, 'is_terrain', False):
+                continue
+            # Reject distant objects before walking their affordances or
+            # resolving catalog metadata. Squared distance needs no sqrt.
+            if _squared_distance(obj, origin) > limit * limit:
+                continue
+            in_range += 1
+            if _is_listable(obj):
+                candidates.append(obj)
+        except Exception:
+            simsight_log.error('scanner: object filter')
+    candidates.sort(key=lambda obj: _squared_distance(obj, origin))
+    return candidates, len(objects), in_range
+
+
+def _catch_all_note(obj: Any, catalog_group: str, names: set[str], flags: int, sub: str) -> str:
+    # Diagnostics for the two catch-alls: what did the client report, and
+    # which labelled tags did the definition carry?
+    labelled = sorted(name for name in names if name.startswith(('BuyCat', 'Build_', 'Func_')))
+    return '{} {} flags=0x{:X} sub={} tags={}'.format(
+        catalog_group, getattr(obj.definition, 'name', '?'), flags, sub, ','.join(labelled[:6])
+    )
+
+
+def _add_objects(
+    candidates: list[Any], origin: Any, limit: float, preserve: bool
+) -> tuple[int, list[str]]:
+    """List the objects availability does not rule out; (count, log notes)."""
+    count = 0
+    notes: list[str] = []
+    for obj in candidates:
+        try:
+            verdict = availability.state(obj)
+            if verdict == 'empty':
+                continue
+            entry = _entry_for(obj, origin, _state.origin_level, False, MISC, MISC)
+            entry.availability = verdict
+            if entry.distance > limit:
+                continue
+            entry.category, catalog_group, names, flags = _classification(obj, _state.last_scan)
+            entry.group = OBJECTS
+            _state.by_group.setdefault(OBJECTS, []).append(entry)
+            count += 1
+            if (
+                not preserve
+                and catalog_group in (MISC, BUILD)
+                and len(notes) < _MAX_CATCH_ALL_NOTES
+            ):
+                notes.append(_catch_all_note(obj, catalog_group, names, flags, entry.category))
+        except Exception:
+            simsight_log.error('scanner: object entry')
+    return count, notes
+
+
+def _log_scan(count: int, notes: list[str], preserve: bool) -> None:
+    by_group = _state.by_group
+    summary = ' '.join(
+        f'{key}:{len(by_group[key])}/{len(_subs_in(by_group[key]))}' for key in _state.groups
+    )
+    if summary != _state.last_summary or not preserve:
+        simsight_log.line(
+            f'scanner: {len(by_group.get(SIMS, ()))} sims, {count} objects, {len(_state.groups)} categories (items/subcategories): {summary}'
+        )
+        _state.last_summary = summary
+    if not preserve:
+        for note in notes:
+            simsight_log.line('scanner:   ' + note)
+
+
+def _restore_cursor(group: str | None, index: int, previous: Entry | None) -> None:
+    """Back to the thing the cursor was on before the rescan, if still listed."""
+    if group not in _state.groups:
+        return
+    _state.group_index = _state.groups.index(group)
+    entries = _state.by_group[group]
+    _state.item_index = min(index, len(entries) - 1)
+    if previous is not None:
+        for i, entry in enumerate(entries):
+            if entry.obj_id == previous.obj_id:
+                _state.item_index = i
+                break
+
+
+def _record_stats(started: float, examined: int, in_range: int) -> None:
+    elapsed = (time.perf_counter() - started) * 1000.0
+    stats = _state.scan_stats
+    stats['scans'] += 1
+    stats['total_ms'] += elapsed
+    stats['last_ms'] = elapsed
+    stats['max_ms'] = max(stats['max_ms'], elapsed)
+    stats['examined'] = examined
+    stats['in_range'] = in_range
+
+
+def _scan(preserve: bool = False) -> bool:
     """Rebuild the lists around the active Sim. Simulation thread only."""
-    global _by_group, _groups, _group_index, _item_index, _origin_level
-    global _last_scan, _last_origin, _last_summary
-    global _availability_revision
     import services
 
     started = time.perf_counter()
     previous = _current() if preserve else None
     previous_group = _group_key() if preserve else None
-    previous_index = _item_index
+    previous_index = _state.item_index
     if preserve:
         _tree_remember()
-    _by_group = {}
-    _groups = []
-    _group_index = 0
-    _item_index = 0
+    _state.by_group = {}
+    _state.groups = []
+    _state.group_index = 0
+    _state.item_index = 0
     sim = services.get_active_sim()
     if sim is None:
         availability.reset()
         return False
     _bind_availability_client()
     origin = sim.position
-    _last_scan = time.monotonic()
-    _last_origin = (sim.id, float(origin.x), float(origin.z))
-    try:
-        _origin_level = int(sim.level)
-    except Exception:
-        _origin_level = 0
-    sims = [sim]
-    try:
-        for other in services.sim_info_manager().instanced_sims_gen():
-            if other is not sim:
-                sims.append(other)
-    except Exception as ex:
-        speech.log_line(f'scanner: sim listing failed: {ex!r}')
-    roles = _patient_roles()
-    for other in sims:
-        try:
-            group = YOURSELF if other is sim else SIMS
-            entry = _entry_for(other, origin, _origin_level, True, group, group)
-            entry.role = roles.get(other.id, '')
-            _by_group.setdefault(group, []).append(entry)
-        except Exception as ex:
-            speech.log_line(f'scanner: sim entry failed: {ex!r}')
-    count = 0
-    examined = 0
-    in_range = 0
-    notes = []
-    try:
-        objects = list(services.object_manager().get_valid_objects_gen())
-    except Exception as ex:
-        speech.log_line(f'scanner: object listing failed: {ex!r}')
-        objects = []
+    _state.last_scan = time.monotonic()
+    _state.last_origin = (sim.id, float(origin.x), float(origin.z))
+    _state.origin_level = _level_of(sim)
+    _add_sims(services, sim, origin)
     limit = _range_limit()
-    candidates = []
-    for obj in objects:
-        examined += 1
-        try:
-            if getattr(obj, 'is_sim', False) or getattr(obj, 'is_terrain', False):
-                continue
-            # Reject distant objects before walking their affordances or
-            # resolving catalog metadata. Squared distance needs no sqrt.
-            pos = obj.position
-            dx = float(pos.x) - float(origin.x)
-            dz = float(pos.z) - float(origin.z)
-            if dx * dx + dz * dz > limit * limit:
-                continue
-            in_range += 1
-            checker = getattr(obj, 'is_in_inventory', None)
-            if checker is not None and checker():
-                continue
-            if obj.is_hidden():
-                continue
-            candidates.append(obj)
-        except Exception:
-            continue
+    candidates, examined, in_range = _nearby_objects(services, origin, limit)
     # Eligibility is evaluated incrementally on the simulation pump, never
     # synchronously on a key press. Unknown results remain discoverable.
-    candidates.sort(
-        key=lambda obj: (
-            (float(obj.position.x) - float(origin.x)) ** 2
-            + (float(obj.position.z) - float(origin.z)) ** 2
-        )
-    )
     availability.begin(sim, candidates)
-    _availability_revision = availability.revision()
-    for obj in candidates:
-        try:
-            verdict = availability.state(obj)
-            if verdict == 'empty':
-                continue
-            entry = _entry_for(obj, origin, _origin_level, False, MISC, MISC)
-            entry.availability = verdict
-            if entry.distance > limit:
-                continue
-            entry.category, catalog_group, names, flags = _classification(obj, _last_scan)
-            entry.group = OBJECTS
-            _by_group.setdefault(OBJECTS, []).append(entry)
-            count += 1
-            if not preserve and catalog_group in (MISC, BUILD) and len(notes) < 12:
-                # Diagnostics for the two catch-alls: what did the client
-                # report, and which labelled tags did the definition carry?
-                labelled = sorted(
-                    name for name in names if name.startswith(('BuyCat', 'Build_', 'Func_'))
-                )
-                notes.append(
-                    '{} {} flags=0x{:X} sub={} tags={}'.format(
-                        catalog_group,
-                        getattr(obj.definition, 'name', '?'),
-                        flags,
-                        entry.category,
-                        ','.join(labelled[:6]),
-                    )
-                )
-        except Exception:
-            continue
-    for entries in _by_group.values():
-        entries.sort(key=lambda e: (_SUB_RANK.get(e.category, 1 << 20), e.distance))
+    _state.availability_revision = availability.revision()
+    count, notes = _add_objects(candidates, origin, limit, preserve)
+    for entries in _state.by_group.values():
+        entries.sort(key=lambda e: (_SUB_RANK.get(e.category, _UNRANKED), e.distance))
     _apply_range()
-    _groups = [key for key in (YOURSELF, SIMS, OBJECTS) if _by_group.get(key)]
-    summary = ' '.join(
-        f'{key}:{len(_by_group[key])}/{len(_subs_in(_by_group[key]))}' for key in _groups
-    )
-    if summary != _last_summary or not preserve:
-        speech.log_line(
-            f'scanner: {len(_by_group.get(SIMS, ()))} sims, {count} objects, {len(_groups)} categories (items/subcategories): {summary}'
-        )
-        _last_summary = summary
-    if not preserve:
-        for note in notes:
-            speech.log_line('scanner:   ' + note)
-    if previous_group in _groups:
-        _group_index = _groups.index(previous_group)
-        entries = _by_group[previous_group]
-        _item_index = min(previous_index, len(entries) - 1)
-        if previous is not None:
-            for index, entry in enumerate(entries):
-                if entry.obj_id == previous.obj_id:
-                    _item_index = index
-                    break
+    _state.groups = [key for key in (YOURSELF, SIMS, OBJECTS) if _state.by_group.get(key)]
+    _log_scan(count, notes, preserve)
+    _restore_cursor(previous_group, previous_index, previous)
     if preserve:
         _tree_restore()
-    elapsed = (time.perf_counter() - started) * 1000.0
-    _scan_stats['scans'] += 1
-    _scan_stats['total_ms'] += elapsed
-    _scan_stats['last_ms'] = elapsed
-    _scan_stats['max_ms'] = max(_scan_stats['max_ms'], elapsed)
-    _scan_stats['examined'] = examined
-    _scan_stats['in_range'] = in_range
-    return bool(_groups)
+    _record_stats(started, examined, in_range)
+    return bool(_state.groups)
 
 
-def _group_key():
-    if not _groups:
+def _group_key() -> str | None:
+    if not _state.groups:
         return None
-    return _groups[_group_index % len(_groups)]
+    return _state.groups[_state.group_index % len(_state.groups)]
 
 
-def _entries():
+def _entries() -> list[Entry]:
     key = _group_key()
     if key is None:
         return []
-    return _by_group.get(key, [])
+    return _state.by_group.get(key, [])
 
 
-def _current():
+def _current() -> Entry | None:
     entries = _entries()
     if not entries:
         return None
-    return entries[_item_index % len(entries)]
+    return entries[_state.item_index % len(entries)]
 
 
 # ------------------------------------------------------- for the menu window
 
 
-def ensure_scan():
+def ensure_scan() -> bool:
     """Scan if nothing is listed yet. Simulation thread."""
     _touch()
     return _ensure_scan()
 
 
-def snapshot():
+def snapshot() -> tuple[list[tuple[str, list[Entry]]], str | None, Entry | None]:
     """(groups as [(key, [Entry])], current group key, current Entry)."""
-    return ([(key, list(_by_group.get(key, ()))) for key in _groups], _group_key(), _current())
+    groups = [(key, list(_state.by_group.get(key, ()))) for key in _state.groups]
+    return (groups, _group_key(), _current())
 
 
-def subs_in(entries):
+def subs_in(entries: list[Entry]) -> list[str]:
     return _subs_in(entries)
 
 
-def label_hash(key):
+def label_hash(key: str) -> int:
     return _label_hash(key)
 
 
-def place_text(entry):
+def place_text(entry: Entry) -> str:
     return _place_part(entry)
 
 
-def select_group(key):
+def select_group(key: str) -> bool:
     """Move the cursor to a main category and speak it. Simulation thread."""
-    global _group_index, _item_index, _tree_level
-    if key not in _groups:
+    if key not in _state.groups:
         return False
     _tree_remember()
-    _group_index = _groups.index(key)
-    _tree_level = 'groups'
+    _state.group_index = _state.groups.index(key)
+    _state.tree_level = 'groups'
     _tree_restore()
     _tree_speak()
     return True
 
 
-def select_item(key, obj_id):
+def select_item(key: str, obj_id: int) -> bool:
     """Move the cursor to one thing and speak it. Simulation thread."""
-    global _group_index, _item_index, _tree_level
-    if key not in _groups:
+    if key not in _state.groups:
         return False
-    entries = _by_group.get(key, [])
+    entries = _state.by_group.get(key, [])
     for index, entry in enumerate(entries):
         if entry.obj_id == obj_id:
             _tree_remember()
-            _group_index = _groups.index(key)
-            _item_index = index
-            _tree_level = 'items'
+            _state.group_index = _state.groups.index(key)
+            _state.item_index = index
+            _state.tree_level = 'items'
             _tree_remember()
             _tree_speak()
             return True
@@ -940,7 +1077,7 @@ def select_item(key, obj_id):
 # --------------------------------------------------------------- describing
 
 
-def _name_part(entry):
+def _name_part(entry: Entry) -> Part:
     if entry.name:
         return entry.name
     if entry.name_hash:
@@ -948,25 +1085,29 @@ def _name_part(entry):
     return ''
 
 
-def _place_part(entry):
+def _floor_part(delta: int) -> str:
+    """', one floor up' and the like; '' on the same floor."""
+    if delta == 1:
+        return ', ' + lang.t('one floor up')
+    if delta == -1:
+        return ', ' + lang.t('one floor down')
+    if delta > 1:
+        return ', {} {}'.format(delta, lang.t('floors up'))
+    if delta < -1:
+        return ', {} {}'.format(-delta, lang.t('floors down'))
+    return ''
+
+
+def _place_part(entry: Entry) -> str:
     metres = int(round(entry.distance))
     if metres < 1:
         where = lang.t('here')
     else:
         where = '{} {} {}'.format(metres, lang.t('meters'), lang.t(_COMPASS[entry.bearing]))
-    delta = entry.level_delta
-    if delta == 1:
-        where += ', ' + lang.t('one floor up')
-    elif delta == -1:
-        where += ', ' + lang.t('one floor down')
-    elif delta > 1:
-        where += ', {} {}'.format(delta, lang.t('floors up'))
-    elif delta < -1:
-        where += ', {} {}'.format(-delta, lang.t('floors down'))
-    return where
+    return where + _floor_part(entry.level_delta)
 
 
-def _entry_parts(entry, index, total):
+def _entry_parts(entry: Entry, index: int, total: int) -> list[Part]:
     import simsight_cleanliness as cleanliness
 
     status = ', ' + lang.t('scanner unavailable') if entry.availability == 'locked' else ''
@@ -979,7 +1120,7 @@ def _entry_parts(entry, index, total):
     ]
 
 
-def _sub_label_part(entries, entry):
+def _sub_label_part(entries: list[Entry], entry: Entry) -> Part | None:
     """The subcategory name, or None when the main category has a single
     subcategory that is the category itself (Sims, bare Misc)."""
     if len(_subs_in(entries)) <= 1 and _label_part(entry.category) == _label_part(entry.group):
@@ -987,286 +1128,249 @@ def _sub_label_part(entries, entry):
     return _label_part(entry.category)
 
 
-def _sub_count_part(entries, entry):
-    count = sum(1 for other in entries if other.category == entry.category)
-    return ', {} {}. '.format(count, lang.t('items'))
-
-
-def _group_parts():
-    """Main category with its count, the subcategory the cursor is in with
-    its count, then the thing under the cursor."""
-    entries = _entries()
-    key = _group_key()
-    if key is None:
-        return [lang.t('nothing nearby')]
-    parts = [_label_part(key), ', {} {}. '.format(len(entries), lang.t('items'))]
-    entry = _current()
-    if entry is not None:
-        sub = _sub_label_part(entries, entry)
-        if sub is not None:
-            parts.append(sub)
-            parts.append(_sub_count_part(entries, entry))
-        parts.append(_name_part(entry))
-        import simsight_cleanliness as cleanliness
-
-        parts.append(
-            cleanliness.suffix(entry)
-            + (', ' + entry.role if entry.role else '')
-            + ', '
-            + _place_part(entry)
-            + '.'
-        )
-    return parts
-
-
-def _sub_parts(entries, entry, index):
-    """Subcategory with its count, then the thing."""
-    parts = []
-    sub = _sub_label_part(entries, entry)
-    if sub is not None:
-        parts.append(sub)
-        parts.append(_sub_count_part(entries, entry))
-    parts.extend(_entry_parts(entry, index, len(entries)))
-    return parts
-
-
-def _ensure_scan():
-    same_origin = True
+def _ensure_scan() -> bool:
+    same_origin = True  # when the check itself fails, trust the current lists
     try:
         import services
 
         sim = services.get_active_sim()
+        last_origin = _state.last_origin
         same_origin = (
             sim is not None
-            and _last_origin is not None
-            and (sim.id == _last_origin[0] and int(sim.level) == _origin_level)
+            and last_origin is not None
+            and (sim.id == last_origin[0] and int(sim.level) == _state.origin_level)
         )
     except Exception:
-        pass
+        simsight_log.error('scanner: active Sim compare')
     if (
-        _groups
+        _state.groups
         and same_origin
-        and availability.revision() == _availability_revision
-        and time.monotonic() - _last_scan < _REFRESH_SECONDS
+        and availability.revision() == _state.availability_revision
+        and time.monotonic() - _state.last_scan < _REFRESH_SECONDS
     ):
         return True
     return _scan(preserve=True)
 
 
-def _refresh_tick(_handle=None):
-    # A real-time game alarm: updates while paused, never on the key thread.
-    # After 30 seconds without scanner input, the alarm only checks these
-    # flags. The next action refreshes before moving or opening an item.
-    global _refresh_requested
-    if not enabled() or not settings.get('keyboard', True):
-        availability.reset()
-        return
-    if not _refresh_requested:
-        return
+def _ui_owns_input() -> bool:
     try:
         import simsight_keys as keys
 
-        ui_owns_input = keys._modal_active or keys._editing_active
-    except Exception:
-        ui_owns_input = False
-    if _menu_open or ui_owns_input:
+        return bool(keys._modal_active or keys._editing_active)
+    except (ImportError, AttributeError):
+        return False  # the keyboard module is not loaded: nothing owns the keys
+
+
+def _refresh() -> None:
+    # After 30 seconds without scanner input, the alarm only checks these
+    # flags. The next action refreshes before moving or opening an item.
+    if not enabled() or not settings.get('keyboard', True):
+        availability.reset()
+        return
+    if not _state.refresh_requested:
+        return
+    if _state.menu_open or _ui_owns_input():
         availability.pause()
         return
     now = time.monotonic()
-    if now - _last_activity >= _IDLE_SECONDS:
-        _refresh_requested = False
+    if now - _state.last_activity >= _IDLE_SECONDS:
+        _state.refresh_requested = False
         availability.pause()
         return
-    if now - _last_scan >= _REFRESH_SECONDS:
+    if now - _state.last_scan >= _REFRESH_SECONDS:
         _scan(preserve=True)
 
 
-def _start_refresh():
-    global _refresh_owner, _refresh_handle
+def _refresh_tick(_handle: Any = None) -> None:
+    # A real-time game alarm: updates while paused, never on the key thread.
+    try:
+        _refresh()
+    except Exception:
+        simsight_log.error('scanner: refresh tick')
+
+
+class _RefreshOwner:
+    """The owner object a game alarm needs."""
+
+
+def _start_refresh() -> None:
     import alarms
     import clock
 
-    if _refresh_handle is not None:
-        try:
-            alarms.cancel_alarm(_refresh_handle)
-        except Exception:
-            # The previous zone may already have destroyed its timeline.
-            pass
-
-    class RefreshOwner:
-        pass
-
-    _refresh_owner = RefreshOwner()
-    _refresh_handle = alarms.add_alarm_real_time(
-        _refresh_owner,
+    if _state.refresh_handle is not None:
+        # The previous zone may already have destroyed its timeline.
+        with contextlib.suppress(Exception):
+            alarms.cancel_alarm(_state.refresh_handle)
+    _state.refresh_owner = _RefreshOwner()
+    _state.refresh_handle = alarms.add_alarm_real_time(
+        _state.refresh_owner,
         clock.interval_in_real_seconds(_REFRESH_SECONDS),
         _refresh_tick,
         repeating=True,
     )
 
 
-def _active_sim_changed(old_sim, new_sim):
-    global _last_scan
-    availability.reset()
-    _last_scan = 0.0
-    if enabled() and _refresh_requested:
-        pump.post(_scan, True)
+def _active_sim_changed(old_sim: Any, new_sim: Any) -> None:
+    # The game calls this when the player switches Sims.
+    try:
+        availability.reset()
+        _state.last_scan = 0.0
+        if enabled() and _state.refresh_requested:
+            pump.post(_scan, True)
+    except Exception:
+        simsight_log.error('scanner: active Sim changed')
 
 
-def _bind_availability_client():
-    global _availability_client
+def _bind_availability_client() -> None:
     try:
         import services
 
         client = services.client_manager().get_first_client()
-        if client is _availability_client:
+        if client is _state.availability_client:
             return
         _unbind_availability_client()
         if client is not None:
             client.register_active_sim_changed(_active_sim_changed)
-            _availability_client = client
+            _state.availability_client = client
     except Exception:
         # _ensure_scan also compares the active Sim identity on every action.
-        pass
+        simsight_log.error('scanner: bind client')
 
 
-def _unbind_availability_client():
-    global _availability_client
-    if _availability_client is not None:
-        try:
-            _availability_client.unregister_active_sim_changed(_active_sim_changed)
-        except Exception:
-            pass
-    _availability_client = None
+def _unbind_availability_client() -> None:
+    client = _state.availability_client
+    if client is not None:
+        # The client may already be gone with the previous zone.
+        with contextlib.suppress(Exception):
+            client.unregister_active_sim_changed(_active_sim_changed)
+    _state.availability_client = None
 
 
 # ------------------------------------------------------------------- intents
 
 
-def _tree_remember():
+def _tree_remember() -> None:
     entry = _current()
     if entry is not None:
-        _tree_groups[entry.group] = entry.category
-        _tree_items[(entry.group, entry.category)] = entry.obj_id
+        _state.tree_groups[entry.group] = entry.category
+        _state.tree_items[(entry.group, entry.category)] = entry.obj_id
 
 
-def _tree_restore(subcategory=None):
+def _tree_restore(subcategory: str | None = None) -> None:
     """Restore by identity, falling back within the same subcategory first."""
-    global _item_index, _tree_level
     entries = _entries()
     if not entries:
-        _item_index = 0
-        _tree_level = 'groups'
+        _state.item_index = 0
+        _state.tree_level = 'groups'
         return
-    group = _group_key()
+    group = _group_key() or ''
     subs = _subs_in(entries)
-    sub = subcategory if subcategory is not None else _tree_groups.get(group)
+    sub = subcategory if subcategory is not None else _state.tree_groups.get(group)
     if sub not in subs:
         sub = subs[0]
     indices = [i for i, entry in enumerate(entries) if entry.category == sub]
-    wanted = _tree_items.get((group, sub))
-    _item_index = next((i for i in indices if entries[i].obj_id == wanted), indices[0])
+    wanted = _state.tree_items.get((group, sub))
+    _state.item_index = next((i for i in indices if entries[i].obj_id == wanted), indices[0])
     # Do not leave a redundant Sims -> Sims container after a refresh.
-    if _tree_level == 'subcategories' and not _tree_has_sublevel():
-        _tree_level = 'items'
+    if _state.tree_level == 'subcategories' and not _tree_has_sublevel():
+        _state.tree_level = 'items'
 
 
-def _tree_has_sublevel():
+def _tree_has_sublevel() -> bool:
     entries = _entries()
     entry = _current()
     return entry is not None and _sub_label_part(entries, entry) is not None
 
 
-def _kind(term):
+def _kind(term: str) -> list[Part]:
     """The spoken kind before a name; verbosity brief leaves it out."""
     return [] if settings.brief() else [lang.t(term) + '. ']
 
 
-def _tree_parts():
+def _position_text(count: int, position: int, total: int) -> str:
+    """', 5 items. 2 of 3.'"""
+    return ', {} {}. {} {} {}.'.format(count, lang.t('items'), position, lang.t('of'), total)
+
+
+def _tree_parts() -> list[Part]:
     entry = _current()
     if entry is None:
         return [lang.t('nothing nearby')]
     entries = _entries()
-    if _tree_level == 'groups':
-        return _kind('scanner category') + [
-            _label_part(_group_key()),
-            ', {} {}. {} {} {}.'.format(
-                len(entries), lang.t('items'), _group_index + 1, lang.t('of'), len(_groups)
-            ),
+    if _state.tree_level == 'groups':
+        # entry.group is the current group key: lists hold their own group only.
+        return [
+            *_kind('scanner category'),
+            _label_part(entry.group),
+            _position_text(len(entries), _state.group_index + 1, len(_state.groups)),
         ]
     subs = _subs_in(entries)
     siblings = [e for e in entries if e.category == entry.category]
-    if _tree_level == 'subcategories':
-        return _kind('scanner subcategory') + [
+    if _state.tree_level == 'subcategories':
+        return [
+            *_kind('scanner subcategory'),
             _label_part(entry.category),
-            ', {} {}. {} {} {}.'.format(
-                len(siblings),
-                lang.t('items'),
-                subs.index(entry.category) + 1,
-                lang.t('of'),
-                len(subs),
-            ),
+            _position_text(len(siblings), subs.index(entry.category) + 1, len(subs)),
         ]
     return _entry_parts(entry, siblings.index(entry), len(siblings))
 
 
-def _tree_speak(prefix=''):
-    _speak_parts(([prefix] if prefix else []) + _tree_parts())
+def _tree_speak(prefix: str = '') -> None:
+    parts: list[Part] = [prefix] if prefix else []
+    _speak_parts(parts + _tree_parts())
 
 
-def enter_mode():
+def enter_mode() -> None:
     """Keyboard router calls on the simulation thread after mode activation."""
     _touch()
     _ensure_scan()
     _tree_speak(lang.t('scanner') + '. ')
 
 
-def resume_mode():
+def resume_mode() -> None:
     """Restore the spoken location after the native menu relinquishes input."""
     enter_mode()
 
 
-def set_camera_live(live):
+def set_camera_live(live: bool) -> None:
     import simsight_camera as camera_follow
 
     camera_follow.set_live(live)
 
 
-def update_camera_follow():
+def update_camera_follow() -> None:
     import simsight_camera as camera_follow
 
     camera_follow.update()
 
 
-def _tree_move(step):
-    global _group_index, _item_index
+def _tree_move(step: int) -> None:
     entry = _current()
     if entry is None:
         _tree_speak()
         return
     _tree_remember()
-    if _tree_level == 'groups':
-        _group_index = (_group_index + step) % len(_groups)
+    if _state.tree_level == 'groups':
+        _state.group_index = (_state.group_index + step) % len(_state.groups)
         _tree_restore()
-    elif _tree_level == 'subcategories':
+    elif _state.tree_level == 'subcategories':
         subs = _subs_in(_entries())
         _tree_restore(subs[(subs.index(entry.category) + step) % len(subs)])
     else:
         indices = [i for i, other in enumerate(_entries()) if other.category == entry.category]
-        _item_index = indices[(indices.index(_item_index) + step) % len(indices)]
+        _state.item_index = indices[(indices.index(_state.item_index) + step) % len(indices)]
     _tree_remember()
     _tree_speak()
 
 
-def _tree_enter(activate=False):
-    global _tree_level
+def _tree_enter(activate: bool = False) -> None:
     if _current() is None:
         _tree_speak()
         return
-    if _tree_level == 'groups':
-        _tree_level = 'subcategories' if _tree_has_sublevel() else 'items'
-    elif _tree_level == 'subcategories':
-        _tree_level = 'items'
+    if _state.tree_level == 'groups':
+        _state.tree_level = 'subcategories' if _tree_has_sublevel() else 'items'
+    elif _state.tree_level == 'subcategories':
+        _state.tree_level = 'items'
     elif activate:
         _do_open()
         return
@@ -1274,30 +1378,30 @@ def _tree_enter(activate=False):
     _tree_speak()
 
 
-def _tree_back():
-    global _tree_level
+def _tree_back() -> None:
     _tree_remember()
-    if _tree_level == 'items' and _tree_has_sublevel():
-        _tree_level = 'subcategories'
+    if _state.tree_level == 'items' and _tree_has_sublevel():
+        _state.tree_level = 'subcategories'
     else:
-        _tree_level = 'groups'
+        _state.tree_level = 'groups'
     _tree_speak()
 
 
-def _do_rescan():
-    _class_cache.clear()
+def _do_rescan() -> None:
+    _state.class_cache.clear()
     availability.recheck()
     if not _scan(preserve=True):
         speech.speak(lang.t('nothing nearby'), source='widget')
         return
-    total = sum(len(v) for v in _by_group.values())
-    parts = ['{} {}, {} {}. '.format(total, lang.t('items'), len(_groups), lang.t('categories'))]
+    total = sum(len(v) for v in _state.by_group.values())
+    parts: list[Part] = [
+        '{} {}, {} {}. '.format(total, lang.t('items'), len(_state.groups), lang.t('categories'))
+    ]
     _speak_parts(parts + _tree_parts())
 
 
-def _do_step_sub(step):
+def _do_step_sub(step: int) -> None:
     """Optional legacy Page key jump; the tree itself needs no Page keys."""
-    global _tree_level
     entry = _current()
     if entry is None:
         _tree_speak()
@@ -1305,15 +1409,16 @@ def _do_step_sub(step):
     _tree_remember()
     subs = _subs_in(_entries())
     _tree_restore(subs[(subs.index(entry.category) + step) % len(subs)])
-    _tree_level = 'items'
+    _state.tree_level = 'items'
     _tree_remember()
-    _speak_parts([_label_part(_current().category), '. '] + _tree_parts())
+    landed = _current() or entry  # the list is not empty: always the restored entry
+    _speak_parts([_label_part(landed.category), '. ', *_tree_parts()])
 
 
-def _do_where():
+def _do_where() -> None:
     import services
 
-    parts = []
+    parts: list[Part] = []
     sim = services.get_active_sim()
     if sim is not None:
         name, key = _sim_name_parts(sim.sim_info)
@@ -1330,11 +1435,26 @@ def _do_where():
             parts.append(', ')
             parts.append(sub)
         parts.append('. ')
-        parts.extend(_entry_parts(entry, _item_index % len(entries), len(entries)))
+        parts.extend(_entry_parts(entry, _state.item_index % len(entries), len(entries)))
     _speak_parts(parts)
 
 
-def _do_open():
+def _pick_message(entry: Entry, obj: Any, services: Any) -> str:
+    """The A11y|pick message that asks the client for this thing's pie menu."""
+    from server.pick_info import PickType
+
+    pick_type = PickType.PICK_SIM if entry.is_sim else PickType.PICK_OBJECT
+    pos = obj.position
+    level = _level_of(obj)
+    try:
+        lot_id = int(services.active_lot().lot_id)
+    except (AttributeError, TypeError, ValueError):
+        lot_id = 0  # no active lot
+    first = (entry.first_name or '').replace('|', ' ')
+    return f'A11y|pick|{obj.id}|{int(pick_type)}|{lot_id}|{first}|{float(pos.x):.3f}|{float(pos.y):.3f}|{float(pos.z):.3f}|{level}'
+
+
+def _do_open() -> None:
     """Ask the client to open the game's pie menu on the current thing.
 
     The request goes to Flash first (A11y|pick|...): the patched PieMenuMain
@@ -1353,68 +1473,56 @@ def _do_open():
         speech.speak(lang.t('no longer here'), source='widget')
         return
     try:
-        from server.pick_info import PickType
-
-        pick_type = PickType.PICK_SIM if entry.is_sim else PickType.PICK_OBJECT
-        pos = obj.position
-        try:
-            level = int(obj.level)
-        except Exception:
-            level = 0
-        try:
-            lot_id = int(services.active_lot().lot_id)
-        except Exception:
-            lot_id = 0
-        first = (entry.first_name or '').replace('|', ' ')
-        sent = _send_ui(
-            f'A11y|pick|{obj.id}|{int(pick_type)}|{lot_id}|{first}|{float(pos.x):.3f}|{float(pos.y):.3f}|{float(pos.z):.3f}|{level}'
-        )
-    except Exception as ex:
-        speech.log_line(f'scanner: open menu failed: {ex!r}')
+        sent = _send_ui(_pick_message(entry, obj, services))
+    except Exception:
+        simsight_log.error('scanner: open menu')
         sent = False
-    speech.log_line(f'scanner: menu requested for {entry.obj_id} (sim={entry.is_sim}) sent={sent}')
+    simsight_log.line(
+        f'scanner: menu requested for {entry.obj_id} (sim={entry.is_sim}) sent={sent}'
+    )
 
 
 @sims4.commands.Command(
     'simsight.menuempty', 'a11y.menuempty', command_type=sims4.commands.CommandType.Live
 )
-def a11y_menuempty(arg: str = '', _connection=None):
+@_game_types
+def a11y_menuempty(arg: str = '', _connection: Any = None) -> bool:
     """Flash: the requested pie menu had no options."""
-    speech.speak(lang.t('no options'), source='widget')
+    try:
+        speech.speak(lang.t('no options'), source='widget')
+    except Exception:
+        simsight_log.error('scanner: menu empty')
     return True
 
 
-def _dispatch(intent):
+_INTENTS: dict[str, Callable[[], object]] = {
+    'rescan': _do_rescan,
+    'next': lambda: _tree_move(1),
+    'prev': lambda: _tree_move(-1),
+    'nextcat': _tree_enter,
+    'prevcat': _tree_back,
+    'nextsub': lambda: _do_step_sub(1),
+    'prevsub': lambda: _do_step_sub(-1),
+    'open': lambda: _tree_enter(activate=True),
+    'where': _do_where,
+    'back': _tree_back,
+    'scopeprev': lambda: cycle_range(-1),
+    'scopenext': lambda: cycle_range(1),
+}
+
+
+def _dispatch(intent: str) -> None:
     _touch()
     if intent != 'rescan':
         _ensure_scan()
-    if intent == 'rescan':
-        _do_rescan()
-    elif intent == 'next':
-        _tree_move(1)
-    elif intent == 'prev':
-        _tree_move(-1)
-    elif intent == 'nextcat':
-        _tree_enter()
-    elif intent == 'prevcat':
-        _tree_back()
-    elif intent == 'nextsub':
-        _do_step_sub(1)
-    elif intent == 'prevsub':
-        _do_step_sub(-1)
-    elif intent == 'open':
-        _tree_enter(activate=True)
-    elif intent == 'where':
-        _do_where()
-    elif intent == 'back':
-        _tree_back()
-    elif intent in ('scopeprev', 'scopenext'):
-        cycle_range(1 if intent == 'scopenext' else -1)
-    else:
-        speech.log_line(f'scanner: unknown intent {intent!r}')
+    action = _INTENTS.get(intent)
+    if action is None:
+        simsight_log.line(f'scanner: unknown intent {intent!r}')
+        return
+    action()
 
 
-def on_key(intent, on_simulation_thread=False):
+def on_key(intent: str, on_simulation_thread: bool = False) -> None:
     """Called on the KEY thread. Decides who handles the chord; never
     touches the game here unless its caller explicitly owns the simulation thread."""
     if not enabled():
@@ -1427,15 +1535,15 @@ def on_key(intent, on_simulation_thread=False):
 
         shortcuts.speak()
         return
-    if _menu_open and intent in MENU_KEYS:
+    if _state.menu_open and intent in MENU_KEYS:
         # A pie menu is open: the chords walk it through the Flash walker.
         _log_route('sent to the open menu', intent)
         try:
             import simsight_keys as keys
 
             keys._send(MENU_KEYS[intent])
-        except Exception as ex:
-            speech.log_line(f'scanner: menu key failed: {ex!r}')
+        except Exception:
+            simsight_log.error('scanner: menu key')
         return
     if on_simulation_thread:
         # The world-chord callback has already crossed onto the simulation.
@@ -1446,98 +1554,113 @@ def on_key(intent, on_simulation_thread=False):
         speech.speak(lang.t('no lot loaded'), explicit=True)
 
 
-_route_logged = {}
-
-
-def _log_route(reason, intent):
+def _log_route(reason: str, intent: str) -> None:
     """One line per reason per second (fixed reasons, bounded dict)."""
     now = time.monotonic()
-    if now - _route_logged.get(reason, 0.0) >= 1.0:
-        _route_logged[reason] = now
-        speech.log_line(f'scanner: chord {intent} {reason}')
+    if now - _state.route_logged.get(reason, 0.0) >= 1.0:
+        _state.route_logged[reason] = now
+        simsight_log.line(f'scanner: chord {intent} {reason}')
 
 
-def note_menu_open():
+def note_menu_open() -> None:
     """Any pie menu opened (ours or a mouse click)."""
-    global _menu_open
-    if not _menu_open:
-        speech.log_line('scanner: menu flag set')
-    _menu_open = True
+    if not _state.menu_open:
+        simsight_log.line('scanner: menu flag set')
+    _state.menu_open = True
     availability.pause()
 
 
 @sims4.commands.Command(
     'simsight.menuclosed', 'a11y.menuclosed', command_type=sims4.commands.CommandType.Live
 )
-def a11y_menuclosed(arg: str = '', _connection=None):
-    global _menu_open
-    if _menu_open:
-        speech.log_line('scanner: menu flag cleared')
-    _menu_open = False
+@_game_types
+def a11y_menuclosed(arg: str = '', _connection: Any = None) -> bool:
+    if _state.menu_open:
+        simsight_log.line('scanner: menu flag cleared')
+    _state.menu_open = False
     return True
+
+
+def _stats_text() -> str:
+    stats = dict(_state.scan_stats)
+    stats['mean_ms'] = stats['total_ms'] / max(1, stats['scans'])
+    text = (
+        'scanner: {scans} scans; last {last_ms:.2f} ms, mean {mean_ms:.2f} ms, '
+        'max {max_ms:.2f} ms; last objects {examined}, in range {in_range}; '
+        'classification hits {cache_hits}, misses {cache_misses}'
+    ).format(**stats)
+    return text + '; refresh {}'.format('active' if _state.refresh_requested else 'idle')
+
+
+def _scan_command(action: str, output: Any) -> None:
+    if action.lower() == 'stats':
+        text = _stats_text()
+        output(text)
+        simsight_log.line(text)
+        return
+    if not enabled():
+        output('simsight: scanner is off (cfg [features] scanner)')
+        return
+    _dispatch(action.lower())
+    output(f'simsight: scanner {action} -> {len(_state.groups)} categories, pump {pump.status()}')
 
 
 @sims4.commands.Command('simsight.scan', 'a11y.scan', command_type=sims4.commands.CommandType.Live)
-def a11y_scan(action: str = 'rescan', _connection=None):
+@_game_types
+def a11y_scan(action: str = 'rescan', _connection: Any = None) -> bool:
     """simsight.scan [rescan|next|prev|nextcat|prevcat|nextsub|prevsub|open|back|
     where] runs one scanner action from the console (same as the chords)."""
-    output = sims4.commands.CheatOutput(_connection)
-    if action.lower() == 'stats':
-        stats = dict(_scan_stats)
-        stats['mean_ms'] = stats['total_ms'] / max(1, stats['scans'])
-        text = (
-            'scanner: {scans} scans; last {last_ms:.2f} ms, mean {mean_ms:.2f} ms, '
-            'max {max_ms:.2f} ms; last objects {examined}, in range {in_range}; '
-            'classification hits {cache_hits}, misses {cache_misses}'
-        ).format(**stats)
-        text += '; refresh {}'.format('active' if _refresh_requested else 'idle')
-        output(text)
-        speech.log_line(text)
-        return True
-    if not enabled():
-        output('simsight: scanner is off (cfg [features] scanner)')
-        return True
-    _dispatch(action.lower())
-    output(f'simsight: scanner {action} -> {len(_groups)} categories, pump {pump.status()}')
+    try:
+        _scan_command(action, sims4.commands.CheatOutput(_connection))
+    except Exception:
+        simsight_log.error('scanner: scan command')
     return True
 
 
-def _install_zone_hook():
+def _reset_for_new_zone() -> None:
+    """A lot finished loading: forget the old lot's lists, caches and names."""
+    _state.by_group = {}
+    _state.groups = []
+    _state.tree_level = 'groups'
+    _state.tree_groups.clear()
+    _state.tree_items.clear()
+    availability.reset()
+    _unbind_availability_client()
+    _bind_availability_client()
+    import simsight_camera as camera_follow
+
+    camera_follow.reset()
+    _state.menu_open = False
+    _state.last_scan = 0.0
+    _state.refresh_requested = False
+    _state.last_activity = 0.0
+    _state.class_cache.clear()
+    for key in _state.scan_stats:
+        _state.scan_stats[key] = 0
+    try:
+        _start_refresh()
+    except Exception:
+        simsight_log.error('scanner: refresh alarm')
+    with _loc_lock:
+        _loc_cache.clear()
+        _state.loc_waiting.clear()
+    # Re-assert the Flash game-message hook after every load.
+    _send_ui('A11yHook')
+
+
+def _install_zone_hook() -> None:
     import zone
 
     original = zone.Zone.on_loading_screen_animation_finished
 
-    def a11y_scanner_on_loading_screen_animation_finished(self, *args, **kwargs):
-        global _by_group, _groups, _menu_open, _last_scan, _refresh_requested, _last_activity
-        global _tree_level
+    def a11y_scanner_on_loading_screen_animation_finished(
+        self: Any, *args: Any, **kwargs: Any
+    ) -> Any:
         result = original(self, *args, **kwargs)
-        _by_group = {}
-        _groups = []
-        _tree_level = 'groups'
-        _tree_groups.clear()
-        _tree_items.clear()
-        availability.reset()
-        _unbind_availability_client()
-        _bind_availability_client()
-        import simsight_camera as camera_follow
-
-        camera_follow.reset()
-        _menu_open = False
-        _last_scan = 0.0
-        _refresh_requested = False
-        _last_activity = 0.0
-        _class_cache.clear()
-        for key in _scan_stats:
-            _scan_stats[key] = 0
         try:
-            _start_refresh()
-        except Exception as ex:
-            speech.log_line(f'scanner: refresh alarm failed: {ex!r}')
-        with _loc_lock:
-            _loc_cache.clear()
-            _loc_waiting.clear()
-        # Re-assert the Flash game-message hook after every load.
-        _send_ui('A11yHook')
+            _reset_for_new_zone()
+        except Exception:
+            simsight_log.error('scanner: zone load reset')
         return result
 
     zone.Zone.on_loading_screen_animation_finished = (
@@ -1547,16 +1670,20 @@ def _install_zone_hook():
 
 try:
     _install_zone_hook()
-except Exception as _zone_ex:
-    speech.log_line(f'scanner: zone hook install failed: {_zone_ex!r}')
+except Exception:
+    simsight_log.error('scanner: zone hook install')
 
 
-# Install only the remaining local extensions after module initialization,
-# on the simulation pump. Upstream owns the integrated contribution controls.
-try:
-    import simsight_extensions
-    import simsight_plus_core
+def _queue_extensions() -> None:
+    # Install only the remaining local extensions after module initialization,
+    # on the simulation pump. Upstream owns the integrated contribution controls.
+    try:
+        import simsight_extensions
+        import simsight_plus_core
 
-    simsight_plus_core.post(simsight_extensions.install)
-except Exception as _extensions_error:
-    speech.log_line(f'local extensions could not be queued: {_extensions_error!r}')
+        simsight_plus_core.post(simsight_extensions.install)
+    except Exception:
+        simsight_log.error('scanner: local extensions could not be queued')
+
+
+_queue_extensions()

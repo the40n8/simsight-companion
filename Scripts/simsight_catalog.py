@@ -11,48 +11,61 @@ Every level is a native picker, so the picker owns the keyboard: Build mode's
 own hotkeys never see the keys pressed in it. Item lists and selection use the
 SimSight Plus catalog bridge in TooltipManager (A11yCatalogBrowse for lists
 and searches, A11yPlusSelect to pick up), and its replies (a11yplus.flash).
+
+Picker callbacks and the timeout run through simsight_plus_core.post, which
+logs anything they raise.
 """
 
+from __future__ import annotations
+
 import threading
+from typing import TYPE_CHECKING, Any, Callable
 from urllib.parse import quote
 
 import simsight_catalogtree as tree
 
+if TYPE_CHECKING:
+    from simsight_catalogtree import Group, Subcategory
+
+    # (name, price in simoleons, number of colours), as simsight_plus_build parses it
+    Item = tuple[str, int, int]
+
 _TAG = 'catalogtree'
 _TIMEOUT = 5.0
+_SEARCH_PRODUCT_TYPE = 2  # search covers every Buy product
 _HINT = (
     'Press Ctrl+Alt+B to place it with the Build cursor, or Ctrl+Alt+O to choose something else.'
 )
 
 
-def _core():
+def _core() -> Any:
     import simsight_plus_core as core
 
     return core
 
 
-def _build():
+def _build() -> Any:
     import simsight_plus_build as build
 
     return build
 
 
-def _label(key):
+def _label(key: int) -> Any:
     import simsight_menu as menu
 
     return menu._ls_hash(key)
 
 
-def _ready():
-    """In Build mode with an active Sim; otherwise says why not."""
-    core = _core()
+def _ready() -> bool:
+    """In Build mode; otherwise says why not."""
     if not _build().in_build_mode():
-        core.speak('Open Build mode first with F2, then press Ctrl+Alt+O.')
+        _core().speak('Open Build mode first with F2, then press Ctrl+Alt+O.')
         return False
     return True
 
 
-def open_tree():
+def open_tree() -> bool:
+    """The top of the tree: search, by room, by function."""
     if not _ready():
         return False
     rows = [
@@ -73,20 +86,25 @@ def open_tree():
         ),
     ]
 
-    def picked(value):
+    def picked(value: tuple[str, ...]) -> None:
         if value[0] == 'find':
             find()
         else:
             _groups(value[1])
 
-    return _core().choose(
-        'Catalog', 'Choose how to look, or search. Escape closes.', rows, picked, tag=_TAG
+    return bool(
+        _core().choose(
+            'Catalog', 'Choose how to look, or search. Escape closes.', rows, picked, tag=_TAG
+        )
     )
 
 
-def _groups(kind):
-    groups = tree.ROOMS if kind == 'room' else tree.FUNCTIONS
-    rows = [(_label(label), None, i) for (i, (label, _subs)) in enumerate(groups)]
+def _groups_of(kind: str) -> tuple[Group, ...]:
+    return tree.ROOMS if kind == 'room' else tree.FUNCTIONS
+
+
+def _groups(kind: str) -> None:
+    rows = [(_label(label), None, i) for (i, (label, _subs)) in enumerate(_groups_of(kind))]
     _core().choose(
         'By room' if kind == 'room' else 'By function',
         'Choose one. Escape goes back.',
@@ -97,8 +115,8 @@ def _groups(kind):
     )
 
 
-def _subcategories(kind, index):
-    (label, subs) = (tree.ROOMS if kind == 'room' else tree.FUNCTIONS)[index]
+def _subcategories(kind: str, index: int) -> None:
+    (label, subs) = _groups_of(kind)[index]
     rows = [(_label(sub[0]), None, j) for (j, sub) in enumerate(subs)]
     _core().choose(
         _label(label),
@@ -113,17 +131,23 @@ def _subcategories(kind, index):
 class _Arrived:
     """The Plus reply handler calls set() when a list has fully arrived."""
 
-    def __init__(self, on_done):
+    def __init__(self, on_done: Callable[[], None]) -> None:
         self.on_done = on_done
         self.done = False
 
-    def set(self):
+    def set(self) -> None:
         if not self.done:
             self.done = True
             _core().post(self.on_done)
 
 
-def _request(product_type, tags, priority, search, on_done):
+def _request(
+    product_type: int,
+    tags: str,
+    priority: str,
+    search: str,
+    on_done: Callable[[list[Item]], None],
+) -> None:
     """Ask the bridge for a list; on_done(items) on the game thread."""
     build = _build()
     build._cat['serial'] += 1
@@ -136,7 +160,7 @@ def _request(product_type, tags, priority, search, on_done):
         )
     )
 
-    def timeout():
+    def timeout() -> None:
         if not arrived.done and build._cat['serial'] == serial:
             arrived.done = True
             _core().speak('The catalog did not answer. Open Build mode with F2 and try again.')
@@ -144,10 +168,10 @@ def _request(product_type, tags, priority, search, on_done):
     threading.Timer(_TIMEOUT, lambda: _core().post(timeout)).start()
 
 
-def _browse(sub, back):
+def _browse(sub: Subcategory, back: Callable[[], object]) -> None:
     (label, product_type, tags, priority) = sub
 
-    def arrived(items):
+    def arrived(items: list[Item]) -> None:
         if not items:
             _core().speak('There is nothing here in your game.')
             back()
@@ -158,14 +182,14 @@ def _browse(sub, back):
     _request(product_type, tags, priority, '', arrived)
 
 
-def _describe(price, colours):
+def _describe(price: int, colours: int) -> str:
     text = f'{price:,} simoleons'
     if colours > 1:
         text += f', {colours} colours'
     return text
 
 
-def _items(title, items, back):
+def _items(title: Any, items: list[Item], back: Callable[[], object]) -> None:
     rows = [
         (name, _describe(price, colours), i) for (i, (name, price, colours)) in enumerate(items)
     ]
@@ -179,7 +203,7 @@ def _items(title, items, back):
     )
 
 
-def _pick(index):
+def _pick(index: int) -> None:
     build = _build()
     build._NEXT_HINT['tree'] = _HINT
     build._cat['next'] = 'tree'
@@ -187,27 +211,32 @@ def _pick(index):
     build._send_ui(f'A11y|plus|select|{index}')
 
 
-def find():
+def find() -> bool:
+    """Ask for a word, then search the catalog for it."""
     if not _ready():
         return False
 
-    def typed(text):
+    def typed(text: str | None) -> None:
         text = (text or '').strip()
         if not text:
             open_tree()
             return
         search(text)
 
-    return _core().ask_text(
-        'Search the catalog',
-        'Type what you are looking for, for example bed, fridge or lamp.',
-        '',
-        typed,
+    return bool(
+        _core().ask_text(
+            'Search the catalog',
+            'Type what you are looking for, for example bed, fridge or lamp.',
+            '',
+            typed,
+        )
     )
 
 
-def search(text):
-    def arrived(items):
+def search(text: str) -> None:
+    """Search the catalog for text and list what matches."""
+
+    def arrived(items: list[Item]) -> None:
         if not items:
             _core().speak(f'Nothing found for {text}. Try another word.')
             find()
@@ -215,4 +244,4 @@ def search(text):
         _items(f'Results for {text}', items, open_tree)
 
     _core().speak('Searching.')
-    _request(2, '', '', text, arrived)
+    _request(_SEARCH_PRODUCT_TYPE, '', '', text, arrived)

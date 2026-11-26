@@ -8,8 +8,10 @@ generation time, for the reader only; nothing here is spoken.
 Sources: Client_TagsBuildBuy 125, Client_TagsBuild 38, Client_TagsFunction 482.
 """
 
+from __future__ import annotations
+
 # subcategory tag name -> label hash, in EA's own file order
-TAG_LABEL_HASH = {
+TAG_LABEL_HASH: dict[str, int] = {
     'BuyCatEE_ActiveActivity': 0xFC3766BA,  # Active
     'BuyCatEE_Alarm': 0x4D7166B1,  # Alarms
     'BuyCatEE_Audio': 0x10B672FB,  # Audio
@@ -657,7 +659,7 @@ TAG_LABEL_HASH = {
     'Func_yoga': 0x5A9B084E,  # Yoga
 }
 
-ORDER = [
+ORDER: list[str] = [
     'BuyCatEE_ActiveActivity',
     'BuyCatEE_Alarm',
     'BuyCatEE_Audio',
@@ -1306,7 +1308,7 @@ ORDER = [
 ]
 
 # main category key -> label hash (the catalog's own filter strings)
-GROUP_LABEL_HASH = {
+GROUP_LABEL_HASH: dict[str, int] = {
     'SIMS': 0xBE52D6ED,  # Sims (Data/Client STBL)
     'COMFORT': 0x785D2B30,  # Comfort (KeysBB.BB_FILTER_BUY_COMFORT)
     'SURFACE': 0x52B94704,  # Surfaces (KeysBB.BB_FILTER_BUY_SURFACES)
@@ -1325,7 +1327,7 @@ GROUP_LABEL_HASH = {
 }
 
 # main categories in the catalog's left-to-right order
-GROUP_ORDER = [
+GROUP_ORDER: list[str] = [
     'SIMS',
     'COMFORT',
     'SURFACE',
@@ -1344,7 +1346,7 @@ GROUP_ORDER = [
 ]
 
 # main category key -> build_buy.BuyCategory bit
-GROUP_FLAG = {
+GROUP_FLAG: dict[str, int] = {
     'APPLIANCES': 2,
     'ELECTRONICS': 4,
     'ENTERTAINMENT': 8,
@@ -1359,6 +1361,6 @@ GROUP_FLAG = {
     'VEHICLE': 8192,
 }
 
-SIMS_LABEL_HASH = 0xBE52D6ED  # Sims
-ENTERTAINMENT_LABEL_HASH = 0xAB618646  # Activities and Skills
-MISC_LABEL_HASH = 0x82815675  # Misc
+SIMS_LABEL_HASH: int = 0xBE52D6ED  # Sims
+ENTERTAINMENT_LABEL_HASH: int = 0xAB618646  # Activities and Skills
+MISC_LABEL_HASH: int = 0x82815675  # Misc
