@@ -1,69 +1,93 @@
 """Open the selected running event's native goal HUD, without acting on goals."""
 
-import time
+from __future__ import annotations
+
 import threading
+import time
+from typing import Any, NamedTuple
 
-_serial = 0
-_pending = None
-_registered = False
+import simsight_log
 
-
-def _log(message):
-    import simsight_speech as speech
-
-    speech.log_line('event goals: ' + message)
+_REPLY_SECONDS = 4.0  # a reply later than this is ignored
+_TIMEOUT_SECONDS = 4.1  # then the player hears the HUD is unavailable
 
 
-def _unavailable():
+class _Job(NamedTuple):
+    serial: int
+    zone: int
+    event: int
+    until: float
+
+
+class _State:
+    serial = 0
+    pending: _Job | None = None
+    registered = False
+
+
+_state = _State()
+
+
+def _log(message: str) -> None:
+    simsight_log.line('event goals: ' + message)
+
+
+def _unavailable() -> None:
     import simsight_lang as lang
     import simsight_speech as speech
 
     speech.speak(lang.t('event goals unavailable'), explicit=True)
 
 
-def _expire(serial):
-    global _pending
-    if _pending is None or _pending['serial'] != serial:
-        return
-    job = _pending
-    _pending = None
+def _current_zone() -> int:
     import services
 
-    if int(services.current_zone_id()) != job['zone']:
+    return int(services.current_zone_id())
+
+
+def _expire(serial: int) -> None:
+    job = _state.pending
+    if job is None or job.serial != serial:
+        return
+    _state.pending = None
+    if _current_zone() != job.zone:
         return
     _log('native UI query timed out')
     _unavailable()
 
 
-def receive(text=''):
-    global _pending
-    import services
+def parse_reply(text: str, job: _Job | None) -> str | None:
+    """The HUD status in a decoded 'serial|zone|status' reply for this job."""
+    parts = text.split('|')
+    if len(parts) != 3 or job is None:
+        return None
+    if parts[0] != str(job.serial) or parts[1] != str(job.zone):
+        return None
+    return parts[2]
+
+
+def receive(text: str = '') -> bool:
     import simsight_narrator as narrator
 
     try:
-        parts = narrator._decode_percent(text).split('|')
-        if len(parts) != 3 or _pending is None:
+        job = _state.pending
+        status = parse_reply(narrator._decode_percent(text), job)
+        if status is None or job is None or _current_zone() != job.zone:
             return False
-        job = _pending
-        if parts[0] != str(job['serial']) or parts[1] != str(job['zone']):
+        _state.pending = None
+        if time.monotonic() > job.until:
             return False
-        if int(services.current_zone_id()) != job['zone']:
-            return False
-        _pending = None
-        if time.monotonic() > job['until']:
-            return False
-        _log('native HUD status={} event={}'.format(parts[2], job['event']))
-        if parts[2] != 'opened':
+        _log(f'native HUD status={status} event={job.event}')
+        if status != 'opened':
             _unavailable()
-        return parts[2] == 'opened'
+        return status == 'opened'
     except Exception as exc:
         _log('invalid native reply: ' + str(exc))
         return False
 
 
-def _register():
-    global _registered
-    if _registered:
+def _register() -> None:
+    if _state.registered:
         return
     import sims4.commands
 
@@ -72,33 +96,31 @@ def _register():
         'a11y.eventgoals_enc',
         command_type=sims4.commands.CommandType.Live,
     )
-    def command(text: str = '', _connection=None):
+    def command(text: str = '', _connection: Any = None) -> bool:
         return receive(text)
 
-    _registered = True
+    _state.registered = True
 
 
-def open_goals(situation_id):
-    global _serial, _pending
-    import services
+def open_goals(situation_id: Any) -> bool:
     import simsight_hub as hub
     import simsight_pump as pump
 
-    manager, situation = hub._event(situation_id)
+    _manager, situation = hub._event(situation_id)
     if situation is None:
         return False
     _register()
-    _serial += 1
-    job = {
-        'serial': _serial,
-        'zone': int(services.current_zone_id()),
-        'event': int(situation_id),
-        'until': time.monotonic() + 4.0,
-    }
-    _pending = job
-    hub._ui('A11y|eventgoals|{}|{}|{}'.format(job['event'], job['zone'], job['serial']))
+    _state.serial += 1
+    job = _Job(
+        serial=_state.serial,
+        zone=_current_zone(),
+        event=int(situation_id),
+        until=time.monotonic() + _REPLY_SECONDS,
+    )
+    _state.pending = job
+    hub._ui(f'A11y|eventgoals|{job.event}|{job.zone}|{job.serial}')
     # The timer never touches game data; only the simulation pump may expire it.
-    timer = threading.Timer(4.1, lambda: pump.post(_expire, job['serial']))
+    timer = threading.Timer(_TIMEOUT_SECONDS, lambda: pump.post(_expire, job.serial))
     timer.daemon = True
     timer.start()
     return True
