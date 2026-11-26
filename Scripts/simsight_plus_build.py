@@ -3,18 +3,32 @@
 # SimSight projects world points to screen points (its "buildaim" message); we then move the
 # real mouse there. The tool (Room Tool, Wall Tool, a door, a paint) is chosen by the player in the
 # Build catalog with SimSight's keyboard navigation; we only do the pointing.
+from __future__ import annotations
+
 import math
+import re
 import threading
 import time
-import re
+from typing import TYPE_CHECKING, Any
+
+import simsight_log
 import simsight_plus_core as core
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
+
+    Point = tuple[float, float]  # world (x, z), or screen (x, y)
+    Box = tuple[int, int, int, int]  # (e0, n0, e1, n1) meters from the west and north edges
+    Grid = list[list[Any]]  # grid[n][e]: room id, 'free', 'inside' or 'object'
+    Row = tuple[Any, ...]  # a core.choose row
+    Action = Callable[[list[Any]], object]  # gets the projected screen points
 
 # ---------------------------------------------------------------- lot frame
 # Positions are given in whole meters from the lot's west edge (x) and north edge (y).
 
 
 class Frame:
-    def __init__(self, lot):
+    def __init__(self, lot: Any) -> None:
         xs = [c.x for c in lot.corners]
         zs = [c.z for c in lot.corners]
         self.x0, self.x1 = min(xs), max(xs)
@@ -22,33 +36,33 @@ class Frame:
         self.width = int(round(self.x1 - self.x0))  # west to east
         self.depth = int(round(self.z1 - self.z0))  # north to south
 
-    def world(self, e, n):
+    def world(self, e: float, n: float) -> tuple[float, float]:
         """meters from west edge, meters from north edge -> world x, z"""
         return (self.x0 + e, self.z1 - n)
 
-    def local(self, x, z):
+    def local(self, x: float, z: float) -> tuple[float, float]:
         return (x - self.x0, self.z1 - z)
 
 
-def frame():
+def frame() -> Frame:
     import services
 
     return Frame(services.active_lot())
 
 
-def in_build_mode():
+def in_build_mode() -> bool:
     try:
         import services
 
         return bool(services.current_zone().is_in_build_buy)
-    except Exception:
+    except AttributeError:  # no zone yet (loading)
         return False
 
 
 # ---------------------------------------------------------------- tile map
 
 
-def tile_map(level=0):
+def tile_map(level: int = 0) -> tuple[Frame, Grid]:
     """grid[n][e] for each 1 m tile: 'room' id (int > 0), 'free', or 'object'."""
     import services
     import build_buy
@@ -57,7 +71,7 @@ def tile_map(level=0):
     import simsight_plus_rooms as rooms
 
     f = frame()
-    grid = [[None] * f.width for _ in range(f.depth)]
+    grid: Grid = [[None] * f.width for _ in range(f.depth)]
     for n in range(f.depth):
         for e in range(f.width):
             (x, z) = f.world(e + 0.5, n + 0.5)
@@ -65,29 +79,38 @@ def tile_map(level=0):
             pos = sims4.math.Vector3(x, terrain.get_terrain_height(x, z), z)
             try:
                 outside = build_buy.is_location_outside(pos, level)
-            except Exception:
+            except Exception:  # the game's build data may not answer for this tile
                 outside = rid == 0
             grid[n][e] = 'free' if outside else (rid or 'inside')
     for obj in services.object_manager().values():
-        try:
-            if obj.is_sim or int(obj.level) != level:
-                continue
-            if not any(t.startswith('BuyCat') for t in rooms.tag_names(obj)):
-                continue
-            (e, n) = f.local(obj.position.x, obj.position.z)
-            (e, n) = (int(e), int(n))
+        tile = _object_tile(f, obj, level, rooms.tag_names)
+        if tile is not None:
+            (e, n) = tile
             if 0 <= n < f.depth and 0 <= e < f.width and grid[n][e] == 'free':
                 grid[n][e] = 'object'
-        except Exception:
-            continue
     return f, grid
 
 
-def free_spots(grid, w, d, limit=6):
+def _object_tile(
+    f: Frame, obj: Any, level: int, tag_names: Callable[[Any], set[str]]
+) -> tuple[int, int] | None:
+    """(e, n) tile of a bought object on this floor, or None."""
+    try:
+        if obj.is_sim or int(obj.level) != level:
+            return None
+        if not any(t.startswith('BuyCat') for t in tag_names(obj)):
+            return None
+        (e, n) = f.local(obj.position.x, obj.position.z)
+        return (int(e), int(n))
+    except (AttributeError, TypeError, ValueError):  # objects without a place on the lot
+        return None
+
+
+def free_spots(grid: Grid, w: int, d: int, limit: int = 6) -> list[tuple[int, int]]:
     """Top-left corners (e, n) where a w x d rectangle is completely free, preferring spots
     that touch the house (so the new room joins it) and are near the middle."""
     rows, cols = len(grid), len(grid[0]) if grid else 0
-    spots = []
+    spots: list[tuple[int, float, int, int]] = []
     for n in range(1, rows - d):  # rooms must stay 1 m inside the lot edge
         for e in range(1, cols - w):
             if all(grid[n + j][e + i] == 'free' for j in range(d) for i in range(w)):
@@ -98,12 +121,12 @@ def free_spots(grid, w, d, limit=6):
                             0 <= n + j < rows
                             and 0 <= e + i < cols
                             and (i in (-1, w) or j in (-1, d))
+                            and grid[n + j][e + i] not in ('free', 'object')
                         ):
-                            if grid[n + j][e + i] not in ('free', 'object'):
-                                touch += 1
+                            touch += 1
                 spots.append((-touch, abs(e + w / 2 - cols / 2) + abs(n + d / 2 - rows / 2), e, n))
     spots.sort()
-    out = []
+    out: list[tuple[int, int]] = []
     for _touch, _dist, e, n in spots:
         if all(abs(e - e2) >= max(2, w // 2) or abs(n - n2) >= max(2, d // 2) for (e2, n2) in out):
             out.append((e, n))
@@ -112,11 +135,11 @@ def free_spots(grid, w, d, limit=6):
     return out
 
 
-def _touch_text(grid, e, n, w, d):
+def _touch_text(grid: Grid, e: int, n: int, w: int, d: int) -> str:
     sides = []
     rows, cols = len(grid), len(grid[0])
 
-    def solid(r, c):
+    def solid(r: int, c: int) -> bool:
         return 0 <= r < rows and 0 <= c < cols and grid[r][c] not in ('free', 'object')
 
     if any(solid(n - 1, e + i) for i in range(w)):
@@ -134,47 +157,13 @@ def _touch_text(grid, e, n, w, d):
 
 # ---------------------------------------------------------------- projection (via SimSight)
 
-_waiting = {}  # serial -> [event, result]
-_hooked = [False]
-_SCREEN_RE = re.compile(r'Screen x (-?\d+), y (-?\d+)')
+
+def _hook_replies() -> None:
+    """Kept for callers: projection replies now come from simsight_build_coordinates,
+    so nothing needs to be caught from SimSight's build speech any more."""
 
 
-def _hook_replies():
-    if _hooked[0]:
-        return
-    import simsight_build as b
-
-    original = b._say
-
-    def a11yplus_say(en, pl=None):
-        try:
-            if _waiting:
-                m = _SCREEN_RE.search(en or '')
-                serial = max(_waiting)
-                (ev, res) = _waiting[serial]
-                if m and 'aimed' in en:
-                    res[:] = [int(m.group(1)), int(m.group(2))]
-                    ev.set()
-                    return None
-                if (
-                    'not visible' in (en or '')
-                    or 'unavailable' in (en or '')
-                    or 'Close the open' in (en or '')
-                ):
-                    res[:] = ['fail', en]
-                    ev.set()
-                    return None
-                if 'Build cursor off' in (en or '') or 'Select or place' in (en or ''):
-                    return None
-        except Exception:
-            core.log_exc('aim reply')
-        return original(en, pl) if pl is not None else original(en)
-
-    b._say = a11yplus_say
-    _hooked[0] = True
-
-
-def _send_ui(msg):
+def _send_ui(msg: str) -> None:
     import distributor.ops
     import distributor.system
 
@@ -183,7 +172,7 @@ def _send_ui(msg):
     )
 
 
-def _new_serial():
+def _new_serial() -> int:
     import simsight_build as b
     import services
 
@@ -193,7 +182,7 @@ def _new_serial():
     return b._serial
 
 
-def floor_height(x, z, level):
+def floor_height(x: float, z: float, level: int) -> float:
     """Height of the floor at a point (includes the house foundation), or ground height outside."""
     import routing
     import services
@@ -204,12 +193,12 @@ def floor_height(x, z, level):
             services.current_zone_id(), int(level), routing.SurfaceType.SURFACETYPE_WORLD
         )
         return terrain.get_terrain_height(x, z, routing_surface=surface)
-    except Exception:
+    except Exception:  # no floor surface here: ground height plus 3 m a floor
         return terrain.get_terrain_height(x, z) + 3.0 * level
 
 
-def cursor_off():
-    def go():
+def cursor_off() -> None:
+    def go() -> None:
         _send_ui(f'A11y|build|off|{_new_serial()}')
 
     core.post(go)
@@ -219,10 +208,10 @@ def cursor_off():
 # ---------------------------------------------------------------- real mouse
 
 
-def _user32():
+def _user32() -> Any:
     import ctypes
 
-    return ctypes.windll.user32
+    return ctypes.windll.user32  # type: ignore[attr-defined]  # Windows only
 
 
 # Measured: SimSight's projected point sits about 21 interface pixels below where the game's own
@@ -230,14 +219,14 @@ def _user32():
 OFFSET = [0.0, 0.0]
 
 
-def _mouse_base(flags, data=0):
+def _mouse_base(flags: int, data: int = 0) -> None:
     _user32().mouse_event(flags, 0, 0, data, 0)
 
 
 LEFT_DOWN, LEFT_UP, WHEEL = 0x0002, 0x0004, 0x0800
 
 
-def screenshot(path, mark=None):
+def screenshot(path: str, mark: Sequence[float] | None = None) -> bool:
     """Diagnostics: save the game window's client area as a 24-bit BMP.
     mark=(x, y) screen pixels draws a small cross there (where the mouse
     clicks). Returns True when written. Worker thread; never raises."""
@@ -257,7 +246,7 @@ def screenshot(path, mark=None):
         class POINT(ctypes.Structure):
             _fields_ = [('x', ctypes.c_long), ('y', ctypes.c_long)]
 
-        u, g = _user32(), ctypes.windll.gdi32
+        u, g = _user32(), ctypes.windll.gdi32  # type: ignore[attr-defined]  # Windows only
         g.CreateCompatibleDC.restype = ctypes.c_void_p
         g.CreateCompatibleBitmap.restype = ctypes.c_void_p
         g.SelectObject.restype = ctypes.c_void_p
@@ -308,12 +297,12 @@ def screenshot(path, mark=None):
             f.write(bytes(data))
         core.log(f'screenshot {path} ({w}x{h}, mark {mark})')
         return True
-    except Exception as ex:
+    except Exception as ex:  # diagnostics only: never stop the job for a picture
         core.log(f'screenshot failed: {ex!r}')
         return False
 
 
-def _drag_base(a, b, shift=False):
+def _drag_base(a: Sequence[float], b: Sequence[float], shift: bool = False) -> None:
     u = _user32()
     (ax, ay), (bx, by) = _to_screen(*a), _to_screen(*b)
     if shift:
@@ -334,7 +323,7 @@ def _drag_base(a, b, shift=False):
     time.sleep(0.3)
 
 
-def _click_base(a, shift=False):
+def _click_base(a: Sequence[float], shift: bool = False) -> None:
     u = _user32()
     (ax, ay) = _to_screen(*a)
     if shift:
@@ -351,7 +340,7 @@ def _click_base(a, shift=False):
     time.sleep(0.3)
 
 
-def tap_scan(scan, extended=False):
+def tap_scan(scan: int, extended: bool = False) -> None:
     """Press and release a key by its scan code with SendInput, the way a keyboard does
     (the game ignores some keys sent with keybd_event)."""
     import ctypes
@@ -383,13 +372,19 @@ def tap_scan(scan, extended=False):
 # ---------------------------------------------------------------- doing a pointing job
 
 
-_busy = [False]
+_busy = [False]  # [True] while a pointing job runs (other modules read and set it)
 
 
 VIEW_FROM = {'north': (0.0, -1.0), 'south': (0.0, 1.0), 'east': (-1.0, 0.0), 'west': (1.0, 0.0)}
 
 
-def _focus_camera(x, z, level, view=None, focus_height=None):
+def _focus_camera(
+    x: float,
+    z: float,
+    level: int,
+    view: tuple[float, float] | None = None,
+    focus_height: float | None = None,
+) -> None:
     """Center the camera on a point. view=(dx, dz): put the camera on that side of the point,
     looking at it, so a wall there is seen from the front and is not cut away.
     focus_height: look at that height above the floor instead of the ground (hanging wall
@@ -411,7 +406,7 @@ def _focus_camera(x, z, level, view=None, focus_height=None):
     camera.focus_on_object_from_position(obj_position=target, camera_position=eye)
 
 
-def _zoom_out(notches=2):
+def _zoom_out(notches: int = 2) -> None:
     u = _user32()
     w, h = u.GetSystemMetrics(0), u.GetSystemMetrics(1)
     u.SetCursorPos(w // 2, h // 2)
@@ -420,7 +415,7 @@ def _zoom_out(notches=2):
         time.sleep(0.15)
 
 
-def overview_camera(points_world, level=0):
+def overview_camera(points_world: Sequence[Point], level: int = 0) -> None:
     """Look down from high above the street side (north) at a group of points, so a whole house fits
     on screen. Aimed at the near (north) edge: points close to the camera drop off the bottom otherwise."""
     import camera
@@ -442,9 +437,16 @@ def overview_camera(points_world, level=0):
     )
 
 
-def _point_and_act_base(
-    points_world, level, action, describe, height=0.0, view=None, overview=False, focus_height=None
-):
+def _point_and_act_base(  # noqa: PLR0913, PLR0917 - signature other modules call
+    points_world: list[Point],
+    level: int,
+    action: Action,
+    describe: str,
+    height: float = 0.0,
+    view: tuple[float, float] | None = None,
+    overview: bool = False,
+    focus_height: float | None = None,
+) -> bool:
     """Worker thread only. Center the camera, project the points, do the mouse action.
     Returns True when the action was performed."""
     _hook_replies()
@@ -457,7 +459,7 @@ def _point_and_act_base(
     time.sleep(1.8)
     screen = None
     for attempt in range(4):
-        pts = []
+        pts: list[Any] = []
         for x, z in points_world:
             p = project(x, z, level, height=height)
             if p is None:
@@ -487,12 +489,12 @@ def _point_and_act_base(
     return True
 
 
-def on_main(fn, *args):
+def on_main(fn: Callable[..., Any], *args: Any) -> Any:
     """Worker thread only: run fn on the game thread and wait for its result."""
     ev = threading.Event()
-    box = []
+    box: list[Any] = []
 
-    def go():
+    def go() -> None:
         try:
             box.append(fn(*args))
         except Exception:
@@ -505,32 +507,27 @@ def on_main(fn, *args):
     return box[0] if box else None
 
 
-def current_floor():
-    """The floor the game is showing and building on (0 = ground floor). The game keeps the camera
-    target about 1 meter above the floor it shows, and tells us where the target is."""
-    import camera
-    import terrain
-
-    t = camera._target_position
-    if t is None:
-        return None
-    return int(round((t.y - terrain.get_terrain_height(t.x, t.z) - 1.0) / 3.0))
-
-
-def undo():
+def undo() -> None:
     _send_ui(f'A11y|build|undo|{_new_serial()}')
 
 
-def run_job(
-    points_world, level, action, describe, verify=None, height=0.0, view=None, focus_height=None
-):
+def run_job(  # noqa: PLR0913, PLR0917 - signature other modules call
+    points_world: list[Point],
+    level: int,
+    action: Action,
+    describe: str,
+    verify: Callable[[], object] | None = None,
+    height: float = 0.0,
+    view: tuple[float, float] | None = None,
+    focus_height: float | None = None,
+) -> None:
     """Do one pointing job in a background thread so the game keeps drawing frames."""
     if _busy[0]:
         core.speak('Still working on the last build step.')
         return
     _busy[0] = True
 
-    def work():
+    def work() -> None:
         try:
             if (
                 point_and_act(
@@ -550,37 +547,37 @@ def run_job(
 
 # ---------------------------------------------------------------- selected tool / product
 
-_product = {'id': None, 'name': ''}
+_product: dict[str, Any] = {'id': None, 'name': ''}  # the chosen catalog item
 
 
-def _hook_product():
+def _hook_product() -> None:
     try:
         import simsight_place as place
-    except Exception:
+    except ImportError:
         return
     if getattr(place, '_a11yplus_hooked', False):
         return
     original = place.set_product
 
-    def a11yplus_set_product(instance_text, name):
+    def a11yplus_set_product(instance_text: Any, name: Any) -> Any:
         try:
             text = str(instance_text or '').strip()
             _product['id'] = int(text) if text.isdigit() and int(text) else None
             _product['name'] = str(name or '').strip()
             core.log('build: selected product {} {!r}'.format(_product['id'], _product['name']))
-        except Exception:
-            pass
+        except Exception:  # noting the product must never stop SimSight choosing it
+            simsight_log.error('plus build: note selected product')
         return original(instance_text, name)
 
     place.set_product = a11yplus_set_product
-    place._a11yplus_hooked = True
+    setattr(place, '_a11yplus_hooked', True)  # noqa: B010 - marker on a module mypy knows
 
 
-def tool_name():
+def tool_name() -> str:
     return _product['name'] or ''
 
 
-def _tool_is(*words):
+def _tool_is(*words: str) -> bool:
     name = tool_name().lower()
     return any(w in name for w in words)
 
@@ -588,36 +585,11 @@ def _tool_is(*words):
 # ---------------------------------------------------------------- user features
 
 
-def describe_lot():
-    import simsight_plus_rooms as rooms
-
-    f, grid = tile_map()
-    free = sum(1 for row in grid for c in row if c == 'free')
-    parts = [
-        f'The lot is {f.width} meters from west to east, and {f.depth} meters from north to south.'
-    ]
-    rlist = [r for r in rooms.scan_rooms() if r.level == 0]
-    if rlist:
-        parts.append('Ground floor rooms, as meters from the west edge and from the north edge:')
-        for r in rlist:
-            es = [f.local(t[0], t[1])[0] for t in r.tiles]
-            ns = [f.local(t[0], t[1])[1] for t in r.tiles]
-            parts.append(
-                f'{r.name}: {int(min(es))} to {int(max(es)) + 1} from west, {int(min(ns))} to {int(max(ns)) + 1} from north.'
-            )
-    sim = core.active_sim()
-    if sim is not None:
-        (e, n) = f.local(sim.position.x, sim.position.z)
-        parts.append(f'{sim.sim_info.first_name} is at {int(e)} from west, {int(n)} from north.')
-    parts.append(f'{free} square meters are free for building.')
-    core.speak(' '.join(parts))
-
-
-def _numbers(text):
+def _numbers(text: str | None) -> list[int]:
     return [int(v) for v in re.findall(r'\d+', text or '')]
 
 
-def build_room():
+def build_room() -> None:
     if not in_build_mode():
         core.speak('Go to Build mode first with F2.')
         return
@@ -628,7 +600,7 @@ def build_room():
         )
         return
 
-    def got_size(text):
+    def got_size(text: str) -> None:
         nums = _numbers(text)
         if len(nums) < 2 or not (1 <= nums[0] <= 30 and 1 <= nums[1] <= 30):
             core.speak('Please type two numbers, for example 4 5.')
@@ -636,15 +608,14 @@ def build_room():
         (w, d) = nums[0], nums[1]
         f, grid = tile_map()
         spots = free_spots(grid, w, d)
-        rows = []
-        for e, n in spots:
-            rows.append(
-                (
-                    f'{e} from west, {n} from north',
-                    f'This room {_touch_text(grid, e, n, w, d)}.',
-                    (e, n),
-                )
+        rows: list[Row] = [
+            (
+                f'{e} from west, {n} from north',
+                f'This room {_touch_text(grid, e, n, w, d)}.',
+                (e, n),
             )
+            for e, n in spots
+        ]
         rows.append(
             (
                 'Type a position',
@@ -655,7 +626,7 @@ def build_room():
         if not spots:
             core.speak(f'No free space fits {w} by {d} meters. You can still type a position.')
 
-        def place_at(value):
+        def place_at(value: Any) -> None:
             if value == 'type':
                 core.ask_text(
                     'Room position',
@@ -682,7 +653,7 @@ def build_room():
     )
 
 
-def _new_room_box(before):
+def _new_room_box(before: set[tuple[Box, int]]) -> Box | None:
     """Box (e0, n0, e1, n1) of rooms that did not exist before, or None. Rooms are compared by their
     box, because the game may renumber a room when a new one is built next to it."""
     import simsight_plus_rooms as rooms
@@ -698,13 +669,13 @@ def _new_room_box(before):
     )
 
 
-def _room_ids():
+def _room_ids() -> set[tuple[Box, int]]:
     import simsight_plus_rooms as rooms
 
     return {(_room_box(r), r.level) for r in rooms.scan_rooms()}
 
 
-def _do_room(w, d, e, n):
+def _do_room(w: int, d: int, e: int | None, n: int | None) -> None:
     if e is None or n is None:
         core.speak('I need two numbers.')
         return
@@ -721,7 +692,7 @@ def _do_room(w, d, e, n):
     want = (e, n, e + w, n + d)
     core.speak(f'Building a {w} by {d} meter room. Please wait.')
 
-    def work():
+    def work() -> None:
         try:
             box = room_worker(want)
             if box in (None, 'nomoney', 'open', 'noscreen'):
@@ -756,14 +727,16 @@ def _do_room(w, d, e, n):
     threading.Thread(target=work, name='a11yplus_room', daemon=True).start()
 
 
-def _room_worker_base(want, overview=False, tries=4, level=0):
+def _room_worker_base(
+    want: Sequence[int], overview: bool = False, tries: int = 4, level: int = 0
+) -> Any:
     """Worker thread only. Draw a room with the Room Tool (already chosen) from corner (want[0], want[1])
     to (want[2], want[3]), in meters from the west and north edges. The room tool snaps to the nearest
     grid corner; where a side meets an existing wall the game sometimes stops a meter short, so check
     the result and redraw with a correction. Returns the built box, or "nomoney", "open", "noscreen"."""
     f = frame()
     fix = [0.0, 0.0, 0.0, 0.0]
-    box = None
+    box: Box | None = None
     if not set_floor(level):
         return 'nofloor'
     for attempt in range(tries):
@@ -811,7 +784,7 @@ def _room_worker_base(want, overview=False, tries=4, level=0):
     return box
 
 
-def build_wall():
+def build_wall() -> None:
     if not in_build_mode():
         core.speak('Go to Build mode first with F2.')
         return
@@ -821,7 +794,7 @@ def build_wall():
     u.keybd_event(0x42, 0x30, 2, 0)
     _product.update(id=None, name='Wall Tool')
 
-    def got(text):
+    def got(text: str) -> None:
         nums = _numbers(text)
         if len(nums) < 3:
             core.speak('Please type three numbers: from west, from north, and length.')
@@ -834,7 +807,7 @@ def build_wall():
             ('North', None, (0, -1)),
         ]
 
-        def go(direction):
+        def go(direction: tuple[int, int]) -> None:
             f = frame()
             (de, dn) = direction
             e2, n2 = e + de * length, n + dn * length
@@ -873,21 +846,21 @@ def build_wall():
     )
 
 
-def funds():
+def funds() -> int | None:
     try:
         import services
 
         return int(services.active_household().funds.money)
-    except Exception:
+    except (AttributeError, TypeError, ValueError):  # no active household
         return None
 
 
-def cost_check(done_text, fail_text):
+def cost_check(done_text: str, fail_text: str) -> Callable[[], None]:
     """A verify callback: compares household money before and after the job."""
     before = funds()
     started = time.monotonic()
 
-    def verify():
+    def verify() -> None:
         after = funds()
         if before is None or after is None:
             core.speak(done_text + '.')
@@ -904,16 +877,15 @@ def cost_check(done_text, fail_text):
     return verify
 
 
-def _room_rows():
+def _room_rows() -> list[Row]:
     import simsight_plus_rooms as rooms
 
-    rows = []
-    for r in rooms.scan_rooms():
-        rows.append((r.name, f'{r.size_text()}, {rooms.floor_name(r.level)}', r))
-    return rows
+    return [
+        (r.name, f'{r.size_text()}, {rooms.floor_name(r.level)}', r) for r in rooms.scan_rooms()
+    ]
 
 
-def _room_box(room):
+def _room_box(room: Any) -> Box:
     f = frame()
     es = [f.local(t[0], t[1])[0] for t in room.tiles]
     ns = [f.local(t[0], t[1])[1] for t in room.tiles]
@@ -925,7 +897,7 @@ def _room_box(room):
     )
 
 
-def wall_point(room, side, where=0.5):
+def wall_point(room: Any, side: str, where: float = 0.5) -> tuple[float, float]:
     """World (x, z) on the middle of a room wall, a little inside the room so the click hits it."""
     f = frame()
     (e0, n0, e1, n1) = _room_box(room)
@@ -939,7 +911,7 @@ def wall_point(room, side, where=0.5):
     return f.world(e1 - inset, n0 + (n1 - n0) * where)
 
 
-def _room_tiles(room):
+def _room_tiles(room: Any) -> set[tuple[int, int]]:
     f = frame()
     return {
         (int(math.floor(f.local(t[0], t[1])[0])), int(math.floor(f.local(t[0], t[1])[1])))
@@ -948,7 +920,7 @@ def _room_tiles(room):
 
 
 # side -> (tile step to the outside neighbor, how to read "left to right" when facing that wall from inside)
-_SIDES = {
+_SIDES: dict[str, tuple[tuple[int, int], Callable[[int, int], int]]] = {
     'north': ((0, -1), lambda e, n: e),
     'south': ((0, 1), lambda e, n: -e),
     'west': ((-1, 0), lambda e, n: -n),
@@ -956,21 +928,22 @@ _SIDES = {
 }
 
 
-def room_walls(room):
+def room_walls(room: Any) -> list[dict[str, Any]]:
     """List of walls: dict(side, cells=[(e, n), ...] left to right). Each cell is the 1 m wall piece
     on that side of the room tile (e, n)."""
     tiles = _room_tiles(room)
-    walls = []
+    walls: list[dict[str, Any]] = []
     for side, ((de, dn), order) in _SIDES.items():
         cells = sorted(
-            [t for t in tiles if (t[0] + de, t[1] + dn) not in tiles], key=lambda t: order(*t)
+            [t for t in tiles if (t[0] + de, t[1] + dn) not in tiles],
+            key=lambda t: order(*t),
         )
         if cells:
             walls.append({'side': side, 'cells': cells})
     return walls
 
 
-def wall_cell_point(side, cell):
+def wall_cell_point(side: str, cell: tuple[int, int]) -> tuple[float, float]:
     """World (x, z) at the middle of the wall piece on `side` of tile `cell`."""
     f = frame()
     (e, n) = cell
@@ -983,7 +956,7 @@ def wall_cell_point(side, cell):
     return f.world(e + 1, n + 0.5)
 
 
-def _wall_things():
+def _wall_things() -> list[tuple[float, float, str]]:
     """Doors and windows on the lot: list of (e, n, kind)."""
     import services
     import simsight_plus_rooms as rooms
@@ -991,22 +964,30 @@ def _wall_things():
     f = frame()
     out = []
     for obj in services.object_manager().values():
-        try:
-            names = rooms.tag_names(obj)
-            kind = (
-                'door'
-                if ('Build_Door' in names or 'Build_Arch' in names)
-                else ('window' if 'Build_Window' in names else None)
-            )
-            if kind:
-                (e, n) = f.local(obj.position.x, obj.position.z)
-                out.append((e, n, kind))
-        except Exception:
-            continue
+        thing = _wall_thing(f, obj, rooms.tag_names(obj))
+        if thing is not None:
+            out.append(thing)
     return out
 
 
-def _cell_status(side, cell, things):
+def _wall_thing(f: Frame, obj: Any, names: set[str]) -> tuple[float, float, str] | None:
+    kind = (
+        'door'
+        if ('Build_Door' in names or 'Build_Arch' in names)
+        else ('window' if 'Build_Window' in names else None)
+    )
+    if not kind:
+        return None
+    try:
+        (e, n) = f.local(obj.position.x, obj.position.z)
+    except (AttributeError, TypeError):  # objects without a place on the lot
+        return None
+    return (e, n, kind)
+
+
+def _cell_status(
+    side: str, cell: tuple[int, int], things: list[tuple[float, float, str]]
+) -> str | None:
     (x, z) = wall_cell_point(side, cell)
     (e, n) = frame().local(x, z)
     for te, tn, kind in things:
@@ -1015,7 +996,7 @@ def _cell_status(side, cell, things):
     return None
 
 
-def _reselect():
+def _reselect() -> None:
     """Choose the catalog item again right before using it (the game sometimes drops it)."""
     index = _cat.get('chosen')
     if index is not None:
@@ -1023,7 +1004,7 @@ def _reselect():
         time.sleep(0.7)
 
 
-def place_on_wall():
+def place_on_wall() -> None:
     if not in_build_mode():
         core.speak('Go to Build mode first with F2.')
         return
@@ -1035,7 +1016,7 @@ def place_on_wall():
         core.speak('There are no rooms yet.')
         return
 
-    def got_room(room):
+    def got_room(room: Any) -> None:
         walls = room_walls(room)
         things = _wall_things()
         wrows = []
@@ -1054,7 +1035,7 @@ def place_on_wall():
                 )
             )
 
-        def got_wall(w):
+        def got_wall(w: dict[str, Any]) -> None:
             srows = []
             for i, cell in enumerate(w['cells']):
                 st = _cell_status(w['side'], cell, things)
@@ -1066,7 +1047,7 @@ def place_on_wall():
                     )
                 )
 
-            def got_cell(cell):
+            def got_cell(cell: tuple[int, int]) -> None:
                 (x, z) = wall_cell_point(w['side'], cell)
                 core.speak(
                     'Placing {} on the {} wall of the {}. Please wait.'.format(
@@ -1074,7 +1055,7 @@ def place_on_wall():
                     )
                 )
 
-                def act(s):
+                def act(s: list[Any]) -> None:
                     _reselect()
                     click(s[0])
 
@@ -1104,7 +1085,7 @@ def place_on_wall():
     core.choose(f'Place {tool_name()}', 'Choose the room.', rows, got_room, tag='build')
 
 
-def paint_room(part):
+def paint_room(part: str) -> None:
     if not in_build_mode():
         core.speak('Go to Build mode first with F2.')
         return
@@ -1115,11 +1096,8 @@ def paint_room(part):
         return
     rows = _room_rows()
 
-    def got_room(room):
-        if part == 'walls':
-            target = wall_point(room, 'north')
-        else:
-            target = room.center
+    def got_room(room: Any) -> None:
+        target = wall_point(room, 'north') if part == 'walls' else room.center
         core.speak(f'Painting the {part} of the {room.name}. Please wait.')
         run_job(
             [target],
@@ -1140,135 +1118,12 @@ def paint_room(part):
     )
 
 
-# ---------------------------------------------------------------- catalog search assistant
-# Moves SimSight's keyboard focus to the Build catalog's search field, types the words, and
-# moves to the first result. Typing into the game directly is risky: if the search field is not
-# being edited, letters are Build mode shortcuts (B wall tool, K sledgehammer...).
-
-
-class _Quiet:
-    """While navigating, record what SimSight would say instead of speaking it."""
-
-    def __init__(self):
-        self.said = []
-
-    def __enter__(self):
-        import simsight_speech as s
-
-        self._s = s
-        self._orig = s.speak
-
-        def record(text, *args, **kwargs):
-            self.said.append(str(text or ''))
-
-        s.speak = record
-        return self
-
-    def __exit__(self, *exc):
-        self._s.speak = self._orig
-        return False
-
-    def last(self):
-        return self.said[-1] if self.said else ''
-
-
-def _nav_until(quiet, words, message='A11yTabNext', steps=160, delay=0.15):
-    import simsight_keys as keys
-
-    for _ in range(steps):
-        core.post(keys._send, message)
-        time.sleep(delay)
-        text = quiet.last().lower()
-        if any(w in text for w in words):
-            return quiet.last()
-    return None
-
-
-def _type_text(text):
-    u = _user32()
-    for ch in text.upper():
-        if 'A' <= ch <= 'Z' or '0' <= ch <= '9':
-            vk = ord(ch)
-        elif ch == ' ':
-            vk = 0x20
-        else:
-            continue
-        u.keybd_event(vk, 0, 0, 0)
-        time.sleep(0.03)
-        u.keybd_event(vk, 0, 2, 0)
-        time.sleep(0.06)
-
-
-def catalog_search():
-    if not in_build_mode():
-        core.speak('Go to Build mode first with F2.')
-        return
-
-    def got(query):
-        query = ''.join(ch for ch in query if ch.isalnum() or ch == ' ').strip()
-        if not query:
-            core.speak('Nothing to search for.')
-            return
-        if _busy[0]:
-            core.speak('Still working on the last build step.')
-            return
-        _busy[0] = True
-        core.speak(f'Searching the catalog for {query}. Please wait.')
-
-        def work():
-            import simsight_keys as keys
-
-            try:
-                time.sleep(1.5)
-                with _Quiet() as q:
-                    # The search field sits just before the catalog items, so walking backwards
-                    # from inside a long item list reaches it soonest.
-                    found = _nav_until(
-                        q, ['text field'], message='A11yTabPrev', steps=400, delay=0.12
-                    )
-                    if not found:
-                        core.log(f'search nav heard: {q.said[-40:]!r}')
-                        core.post(core.speak, 'I could not find the catalog search field.')
-                        return
-                    core.post(keys._send, 'A11yActivate')
-                    time.sleep(0.6)
-                    _type_text(query)
-                    time.sleep(0.2)
-                    u = _user32()
-                    u.keybd_event(0x0D, 0, 0, 0)
-                    u.keybd_event(0x0D, 0, 2, 0)
-                    time.sleep(1.5)
-                    first = _nav_until(q, ['simoleons'], steps=12, delay=0.3)
-                if first:
-                    core.post(
-                        core.speak,
-                        f'Results for {query}. First: {first}. Tab moves to the next result, Shift+Tab back. '
-                        'Enter chooses one, then press Escape and use Alt+B.',
-                    )
-                else:
-                    core.post(core.speak, f'Nothing found for {query}.')
-            except Exception:
-                core.log_exc('catalog search')
-                core.post(core.speak, 'The search failed.')
-            finally:
-                _busy[0] = False
-
-        threading.Thread(target=work, name='a11yplus_search', daemon=True).start()
-
-    core.ask_text(
-        'Search the catalog',
-        'Type what to look for, for example door, window, brick wall, wood floor.',
-        '',
-        got,
-    )
-
-
 # ---------------------------------------------------------------- accessible catalog
 # Uses the SimSight Plus bridge added to SimSight's interface file: "A11y|plus|catalog|type|tags|serial"
 # lists a catalog category, "A11y|plus|select|index" picks an item exactly as clicking it would.
 
 # (menu name, product type, comma separated catalog tag names, what to do next)
-BUILD_CATALOG = (
+BUILD_CATALOG: tuple[tuple[str, int, str, str], ...] = (
     ('Doors', 2, 'BUILDTAG_DOOR', 'wall'),
     ('Windows', 2, 'BUILDTAG_WINDOW', 'wall'),
     ('Wall patterns, paint and wallpaper', 7, '', 'paintwalls'),
@@ -1281,7 +1136,7 @@ BUILD_CATALOG = (
     ('Rooms and wall tools', 16, 'BUILDTAG_BLOCK_WALLTOOL,BUILDTAG_BLOCK_WITH_WALLS', 'tool'),
     ('Plants, bushes and trees', 2, 'BUILDTAG_SHRUB,BUILDTAG_FLOWER,BUILDTAG_TREE', 'object'),
 )
-STYLED_ROOMS = (
+STYLED_ROOMS: tuple[tuple[str, str], ...] = (
     ('Bathrooms', 'BUYCAT_MAG_BATHROOM'),
     ('Bedrooms', 'BUYCAT_MAG_BEDROOM'),
     ('Kitchens', 'BUYCAT_MAG_KITCHEN'),
@@ -1291,7 +1146,7 @@ STYLED_ROOMS = (
     ('Kids rooms', 'BUYCAT_MAG_KIDS'),
     ('Outdoor areas', 'BUYCAT_MAG_OUTDOOR'),
 )
-BUY_CATALOG = (
+BUY_CATALOG: tuple[tuple[str, str], ...] = (
     ('Beds', 'BUYCAT_SS_BED'),
     ('Sofas and loveseats', 'BUYCAT_SS_SOFA,BUYCAT_SS_LOVESEAT'),
     ('Living chairs', 'BUYCAT_SS_LIVINGCHAIR'),
@@ -1334,12 +1189,13 @@ BUY_CATALOG = (
     ('Grills and outdoor cooking', 'BUYCAT_PA_OUTDOORCOOKING'),
 )
 
-_cat = {'serial': 0, 'items': [], 'total': 0, 'name': '', 'next': '', 'event': None}
+# The last listed catalog category; other modules read 'chosen' and 'items'.
+_cat: dict[str, Any] = {'serial': 0, 'items': [], 'total': 0, 'name': '', 'next': '', 'event': None}
 _bridge = {'pong': 0.0}
-_last_error = {'text': '', 'at': 0.0}
+_last_error: dict[str, Any] = {'text': '', 'at': 0.0}  # the game's last build error
 
 
-def _flash_reply_base(encoded=''):
+def _flash_reply_base(encoded: str = '') -> bool:
     from urllib.parse import unquote
 
     text = unquote(str(encoded or ''))
@@ -1395,15 +1251,15 @@ _NEXT_HINT = {
 }
 
 
-def bridge_ok():
+def bridge_ok() -> bool:
     return time.monotonic() - _bridge['pong'] < 600
 
 
-def _register_flash_command():
+def _register_flash_command() -> None:
     import sims4.commands
 
     @sims4.commands.Command('a11yplus.flash', command_type=sims4.commands.CommandType.Live)
-    def a11yplus_flash(encoded: str = '', _connection=None):
+    def a11yplus_flash(encoded: str = '', _connection: Any = None) -> bool:
         try:
             return _flash_reply(encoded)
         except Exception:
@@ -1417,11 +1273,7 @@ except Exception:
     core.log_exc('register a11yplus.flash')
 
 
-def ping_bridge():
-    _send_ui('A11y|plus|ping')
-
-
-def request_catalog(name, product_type, tags, nxt):
+def request_catalog(name: str, product_type: int, tags: str, nxt: str) -> None:
     if not in_build_mode():
         core.speak('Go to Build mode first with F2.')
         return
@@ -1430,7 +1282,7 @@ def request_catalog(name, product_type, tags, nxt):
     core.speak(f'Opening {name}.')
     _send_ui('A11y|plus|catalog|{}|{}|{}'.format(product_type, tags, _cat['serial']))
 
-    def timeout(serial=_cat['serial']):
+    def timeout(serial: int = _cat['serial']) -> None:
         if _cat['serial'] == serial and not _cat['items'] and not bridge_ok():
             core.speak(
                 'The catalog did not answer. The SimSight Plus part of the SimSight interface file may be missing.'
@@ -1439,11 +1291,13 @@ def request_catalog(name, product_type, tags, nxt):
     threading.Timer(4.0, lambda: core.post(timeout)).start()
 
 
-def fetch_catalog(product_type, tags, nxt, timeout=6.0):
+def fetch_catalog(
+    product_type: int, tags: str, nxt: str, timeout: float = 6.0
+) -> list[tuple[str, int, int]]:
     """Worker thread only: list a catalog category without showing it. Returns [(name, price, colors)]."""
     ev = threading.Event()
 
-    def start():
+    def start() -> None:
         _cat['serial'] += 1
         _cat.update(items=[], total=0, name='', next=nxt, quiet=ev)
         _send_ui('A11y|plus|catalog|{}|{}|{}'.format(product_type, tags, _cat['serial']))
@@ -1454,7 +1308,7 @@ def fetch_catalog(product_type, tags, nxt, timeout=6.0):
     return list(_cat['items'])
 
 
-def select_item(index, name):
+def select_item(index: int, name: str) -> None:
     """Worker thread only: choose catalog item `index` of the last fetched list, as clicking it would."""
     _cat['chosen'] = index
     _product['name'] = name
@@ -1462,7 +1316,7 @@ def select_item(index, name):
     time.sleep(0.8)
 
 
-def _show_catalog():
+def _show_catalog() -> None:
     items = _cat['items']
     if not items:
         core.speak('{} is empty.'.format(_cat['name']))
@@ -1482,13 +1336,15 @@ def _show_catalog():
     )
 
 
-def _choose_item(i):
+def _choose_item(i: int) -> None:
     _cat['chosen'] = i
     _send_ui(f'A11y|plus|select|{i}')
 
 
-def open_catalog():
-    rows = [(name, None, ('build', name, t, tags, nxt)) for (name, t, tags, nxt) in BUILD_CATALOG]
+def open_catalog() -> None:
+    rows: list[Row] = [
+        (name, None, ('build', name, t, tags, nxt)) for (name, t, tags, nxt) in BUILD_CATALOG
+    ]
     rows.insert(
         0,
         (
@@ -1505,7 +1361,7 @@ def open_catalog():
         )
     )
 
-    def picked(value):
+    def picked(value: tuple[Any, ...]) -> None:
         if value[0] == 'styled':
             srows = [(name, None, (name, tags)) for (name, tags) in STYLED_ROOMS]
             core.choose(
@@ -1530,13 +1386,13 @@ def open_catalog():
     core.choose('Catalog', 'What do you want to buy or build with?', rows, picked, tag='catalog')
 
 
-def place_object_in_room():
+def place_object_in_room() -> Any:
     import simsight_place as place
 
     return place.guided_placement()
 
 
-def place_styled_room():
+def place_styled_room() -> None:
     if not in_build_mode():
         core.speak('Go to Build mode first with F2.')
         return
@@ -1545,7 +1401,7 @@ def place_styled_room():
         return
     f, grid = tile_map()
     spots = free_spots(grid, 4, 4) or free_spots(grid, 3, 3)
-    rows = [
+    rows: list[Row] = [
         (
             f'Around {e + 2} from west, {n + 2} from north',
             'Free space. ' + _touch_text(grid, e, n, 4, 4).capitalize() + '.',
@@ -1561,13 +1417,13 @@ def place_styled_room():
         )
     )
 
-    def go(center):
+    def go(center: Sequence[int]) -> None:
         (ce, cn) = center
         name = tool_name()
         before = _room_ids()
         money = cost_check('Placed ' + name, 'The room was not placed. It may not fit there.')
 
-        def verify_and_describe():
+        def verify_and_describe() -> None:
             box = _new_room_box(before)
             if box is None:
                 money()
@@ -1582,13 +1438,13 @@ def place_styled_room():
         x, z = f.world(ce, cn)
         core.speak(f'Placing {name}. Please wait.')
 
-        def act(s):
+        def act(s: list[Any]) -> None:
             _reselect()
             click(s[0])
 
         run_job([(x, z)], 0, act, 'styled room', verify_and_describe)
 
-    def picked(value):
+    def picked(value: Any) -> None:
         if value == 'type':
             core.ask_text(
                 'Room position',
@@ -1608,13 +1464,13 @@ def place_styled_room():
     )
 
 
-def _undo_spoken():
+def _undo_spoken() -> None:
     undo()
     core.speak('Undone.')
 
 
 @core.on_zone_started
-def _start():
+def _start() -> None:
     _hook_product()
 
 
@@ -1626,14 +1482,14 @@ def _start():
 # Windows scaling, and checks focus and pointer arrival before every click.
 
 
-def _display_observe(kind, data):
+def _display_observe(kind: str, data: dict[str, Any]) -> None:
     """simsight.inspect_display: log projections while the diagnostic is on."""
     import simsight_display_diagnostic as display
 
     display.observe(kind, data)
 
 
-def project(x, z, level, timeout=2.5, height=0.0):
+def project(x: float, z: float, level: int, timeout: float = 2.5, height: float = 0.0) -> Any:
     """Runs in a worker thread. Returns (stage_x, stage_y) or None."""
     import simsight_build_coordinates as coordinates
 
@@ -1644,7 +1500,7 @@ def project(x, z, level, timeout=2.5, height=0.0):
     return result
 
 
-def _to_screen(sx, sy):
+def _to_screen(sx: float, sy: float) -> Any:
     import simsight_build_coordinates as coordinates
 
     result = coordinates.to_screen(sx, sy)
@@ -1652,19 +1508,19 @@ def _to_screen(sx, sy):
     return result
 
 
-def _stage_size():
+def _stage_size() -> Any:
     import simsight_build_coordinates as coordinates
 
     return coordinates.stage_size()
 
 
-def move_to(x, y):
+def move_to(x: float, y: float) -> Any:
     import simsight_build_coordinates as coordinates
 
     return coordinates.move_to(x, y)
 
 
-def _mouse(flags, data=0):
+def _mouse(flags: int, data: int = 0) -> Any:
     """Button presses are checked (focus, Build state, pointer arrival); other
     events go straight to _mouse_base."""
     import simsight_build_coordinates as coordinates
@@ -1672,40 +1528,47 @@ def _mouse(flags, data=0):
     return coordinates.mouse(flags, data)
 
 
-def click(a, shift=False):
+def click(a: Sequence[float], shift: bool = False) -> Any:
     import simsight_build_coordinates as coordinates
 
     return coordinates._guarded_action(_click_base, (a,), shift)
 
 
-def drag(a, b, shift=False):
+def drag(a: Sequence[float], b: Sequence[float], shift: bool = False) -> Any:
     import simsight_build_coordinates as coordinates
 
     return coordinates._guarded_action(_drag_base, (a, b), shift)
 
 
-def _clear_of_panels(pt):
+def _clear_of_panels(pt: Sequence[float]) -> Any:
     import simsight_build_coordinates as coordinates
 
     return coordinates.clear_of_panels(pt)
 
 
-def park_mouse():
+def park_mouse() -> Any:
     import simsight_build_coordinates as coordinates
 
     return coordinates.park_mouse()
 
 
-def set_floor(level):
+def set_floor(level: int) -> Any:
     """Floor changes checked against the game's current, lowest and highest floor."""
     import simsight_build_helpers as helpers
 
     return helpers.set_floor(level)
 
 
-def point_and_act(
-    points_world, level, action, describe, height=0.0, view=None, overview=False, focus_height=None
-):
+def point_and_act(  # noqa: PLR0913, PLR0917 - signature other modules call
+    points_world: list[Point],
+    level: int,
+    action: Action,
+    describe: str,
+    height: float = 0.0,
+    view: tuple[float, float] | None = None,
+    overview: bool = False,
+    focus_height: float | None = None,
+) -> Any:
     """Worker thread only. Overview jobs (whole rooms) use the house planner's
     widening room framing; everything else centers the camera as before."""
     if overview:
@@ -1726,21 +1589,21 @@ def point_and_act(
     )
 
 
-def room_worker(want, overview=False, tries=4, level=0):
+def room_worker(want: Sequence[int], overview: bool = False, tries: int = 4, level: int = 0) -> Any:
     """Basement rooms (level below 0) go through the game's Basement tool."""
     import simsight_basement as basement
 
     return basement.room_worker(want, overview=overview, tries=tries, level=level)
 
 
-def _flash_reply(encoded=''):
+def _flash_reply(encoded: str = '') -> Any:
     import simsight_basement as basement
 
     return basement.reply(encoded)
 
 
 @core.hotkey(ord('B'), 'build helper')
-def open_menu():
+def open_menu() -> None:
     """Alt+B. DaRainbowGirlXX's house, roof, basement and lot tools replace
     Michael Maslo's Build my house, Put a roof on my house and Describe the lot
     (Leo, 2026-11-14); his other tools stay."""
@@ -1760,7 +1623,7 @@ def open_menu():
     import simsight_lot_grid as lot_grid
     import simsight_house_planner as planner
 
-    rows = [
+    rows: list[tuple[str, str | None, Callable[[], object]]] = [
         (
             'Build my house',
             'Ready-made or custom layouts, stories, basement and individual room names.',

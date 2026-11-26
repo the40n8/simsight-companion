@@ -2,20 +2,27 @@
 # Decorate a room: choose a room, walls or floor, then a pattern from the catalog; it is chosen and
 # painted over the whole room in one go. Sell things in a room: tick any number of objects and sell
 # them for what they are worth now, the same way SimSight's own X key sells (remove + refund).
+from __future__ import annotations
+
 import threading
 import time
-import simsight_plus_core as core
+from typing import TYPE_CHECKING, Any
+
 import simsight_plus_build as build
+import simsight_plus_core as core
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
 
 # part -> (catalog product type, label)
 PARTS = {'walls': (7, 'Wall patterns, paint and wallpaper'), 'floor': (5, 'Floor patterns')}
 
 
-def _say(text):
+def _say(text: str) -> None:
     core.post(core.speak, text)
 
 
-def _row_name(obj):
+def _row_name(obj: Any) -> Any:
     try:
         label = obj.catalog_name
         from protocolbuffers.Localization_pb2 import LocalizedString
@@ -25,14 +32,14 @@ def _row_name(obj):
 
             label = _create_localized_string(int(getattr(label, 'hash', label)))
         return label
-    except Exception:
+    except Exception:  # catalog names come in many shapes: a plain label still reads
         return 'Object'
 
 
 # ---------------------------------------------------------------- decorate a room
 
 
-def decorate_room():
+def decorate_room() -> None:
     if not build.in_build_mode():
         core.speak('Go to Build mode first. Press F2, on a laptop Fn+F2.')
         return
@@ -41,7 +48,7 @@ def decorate_room():
         core.speak('There are no rooms yet.')
         return
 
-    def got_room(room):
+    def got_room(room: Any) -> None:
         prows = [
             ('Walls', 'Paint or wallpaper on every wall inside the room.', 'walls'),
             ('Floor', 'Tiles, wood, carpet and more over the whole floor.', 'floor'),
@@ -57,14 +64,14 @@ def decorate_room():
     core.choose('Decorate a room', 'Choose the room.', rows, got_room, tag='build')
 
 
-def _list_patterns(room, part):
+def _list_patterns(room: Any, part: str) -> None:
     if build._busy[0]:
         core.speak('Still working on the last build step.')
         return
     (ptype, label) = PARTS[part]
     core.speak(f'Getting the {label.lower()}. Please wait.')
 
-    def work():
+    def work() -> None:
         items = build.fetch_catalog(ptype, '', 'paint' + part)
         if not items:
             _say('The catalog did not answer. Try again in a moment.')
@@ -74,7 +81,7 @@ def _list_patterns(room, part):
     threading.Thread(target=work, name='a11yplus_decor_list', daemon=True).start()
 
 
-def _show_patterns(room, part, items):
+def _show_patterns(room: Any, part: str, items: Sequence[Any]) -> None:
     tiles = len(build._room_tiles(room))
     rows = []
     for i, (name, price, colors) in enumerate(items):
@@ -95,14 +102,14 @@ def _show_patterns(room, part, items):
     )
 
 
-def _paint(room, part, index, name):
+def _paint(room: Any, part: str, index: int, name: str) -> None:
     if build._busy[0]:
         core.speak('Still working on the last build step.')
         return
     build._busy[0] = True
     core.speak(f'Painting the {part} of the {room.name} with {name}. Please wait.')
 
-    def work():
+    def work() -> None:
         try:
             build._cat['silent_select'] = True
             try:
@@ -118,7 +125,7 @@ def _paint(room, part, index, name):
                 ok = build.point_and_act(
                     [target],
                     room.level,
-                    lambda s: build.click(s[0], shift=True),
+                    _shift_click,
                     'decorate walls',
                     height=0.15,
                     view=build.VIEW_FROM['north'],
@@ -127,7 +134,7 @@ def _paint(room, part, index, name):
                 ok = build.point_and_act(
                     [room.center],
                     room.level,
-                    lambda s: build.click(s[0], shift=True),
+                    _shift_click,
                     'decorate floor',
                 )
             if ok and verify is not None:
@@ -142,13 +149,18 @@ def _paint(room, part, index, name):
     threading.Thread(target=work, name='simsight_plus_decor', daemon=True).start()
 
 
-def _paint_check(done_text):
+def _shift_click(points: Sequence[Any]) -> Any:
+    """Shift+click paints the whole room (walls or floor) at once."""
+    return build.click(points[0], shift=True)
+
+
+def _paint_check(done_text: str) -> Callable[[], None]:
     """Like build.cost_check, but painting often costs nothing: the game trades in the old pattern
     at the same price. So no money change and no error from the game still means it was done."""
     before = build.funds()
     started = time.monotonic()
 
-    def verify():
+    def verify() -> None:
         after = build.funds()
         reason = build._last_error['text'] if build._last_error['at'] > started else ''
         if reason:
@@ -166,7 +178,7 @@ def _paint_check(done_text):
 # ---------------------------------------------------------------- sell things in a room
 
 
-def sell_in_room():
+def sell_in_room() -> None:
     if not build.in_build_mode():
         core.speak('Go to Build mode first. Press F2, on a laptop Fn+F2.')
         return
@@ -189,7 +201,7 @@ _REFUSAL_TEXT = {
 }
 
 
-def _pick_things(room):
+def _pick_things(room: Any) -> None:
     import simsight_place as place
 
     rows = []
@@ -215,7 +227,7 @@ def _pick_things(room):
     )
 
 
-def _confirm(room, ids):
+def _confirm(room: Any, ids: Sequence[int]) -> None:
     import services
     import simsight_place as place
 
@@ -239,12 +251,13 @@ def _confirm(room, ids):
     )
 
 
-def _sell(room, ids):
+def _sell(room: Any, ids: Sequence[int]) -> None:
     import services
     import simsight_place as place
 
     place.settle_owed()
-    sold, failed, money = 0, [], 0
+    sold, money = 0, 0
+    failed: list[int] = []
     before = build.funds() or 0
     for oid in ids:
         obj = services.object_manager().get(oid)
