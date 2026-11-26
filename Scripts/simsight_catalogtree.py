@@ -7,7 +7,17 @@ EA key, for readers only. Rows: (label hash, product type, category tags,
 priority tags).
 """
 
-ROOMS = (
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    # (label hash, product type, category tags, priority tags)
+    Subcategory = tuple[int, int, str, str]
+    # (label hash, its subcategories)
+    Group = tuple[int, tuple[Subcategory, ...]]
+
+ROOMS: tuple[Group, ...] = (
     (
         0xF2585A6D,
         (  # KeysBB.BB_FILTER_ROOM_KITCHEN
@@ -385,7 +395,7 @@ ROOMS = (
     ),
 )
 
-FUNCTIONS = (
+FUNCTIONS: tuple[Group, ...] = (
     (
         0x785D2B30,
         (  # KeysBB.BB_FILTER_BUY_COMFORT
