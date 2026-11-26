@@ -14,7 +14,11 @@ Windows user folder. Do not also install SimSight_Plus.ts4script: both
 would poll the same Alt keys.
 """
 
-import simsight_speech as speech
+from __future__ import annotations
+
+import importlib
+
+import simsight_log
 
 MODULES = (
     'core',
@@ -31,20 +35,19 @@ MODULES = (
     'decor',
     'draw',
 )
-loaded = []
-failed = []
+loaded: list[str] = []
+failed: list[str] = []
 
 
-def _load():
-    import importlib
-
-    for name in MODULES:
-        try:
-            importlib.import_module('simsight_plus_' + name)
-            loaded.append(name)
-        except Exception as ex:
-            failed.append(name)
-            speech.log_line(f'plus: {name} did not load ({ex!r})')
+def _load_one(name: str) -> None:
+    try:
+        importlib.import_module('simsight_plus_' + name)
+    except Exception:  # one broken feature must not stop the others
+        failed.append(name)
+        simsight_log.error(f'plus: {name} did not load')
+    else:
+        loaded.append(name)
 
 
-_load()
+for _module in MODULES:
+    _load_one(_module)

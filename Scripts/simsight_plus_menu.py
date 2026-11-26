@@ -1,24 +1,37 @@
-# SimSight Plus - main menu (Alt+A): every feature, its key, and settings.
-# Merged into SimSight 2026-10-08. The add-on's own action queue is not
-# carried over: Alt+Q opens SimSight's queue (Ctrl+Alt+Q), which does the same.
+"""SimSight Plus main menu (Alt+A): every feature, its key, and settings.
+
+Merged into SimSight 2026-10-08. The add-on's own action queue is not
+carried over: Alt+Q opens SimSight's queue (Ctrl+Alt+Q), which does the same.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+import simsight_log
 import simsight_plus_core as core
+
+if TYPE_CHECKING:
+    from typing import Callable
+
+    Feature = tuple[str, str, Callable[[], object]]
 
 
 @core.hotkey(ord('Q'), 'action queue')
-def open_queue():
+def open_queue() -> None:
     import simsight_hub as hub
 
     hub.action_queue()
 
 
-def _features():
+def _features() -> list[Feature]:
     import simsight_plus_needs as needs
-    import simsight_plus_time as t
-    import simsight_plus_rooms as rooms
     import simsight_plus_notify as notify
+    import simsight_plus_rooms as rooms
     import simsight_plus_sims as sims
+    import simsight_plus_time as t
 
-    feats = [
+    feats: list[Feature] = [
         ('Needs', 'Alt+N. Reads all needs, lowest first.', needs.read_needs),
         (
             'Time, work and money',
@@ -41,7 +54,9 @@ def _features():
     ]
     try:
         import simsight_plus_build as build
-
+    except Exception:  # the menu works without the build helper
+        simsight_log.error('plus menu: build helper')
+    else:
         feats.append(
             (
                 'Build helper',
@@ -49,14 +64,12 @@ def _features():
                 build.open_menu,
             )
         )
-    except Exception:
-        pass
     return feats
 
 
 @core.hotkey(ord('A'), 'Access Plus menu')
-def open_menu():
-    rows = [(name, desc, fn) for (name, desc, fn) in _features()]
+def open_menu() -> None:
+    rows: list[tuple[str, str, object]] = list(_features())
     rows.append(('Settings', 'Turn warnings and reminders on or off.', 'settings'))
     core.choose(
         f'SimSight Plus {core.VERSION}',
@@ -67,23 +80,22 @@ def open_menu():
     )
 
 
-def _pick(value):
+def _pick(value: object) -> None:
     if value == 'settings':
         open_settings()
     elif callable(value):
         value()
 
 
-def open_settings():
-    rows = []
-    for name in core.DEFAULTS:
-        rows.append(
-            (
-                '{}: {}'.format(name.capitalize(), 'on' if core.setting_on(name) else 'off'),
-                'Choose to switch it.',
-                name,
-            )
-        )
+def _on_off(on: bool) -> str:
+    return 'on' if on else 'off'
+
+
+def open_settings() -> None:
+    rows = [
+        (f'{name.capitalize()}: {_on_off(core.setting_on(name))}', 'Choose to switch it.', name)
+        for name in core.DEFAULTS
+    ]
     core.choose(
         'Access Plus settings',
         'Choose a setting to switch it on or off.',
@@ -93,6 +105,6 @@ def open_settings():
     )
 
 
-def _toggle(name):
+def _toggle(name: str) -> None:
     on = core.toggle_setting(name)
-    core.speak('{} {}.'.format(name.capitalize(), 'on' if on else 'off'))
+    core.speak(f'{name.capitalize()} {_on_off(on)}.')
