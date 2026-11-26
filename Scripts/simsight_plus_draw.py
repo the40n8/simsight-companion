@@ -139,7 +139,7 @@ def start() -> None:
     if not build.in_build_mode():
         core.speak(_NOT_BUILD_MODE)
         return
-    build._hook_product()
+    build.watch_product()
     _refresh_map()
     f = build.frame()
     if not _state['on']:
@@ -785,7 +785,6 @@ def roof_worker(box: Sequence[int], level: int = 0) -> bool | str:
     """Worker thread only, roof style already chosen. Put a roof over box (e0, n0, e1, n1), in meters
     from the west and north lot edges, on top of the walls of floor `level`. Returns True or a reason."""
     f = build.frame()
-    build._hook_replies()
     # The game puts a roof on the floor it shows, so an upstairs roof is put down from the floor above
     # (from the floor of the rooms themselves the game says roofs can't be placed in enclosed rooms).
     if level > 0 and not build.set_floor(level + 1):

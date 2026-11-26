@@ -66,8 +66,8 @@ def spoken() -> List[str]:
 
 class SpeechTest(unittest.TestCase):
     def setUp(self) -> None:
-        speech.speech_mode = 'hover'
-        speech.braille_mode = 'concise'
+        speech.modes.speech = 'hover'
+        speech.modes.braille = 'concise'
         speech._state.sapi_proc = None
         speech._state.backend_name = 'log-only'
         speech.stop()
@@ -100,7 +100,7 @@ class SpeechTest(unittest.TestCase):
         self.assertEqual(spoken(), ['SPEAK[wi]: Cheerful', 'SPEAK[tq]: Happy sim'])
 
     def test_read_key_reads_then_stops(self) -> None:
-        speech.speech_mode = 'manual'
+        speech.modes.speech = 'manual'
         speech.speak('Fishing. 4', source='widget')
         self.assertEqual(spoken(), [])
         self.assertIn('CAPTURE[manual/w]: Fishing. 4', LINES)
@@ -134,7 +134,7 @@ class SpeechTest(unittest.TestCase):
         try:
             self.assertFalse(speech.set_mode('loud'))
             self.assertTrue(speech.set_mode('beeps'))
-            self.assertEqual(speech.speech_mode, 'beeps')
+            self.assertEqual(speech.modes.speech, 'beeps')
             self.assertEqual(spoken()[-1], 'SPEAK[wi]: Speech beeps.')
         finally:
             settings.set = saved

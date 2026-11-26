@@ -5,7 +5,7 @@ Object origins are not footprints; a navmesh point is not placement approval.
 This never moves the native mouse, Sim, objects, camera, or household funds.
 
 The cursor lives in _state, except its tile, floor and facing: other
-modules read those as grid._tile, grid._level and grid._facing.
+modules read those in grid.location.
 """
 
 from __future__ import annotations
@@ -61,24 +61,29 @@ class _Cursor:
 
 _state = _Cursor()
 
-# The cursor's tile, floor and facing stay module attributes: other modules
-# read them as grid._tile, grid._level and grid._facing. Only _set_cursor()
-# changes them.
-_tile: Tile = (0, 0)
-_level = 0
-_facing = 0
+
+class CursorLocation:
+    """The cursor's tile, floor and facing, which other modules read as
+    grid.location.tile, .level and .facing. Only _set_cursor() changes them."""
+
+    def __init__(self) -> None:
+        self.tile: Tile = (0, 0)
+        self.level = 0
+        self.facing = 0
+
+
+location = CursorLocation()
 
 
 def _set_cursor(
     tile: Tile | None = None, level: int | None = None, facing: int | None = None
 ) -> None:
-    global _tile, _level, _facing  # noqa: PLW0603 - module attributes other modules read
     if tile is not None:
-        _tile = tile
+        location.tile = tile
     if level is not None:
-        _level = level
+        location.level = level
     if facing is not None:
-        _facing = facing
+        location.facing = facing
 
 
 def _text(en: str, pl: str) -> str:
@@ -117,7 +122,9 @@ def _sample_key(x: float, z: float) -> Tile:
 def _surface() -> Any:
     import routing
 
-    return routing.SurfaceIdentifier(_state.zone_id, _level, routing.SurfaceType.SURFACETYPE_WORLD)
+    return routing.SurfaceIdentifier(
+        _state.zone_id, location.level, routing.SurfaceType.SURFACETYPE_WORLD
+    )
 
 
 def _position(x: float | None = None, z: float | None = None) -> Any:
@@ -335,7 +342,7 @@ def focus_position(position: Any, level: Any) -> bool:
         f = tiles.frame()
         if f is not None:
             _set_cursor(tile=f.clamp(*f.tile_of(x, z)))
-            _state.x, _state.z = f.world(*_tile)
+            _state.x, _state.z = f.world(*location.tile)
     return True
 
 
@@ -349,7 +356,7 @@ def cursor() -> tuple[Any, int, Any] | None:
     try:
         if (
             not int(build_buy.get_lowest_level_allowed())
-            <= _level
+            <= location.level
             <= int(build_buy.get_highest_level_allowed())
         ):
             return None
@@ -358,7 +365,7 @@ def cursor() -> tuple[Any, int, Any] | None:
             return None
     except Exception:  # no height or lot here: not a point to aim at
         return None
-    return position, _level, _state.zone_id
+    return position, location.level, _state.zone_id
 
 
 def move(dx: int, dz: int) -> bool:
@@ -393,10 +400,10 @@ def change_level(delta: int) -> bool:
     except Exception:  # the game will not give the floor range
         _say('Floor information unavailable.', 'Informacje o piętrach niedostępne.')
         return False
-    if not minimum <= _level + delta <= maximum:
+    if not minimum <= location.level + delta <= maximum:
         _say('Floor limit.', 'Granica pięter.')
         return False
-    _set_cursor(level=_level + delta)
+    _set_cursor(level=location.level + delta)
     _state.offer = None
     return describe()
 
@@ -462,7 +469,7 @@ def _no_redo() -> bool:
 def _at_origin(obj: Any) -> bool:
     """On the cursor's floor and one-metre sample, not in an inventory."""
     try:
-        if obj.is_in_inventory() or int(obj.level) != _level:
+        if obj.is_in_inventory() or int(obj.level) != location.level:
             return False
         pos = obj.position
         # Cells are relative to the starting Sim so fractional starts
@@ -497,7 +504,7 @@ def facts() -> dict[str, bool]:
         position = _position()
     except Exception:  # no height here: nothing is known
         return {}
-    result = tiles.location_facts(position, _level, _POINT_FACTS)
+    result = tiles.location_facts(position, location.level, _POINT_FACTS)
     navmesh = _navmesh(position)
     if navmesh is not None:
         result['navmesh'] = navmesh
@@ -548,7 +555,7 @@ def _add_origin_parts(parts: Parts) -> None:
         if index:
             parts.append(', ')
         entry = scanner._entry_for(
-            obj, obj.position, _level, bool(getattr(obj, 'is_sim', False)), '', ''
+            obj, obj.position, location.level, bool(getattr(obj, 'is_sim', False)), '', ''
         )
         parts.append(scanner._name_part(entry))
     if len(objects) > 5:
@@ -565,7 +572,7 @@ def describe() -> bool:
     ox, oz = _state.origin
     parts: Parts = [
         _text('Grid x {}, z {}, floor {}. ', 'Siatka x {}, z {}, piętro {}. ').format(
-            int(round(_state.x - ox)), int(round(_state.z - oz)), _level
+            int(round(_state.x - ox)), int(round(_state.z - oz)), location.level
         )
     ]
     values = facts()
@@ -709,7 +716,7 @@ def _start_build(note: str) -> bool:
     if f is None:
         return False
     _set_cursor(tile=f.clamp(*f.tile_of(_state.x, _state.z)), facing=0)
-    _state.x, _state.z = f.world(*_tile)
+    _state.x, _state.z = f.world(*location.tile)
     _state.offer = None
     _state.last_room = (None, None)
     _state.build = True
@@ -769,7 +776,7 @@ def _build_move(dx: int, dz: int) -> bool:
     f = tiles.frame()
     if f is None:
         return False
-    ni, nj = _tile[0] + dx, _tile[1] + dz
+    ni, nj = location.tile[0] + dx, location.tile[1] + dz
     if not f.inside(ni, nj):
         _say('Lot edge.', 'Granica parceli.')
         return False
@@ -782,7 +789,7 @@ def _name(obj: Any) -> Part:
 
     try:
         entry = scanner._entry_for(
-            obj, obj.position, _level, bool(getattr(obj, 'is_sim', False)), '', ''
+            obj, obj.position, location.level, bool(getattr(obj, 'is_sim', False)), '', ''
         )
         return scanner._name_part(entry)
     except Exception:  # an object the scanner cannot name
@@ -857,11 +864,11 @@ def _room_parts_base(f: Frame) -> tuple[Parts, dict[str, bool]]:
     import simsight_rooms as rooms
     import simsight_tiles as tiles
 
-    i, j = _tile
-    ground = tiles.ground(f, i, j, _level)
-    room = tiles.room(f, i, j, _level)
+    i, j = location.tile
+    ground = tiles.ground(f, i, j, location.level)
+    room = tiles.room(f, i, j, location.level)
     outside = ground.get('outside')
-    label = rooms.display_name(room, _level) if room is not None and not outside else None
+    label = rooms.display_name(room, location.level) if room is not None and not outside else None
     parts = _room_change(label, room, outside)
     _state.last_room = (room, outside)
     return parts, ground
@@ -885,8 +892,10 @@ def _special_fit(f: Frame, item: dict[str, Any], need: Any) -> Parts | None:
     if surfaces_mod.handles(need):
         return surfaces_mod.fit_parts(need)
     if need == 'slot':
-        i, j = _tile
-        surfaces = [obj for obj in tiles.objects_on(f, i, j, _level) if tiles.free_spots(obj)]
+        i, j = location.tile
+        surfaces = [
+            obj for obj in tiles.objects_on(f, i, j, location.level) if tiles.free_spots(obj)
+        ]
         return [
             _text('It can go on a surface here. ', 'Może stanąć tu na powierzchni. ')
             if surfaces
@@ -932,9 +941,9 @@ def _fit_parts_base(f: Frame, with_facing: bool = True, objects: Any = None) -> 
     special = _special_fit(f, item, need)
     if special is not None:
         return special
-    i, j = _tile
-    point, why = tiles.fit_at(f, item['id'], i, j, _level, _facing)
-    facing = tiles.direction_name(_facing)
+    i, j = location.tile
+    point, why = tiles.fit_at(f, item['id'], i, j, location.level, location.facing)
+    facing = tiles.direction_name(location.facing)
     return _fit_verdict(point, why, facing if with_facing else None)
 
 
@@ -957,10 +966,10 @@ def describe_build() -> bool:
     if f is None:
         _say('Tile information unavailable.', 'Informacje o polu niedostępne.')
         return False
-    i, j = _tile
+    i, j = location.tile
     parts, ground = _room_parts(f)
     try:
-        objects = tiles.objects_on(f, i, j, _level)
+        objects = tiles.objects_on(f, i, j, location.level)
     except Exception:  # no height at the tile: nothing listed
         objects = []
     parts += _ground_part(objects, ground, f)
@@ -977,8 +986,8 @@ def _objects_detail(f: Frame) -> Parts:
     """Number 1 (without layer focus): everything on the tile."""
     import simsight_tiles as tiles
 
-    i, j = _tile
-    objects = tiles.objects_on(f, i, j, _level)
+    i, j = location.tile
+    objects = tiles.objects_on(f, i, j, location.level)
     return _object_parts(f, objects) if objects else [_text('Nothing here.', 'Nic tu nie ma.')]
 
 
@@ -986,9 +995,9 @@ def _ground_detail(f: Frame) -> Parts:
     """Number 2: the floor, inside or outside, floor tiles, pool."""
     import simsight_tiles as tiles
 
-    i, j = _tile
-    ground = tiles.ground(f, i, j, _level)
-    parts: Parts = [_text('Floor {}. ', 'Piętro {}. ').format(_level)]
+    i, j = location.tile
+    ground = tiles.ground(f, i, j, location.level)
+    parts: Parts = [_text('Floor {}. ', 'Piętro {}. ').format(location.level)]
     for key, yes, no in (
         ('outside', ('Outside', 'Na zewnątrz'), ('Inside', 'Wewnątrz')),
         ('floor', ('Floor tiles', 'Podłoga'), ('No floor tiles', 'Brak podłogi')),
@@ -1010,7 +1019,7 @@ def _objects_on_or_none(f: Frame, i: int, j: int) -> list[Any]:
     import simsight_tiles as tiles
 
     try:
-        return tiles.objects_on(f, i, j, _level)
+        return tiles.objects_on(f, i, j, location.level)
     except Exception:  # no height at that tile: nothing listed there
         return []
 
@@ -1019,7 +1028,7 @@ def _nearby_detail(f: Frame) -> Parts:
     """Number 4 (without layer focus): the nearest objects around."""
     import simsight_tiles as tiles
 
-    i, j = _tile
+    i, j = location.tile
     radius = tiles.NEARBY_RADIUS
     nearby: list[tuple[int, int, int, Any]] = []
     for di in range(-radius, radius + 1):
@@ -1059,7 +1068,7 @@ def _product_detail(f: Frame) -> Parts:
     parts: Parts = [
         item['name'] or _text('The object', 'Obiekt'),
         '. ',
-        _text('Facing {}. ', 'Skierowany na {}. ').format(tiles.direction_name(_facing)),
+        _text('Facing {}. ', 'Skierowany na {}. ').format(tiles.direction_name(location.facing)),
     ]
     return parts + _fit_parts(f)
 
@@ -1074,7 +1083,7 @@ def _front_door_parts(f: Frame) -> Parts:
         if door is None:
             return []
         i, j = f.tile_of(door.position.x, door.position.z)
-        di, dj = i - _tile[0], j - _tile[1]
+        di, dj = i - location.tile[0], j - location.tile[1]
         return [_text('Front door: {}. ', 'Drzwi frontowe: {}. ').format(tiles.relative(di, dj))]
     except Exception:  # no front door the game will say
         return []
@@ -1082,12 +1091,12 @@ def _front_door_parts(f: Frame) -> Parts:
 
 def _position_detail(f: Frame) -> Parts:
     """Number 6: column and row on the lot, the street and the front door."""
-    i, j = _tile
+    i, j = location.tile
     parts: Parts = [
         _text(
             'Column {} of {}, row {} of {}, floor {}. ',
             'Kolumna {} z {}, rząd {} z {}, piętro {}. ',
-        ).format(i + 1, f.width, j + 1, f.depth, _level)
+        ).format(i + 1, f.width, j + 1, f.depth, location.level)
     ]
     return parts + _street_parts(f) + _front_door_parts(f)
 
@@ -1131,13 +1140,13 @@ def _turn(step: int) -> bool:
     f = tiles.frame()
     if f is None:
         return False
-    _set_cursor(facing=(_facing + step) % 4)
+    _set_cursor(facing=(location.facing + step) % 4)
     _state.offer = None
     if place.product() is None:
         _say('Choose an object in the Build catalog first.', 'Najpierw wybierz obiekt w katalogu.')
         return False
     scanner._speak_parts(
-        [_text('Facing {}. ', 'Skierowany na {}. ').format(tiles.direction_name(_facing))]
+        [_text('Facing {}. ', 'Skierowany na {}. ').format(tiles.direction_name(location.facing))]
         + _fit_parts(f, with_facing=False)
     )
     return True
@@ -1169,7 +1178,7 @@ def _place_special(item: dict[str, Any], need: Any) -> Any:
         target = cursor()
         if target is None:
             return False
-        return place.place(target[0], _level, _surface(), surface_id=focused.id)
+        return place.place(target[0], location.level, _surface(), surface_id=focused.id)
     return None
 
 
@@ -1200,29 +1209,33 @@ def _place_on_tile(item: dict[str, Any], need: Any) -> Any:
     f = tiles.frame()
     if f is None:
         return False
-    i, j = _tile
+    i, j = location.tile
     now = time.monotonic()
     offer = _state.offer
     _state.offer = None
     if (
         offer is not None
-        and offer.origin == (i, j, _level, _facing)
+        and offer.origin == (i, j, location.level, location.facing)
         and offer.product == item['id']
         and now - offer.at < OFFER_SECONDS
     ):
-        return place.place(offer.point, _level, _surface(), angle=f.yaw(offer.facing), exact=True)
+        return place.place(
+            offer.point, location.level, _surface(), angle=f.yaw(offer.facing), exact=True
+        )
     if need == 'slot':
         target = cursor()
         if target is None:
             _say('This tile cannot take an object.', 'To pole nie może przyjąć obiektu.')
             return False
-        return place.place(target[0], _level, _surface())
+        return place.place(target[0], location.level, _surface())
     if need in place._NEEDS:
         place._say_text(*place._NEEDS[need])
         return False
-    point, why = tiles.fit_at(f, item['id'], i, j, _level, _facing)
+    point, why = tiles.fit_at(f, item['id'], i, j, location.level, location.facing)
     if point is not None:
-        return place.place(point, _level, _surface(), angle=f.yaw(_facing), exact=True)
+        return place.place(
+            point, location.level, _surface(), angle=f.yaw(location.facing), exact=True
+        )
     if why is None:
         _say(
             'The game could not check this tile, so nothing was bought.',
@@ -1238,9 +1251,9 @@ def _offer_nearest(f: Frame, item: dict[str, Any], why: str, now: float) -> None
     import simsight_scanner as scanner
     import simsight_tiles as tiles
 
-    i, j = _tile
+    i, j = location.tile
     name = item['name'] or _text('It', 'Obiekt')
-    found = tiles.nearest_fit(f, item['id'], i, j, _level, _facing)
+    found = tiles.nearest_fit(f, item['id'], i, j, location.level, location.facing)
     if found is None:
         scanner._speak_parts(
             [
@@ -1253,7 +1266,7 @@ def _offer_nearest(f: Frame, item: dict[str, Any], why: str, now: float) -> None
         )
         return
     ni, nj, spot, facing = found
-    _state.offer = _Offer((i, j, _level, _facing), item['id'], spot, facing, now)
+    _state.offer = _Offer((i, j, location.level, location.facing), item['id'], spot, facing, now)
     scanner._speak_parts(
         [
             name,

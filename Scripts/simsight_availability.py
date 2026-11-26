@@ -175,10 +175,8 @@ def _ui_busy() -> bool:
     # A dialog, the console or a scanner menu owns input. A native step
     # cannot be preempted, so the worker steps aside until the next scan.
     # Looked up, not imported: keys and scanner import this module.
-    keys = sys.modules.get('simsight_keys')
-    if keys is not None and (
-        getattr(keys, '_modal_active', False) or getattr(keys, '_editing_active', False)
-    ):
+    status = getattr(sys.modules.get('simsight_keys'), 'status', None)
+    if getattr(status, 'modal_active', False) or getattr(status, 'editing_active', False):
         return True
     scanner = sys.modules.get('simsight_scanner')
     return bool(scanner is not None and getattr(scanner, '_menu_open', False))

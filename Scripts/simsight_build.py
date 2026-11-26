@@ -18,14 +18,12 @@ from simsight_commands import real_annotations
 import simsight_log
 import simsight_speech as speech
 
-# Read and written by simsight_plus_build too, so they stay module attributes.
-_zone_id: Any = None  # the zone of the last request
-_serial = 0  # the last request sent to the client
-_pending: dict[int, Any] = {}  # serial -> zone id of each unanswered request
-
 
 class _State:
     def __init__(self) -> None:
+        self.zone_id: Any = None  # the zone of the last request
+        self.serial = 0  # the last request sent to the client
+        self.pending: dict[int, Any] = {}  # serial -> zone id of each unanswered request
         self.active = False  # the client confirmed the cursor is on
         self.last_serial = 0  # the newest serial answered or retired
         self.last_feedback = ''  # the client's last hovered-object or error text
@@ -186,8 +184,7 @@ def announce_controls() -> bool:
 
 def _forget_session() -> None:
     """Nothing this session asked for is live any more."""
-    global _zone_id  # noqa: PLW0603 - simsight_plus_build reads and writes it
-    _state.active, _state.aim_pending, _zone_id = False, 0, None
+    _state.active, _state.aim_pending, _state.zone_id = False, 0, None
 
 
 def apply_setting() -> bool:
@@ -201,10 +198,10 @@ def apply_setting() -> bool:
             grid.retire()
         except Exception:
             simsight_log.error('build: grid retire failed')
-        if _state.active or _state.aim_pending or _pending or _zone_id is not None:
-            _pending.clear()
+        if _state.active or _state.aim_pending or _state.pending or _state.zone_id is not None:
+            _state.pending.clear()
             sent = request('off')
-            _state.release_serial = _serial if sent else 0
+            _state.release_serial = _state.serial if sent else 0
         _forget_session()
     return announce_controls()
 
@@ -224,7 +221,7 @@ def _zone() -> Any:
 def active() -> bool:
     """A client acknowledgement is required before rerouting scanner keys."""
     zone = _zone()
-    if zone is None or zone.id != _zone_id or not controls_enabled():
+    if zone is None or zone.id != _state.zone_id or not controls_enabled():
         _state.active = False
     return _state.active
 
@@ -233,11 +230,11 @@ def aiming() -> bool:
     zone = _zone()
     if _state.aim_pending and (
         zone is None
-        or zone.id != _zone_id
+        or zone.id != _state.zone_id
         or time.monotonic() > _state.aim_until
         or not controls_enabled()
     ):
-        _pending.pop(_state.aim_pending, None)
+        _state.pending.pop(_state.aim_pending, None)
         _state.aim_pending = 0
     return bool(_state.aim_pending)
 
@@ -252,15 +249,15 @@ def toggle() -> bool:
     return request('off' if active() else 'on')
 
 
-def _next_serial(zone_id: Any) -> int:
-    """A new request serial, remembered as pending for zone_id."""
-    global _serial, _zone_id  # noqa: PLW0603 - simsight_plus_build reads and writes them
-    _serial += 1
-    if len(_pending) > _PENDING_LIMIT:
-        _pending.clear()
-    _zone_id = zone_id
-    _pending[_serial] = _zone_id
-    return _serial
+def next_serial(zone_id: Any) -> int:
+    """A new request serial, remembered as pending for zone_id (simsight_plus_build
+    numbers its own client requests with it too)."""
+    _state.serial += 1
+    if len(_state.pending) > _PENDING_LIMIT:
+        _state.pending.clear()
+    _state.zone_id = zone_id
+    _state.pending[_state.serial] = _state.zone_id
+    return _state.serial
 
 
 def aim_grid() -> bool:
@@ -281,8 +278,8 @@ def aim_grid() -> bool:
     values = (float(position.x), float(position.y), float(position.z))
     if not all(math.isfinite(value) for value in values):
         return False
-    _pending.clear()
-    serial = _next_serial(ident)
+    _state.pending.clear()
+    serial = next_serial(ident)
     _state.active, _state.last_serial = False, serial
     _state.last_feedback = ''
     _state.aim_pending = serial
@@ -332,7 +329,7 @@ def request(action: str) -> bool:
         _leave_grid()
     if action in ('on', 'off', *_MOVES):
         _state.last_feedback = ''
-    serial = _next_serial(zone.id if zone is not None else None)
+    serial = next_serial(zone.id if zone is not None else None)
     if action == 'off':
         _state.active = False
         _state.last_serial = serial
@@ -361,7 +358,7 @@ def request_menu(action: str) -> bool:
     _leave_grid()
     if action in _MOVES:
         _state.last_feedback = ''
-    serial = _next_serial(zone.id)
+    serial = next_serial(zone.id)
     announce_controls()
     _send_ui(f'A11y|build|menu:{action}|{serial}')
     return True
@@ -384,18 +381,18 @@ def on_build_buy_exit() -> bool:
             grid.retire()  # placement ends with Build mode; Ctrl+Alt+T reads the lot in Live
     except Exception:
         simsight_log.error('build: placement product not cleared')
-    if not (_state.active or _zone_id is not None):
+    if not (_state.active or _state.zone_id is not None):
         return False  # this Build session never asked for the cursor
     try:
         sent = request('off')
     except Exception:
         simsight_log.error('build: release on Build exit failed')
         sent = False
-    _state.release_serial = _serial if sent else 0
+    _state.release_serial = _state.serial if sent else 0
     _forget_session()
     simsight_log.line(
         'build: Build mode ended, cursor release {} (serial {})'.format(
-            'sent' if sent else 'not sent', _serial
+            'sent' if sent else 'not sent', _state.serial
         )
     )
     return sent
@@ -451,7 +448,7 @@ def command(action: str = 'toggle', _connection: Any = None) -> bool:
 
 def _info(encoded: str) -> bool:
     zone = _zone()
-    if zone is None or zone.id != _zone_id or not controls_enabled():
+    if zone is None or zone.id != _state.zone_id or not controls_enabled():
         return False
     try:
         kind, payload = encoded.split('|', 1)
@@ -523,7 +520,7 @@ def _parse_reply(encoded: str) -> tuple[int, int, str, int, int, int] | None:
         if len(fields) != 6:
             return None
         serial, flag = int(fields[0]), int(fields[1])
-        if flag not in (0, 1) or (serial != 0 and serial not in _pending):
+        if flag not in (0, 1) or (serial != 0 and serial not in _state.pending):
             return None
         if serial == 0 and flag != 0:
             return None
@@ -538,14 +535,14 @@ def _parse_reply(encoded: str) -> tuple[int, int, str, int, int, int] | None:
 def _accept_serial(serial: int, flag: int, zone: Any) -> bool:
     """Retire the answered request; False for a stale or misplaced reply."""
     if serial:
-        expected_zone = _pending.pop(serial)
+        expected_zone = _state.pending.pop(serial)
         if serial < _state.last_serial or (flag and (zone is None or zone.id != expected_zone)):
             return False
         _state.last_serial = serial
     else:
         # Automatic retirement wins over any older request still in flight.
-        _state.last_serial = _serial
-        _pending.clear()
+        _state.last_serial = _state.serial
+        _state.pending.clear()
     return True
 
 
@@ -553,9 +550,9 @@ def _release_silently() -> None:
     """The client turned a cursor on for a request sent before the switch
     went off: never announce it; release it once, silently."""
     _state.active, _state.aim_pending = False, 0
-    _pending.clear()
+    _state.pending.clear()
     if request('off'):
-        _state.release_serial = _serial
+        _state.release_serial = _state.serial
 
 
 def _announce_reply(result: str, x: int, y: int, step: int) -> None:

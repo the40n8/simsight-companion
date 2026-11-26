@@ -142,14 +142,14 @@ def _hint_parts(frame: Any) -> list[str]:
     if chair_snap.has_target(item, frame):
         return []
     chair_label, target_tag, target_label = details
-    i, j = grid._tile
-    target = _nearest_target(frame, i, j, grid._level, target_tag)
+    i, j = grid.location.tile
+    target = _nearest_target(frame, i, j, grid.location.level, target_tag)
     if target is None:
         _log('product {} {}: no {} within two tiles'.format(item['id'], chair_label, target_label))
         return []
     _distance, obj_id, _obj, target_tile = target
     side = _direction(i, j, target_tile)
-    facing = int(grid._facing) % 4
+    facing = int(grid.location.facing) % 4
     relation, en, pl = _relation(facing, side)
     if side is None:
         result = _text(en, pl).format(target_label)

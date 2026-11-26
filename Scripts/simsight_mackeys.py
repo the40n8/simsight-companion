@@ -69,10 +69,23 @@ class _Held:
     last_fire: float
 
 
+@dataclass
+class _Sent:
+    """When the keyboard lease was last sent, and the last grab set sent."""
+
+    lease_at: float = -1e9
+    grab: list[str] | None = None
+
+
 _held: dict[HeldKey, _Held] = {}
-# Module attributes (the tests reset them): last keyboard lease, last grab set sent.
-_last_lease = -1e9
-_last_grab: list[str] | None = None
+_sent = _Sent()
+
+
+def reset() -> None:
+    """Forget held keys and what was last sent: the next tick sends both again."""
+    _held.clear()
+    _sent.lease_at = -1e9
+    _sent.grab = None
 
 
 def _keys() -> Any:
@@ -167,11 +180,7 @@ def _repeat(now: float) -> None:
             continue
         entry.last_fire = now
         if family == 'chord':
-            keys._chord_repeating = True
-            try:
-                keys._chord(entry.what)
-            finally:
-                keys._chord_repeating = False
+            keys.repeat_chord(entry.what)
         else:
             keys._send(entry.what)
 
@@ -193,7 +202,7 @@ def grab_set() -> list[str]:
 def _lease() -> None:
     """Keep Flash's keyboard guards on, and the UI copies' settings current."""
     keys = _keys()
-    if keys._enabled and _pump_alive():
+    if keys.status.enabled and _pump_alive():
         keys._send('A11y|lease')
         try:
             import simsight_pump as pump
@@ -206,17 +215,16 @@ def _lease() -> None:
 def tick(send: Callable[[dict[str, Any]], object]) -> None:
     """Every game tick: key repeats, the keyboard lease Flash's guards need,
     and the bare-key set for the helper (sent through send when it changes)."""
-    global _last_lease, _last_grab  # noqa: PLW0603 - module attributes the tests reset
     now = time.monotonic()
     if _held:
         _repeat(now)
-    if now - _last_lease < LEASE_SECONDS:
+    if now - _sent.lease_at < LEASE_SECONDS:
         return
-    _last_lease = now
+    _sent.lease_at = now
     _lease()
     grab = grab_set()
-    if grab != _last_grab:
-        _last_grab = grab
+    if grab != _sent.grab:
+        _sent.grab = grab
         send({'grab': {'keys': grab}})
 
 

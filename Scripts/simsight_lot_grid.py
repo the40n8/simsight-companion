@@ -301,7 +301,10 @@ def room_parts(frame: Any) -> tuple[list[Any], dict[str, bool]]:
     parts, facts = grid._room_parts_base(frame)
     if _state.enabled:
         try:
-            parts = list(parts) + [_describe_tile(grid._tile[0], grid._tile[1], grid._level) + ' ']
+            parts = list(parts) + [
+                _describe_tile(grid.location.tile[0], grid.location.tile[1], grid.location.level)
+                + ' '
+            ]
         except Exception as ex:
             _log(f'tile announcement failed: {ex!r}')
     return parts, facts
@@ -343,7 +346,9 @@ def label_current_building() -> None:
     if not grid.build_cursor():
         core.speak('Turn on the Build grid and move into the building first.')
         return
-    building = _building_at(grid._tile[0], grid._tile[1], grid._level, _snapshot(refresh=True))
+    building = _building_at(
+        grid.location.tile[0], grid.location.tile[1], grid.location.level, _snapshot(refresh=True)
+    )
     if not building:
         core.speak('The cursor is not inside a detected building.')
         return

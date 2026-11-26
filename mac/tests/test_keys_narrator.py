@@ -31,8 +31,7 @@ module(
     'simsight_speech',
     speak=lambda text, **k: SPOKEN.append(text),
     log_line=lambda *a: None,
-    speech_mode='hover',
-    braille_mode='concise',
+    modes=types.SimpleNamespace(speech='hover', braille='concise'),
 )
 module('simsight_settings', get=lambda name, fallback=None: fallback, brief=lambda: False)
 module('simsight_pump', status=lambda: 'ok')

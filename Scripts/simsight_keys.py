@@ -249,15 +249,22 @@ BUILD_GRID_KEYS = {
     0x36: 'info6',
     0x4D: 'moveobject',
 }  # M: pick up an object, M again puts it down here
-# Flash's reports and this module's switches, read by other modules as
-# module attributes (keys._modal_active, keys._enabled, ...): they stay here.
-_build_grid_owner = False  # Flash: the Build cursor owns plain keys
-_chord_repeating = False  # the poller is sending an auto-repeat of a chord
 _REPEAT_DELAY = 0.45
 _REPEAT_INTERVAL = 0.065
-_enabled = bool(settings.get('keyboard', True))
-_modal_active = False
-_editing_active = False
+
+
+class Status:
+    """The keyboard switch and Flash's ownership reports, which other modules
+    read (and the menu and the narrator set) as keys.status.<name>."""
+
+    def __init__(self) -> None:
+        self.enabled = bool(settings.get('keyboard', True))  # keyboard navigation on
+        self.modal_active = False  # Flash: a modal owner (dialog, menu, panel) has the keys
+        self.editing_active = False  # Flash: a text field has focus
+        self.build_grid_owner = False  # Flash: the Build cursor owns plain keys
+
+
+status = Status()
 
 _PHONE_BLOCKED = 'Close the current panel or dialog before opening a waiting call.'
 _ACTIVATION_KEYS = frozenset((0x0D, 0x20))
@@ -280,6 +287,7 @@ class _State:
         self.scanner_hold_until = 0.0  # our own window replacement: resume waits until then
         self.thread: threading.Thread | None = None  # the Windows poller
         self.running = False
+        self.chord_repeating = False  # the poller is sending an auto-repeat of a chord
 
 
 _state = _State()
@@ -316,7 +324,7 @@ def fence_opening_input() -> None:
     mistake the console's completed Enter tap for a new picker activation.
     """
     _state.input_epoch += 1
-    if ctypes is None or not _enabled:
+    if ctypes is None or not status.enabled:
         return
     try:
         user32, kernel32 = _dlls()
@@ -385,25 +393,26 @@ def apply_modal_state(state: object, source: str) -> bool:
     the simsight.context_enc suffix, from the same A11yModalFrame pass), so one
     lost post cannot leave keys routing chords to a closed owner. Applying
     the same state again changes nothing."""
-    global _modal_active, _editing_active  # noqa: PLW0603 - module attributes other modules read
     report, blocking = _modal_report(state, source)
     if not isinstance(report, str) or report not in ('00', '01', '10', '11'):
         simsight_log.line(
             f'keys: modal state rejected {type(report).__name__} {repr(report)[:24]} ({source})'
         )
         return False
-    before = ('1' if _modal_active else '0') + ('1' if _editing_active else '0')
+    before = ('1' if status.modal_active else '0') + ('1' if status.editing_active else '0')
     if before != report:
         simsight_log.line(f'keys: modal {before}->{report} ({source})')
-    if _modal_active and report[0] == '0':
+    if status.modal_active and report[0] == '0':
         _state.input_epoch += 1  # the owner closed: queued modal navigation is stale
-    if (report[0] == '1' and not _modal_active) or (_editing_active and report[1] == '0'):
+    if (report[0] == '1' and not status.modal_active) or (
+        status.editing_active and report[1] == '0'
+    ):
         # New modal owner, or a text field just closed (console Enter):
         # retire keys already down or tapped before this surface change.
         fence_opening_input()
-    owner_changed = (report[0] == '1') != _modal_active
-    _modal_active = report[0] == '1'
-    _editing_active = report[1] == '1'
+    owner_changed = (report[0] == '1') != status.modal_active
+    status.modal_active = report[0] == '1'
+    status.editing_active = report[1] == '1'
     if blocking is not None:
         _set_blocking(blocking, source)
     elif owner_changed:
@@ -411,7 +420,7 @@ def apply_modal_state(state: object, source: str) -> bool:
         # outlive the owner it described. Unknown counts as blocking until
         # Flash reports the bit (simsight.blocking or the next context post).
         _set_blocking(None, source)
-    if not _modal_active:
+    if not status.modal_active:
         # A missed pie-menu Hide message must not route future world chords
         # to the whole HUD. Flash ownership is the authoritative context.
         import simsight_scanner as scanner
@@ -439,7 +448,7 @@ def blocking_active() -> bool:
     dropdowns block. Until Flash has reported the bit for the current owner
     (older UI packages never do), any owner blocks."""
     if _state.blocking_explicit is None:
-        return _modal_active
+        return status.modal_active
     return _state.blocking_explicit
 
 
@@ -506,19 +515,22 @@ def _scanner_effective() -> bool:
     scanner are on."""
     return (
         bool(settings.get('scanner_mode', False))
-        and _enabled
+        and status.enabled
         and bool(settings.get('keyboard', True))
         and bool(settings.get('scanner', True))
     )
 
 
 def _build_grid_routing() -> bool:
-    return _build_grid_owner and not _modal_active and not _editing_active
+    return status.build_grid_owner and not status.modal_active and not status.editing_active
 
 
 def _scanner_routing() -> bool:
     return (
-        _scanner_effective() and _state.scanner_owner and not _modal_active and not _editing_active
+        _scanner_effective()
+        and _state.scanner_owner
+        and not status.modal_active
+        and not status.editing_active
     )
 
 
@@ -536,7 +548,7 @@ def _in_live() -> bool:
 def set_scanner_mode(on: object) -> bool:
     """Simulation thread: persist the scanner mode setting and apply it
     (Ctrl+Alt+Space, the settings menu and simsight.scannermode all come here)."""
-    if on and (not _enabled or not settings.get('scanner', True)):
+    if on and (not status.enabled or not settings.get('scanner', True)):
         speech.speak(lang.t('scanner mode needs scanner'), explicit=True)
         return False
     was = bool(settings.get('scanner_mode', False))
@@ -619,14 +631,13 @@ def _build_grid_key(intent: str, epoch: int) -> None:
 @real_annotations
 def a11y_buildgridowner(state: str = '0', _connection: Any = None) -> bool:
     """Flash: whether the Build cursor owns plain keys now (on change)."""
-    global _build_grid_owner  # noqa: PLW0603 - a module attribute other modules read
     report = _bit(state)
     if report not in ('0', '1'):
         return False
     owner = report == '1'
-    if owner != _build_grid_owner:
-        simsight_log.line(f'keys: Build cursor owner {int(_build_grid_owner)}->{int(owner)}')
-        _build_grid_owner = owner
+    if owner != status.build_grid_owner:
+        simsight_log.line(f'keys: Build cursor owner {int(status.build_grid_owner)}->{int(owner)}')
+        status.build_grid_owner = owner
         _state.input_epoch += 1  # a key queued under the old owner must not act
     return True
 
@@ -663,8 +674,8 @@ def _resume_after_hold(epoch: int) -> None:
     if (
         _state.scanner_owner
         and _state.scanner_suspended
-        and not _modal_active
-        and not _editing_active
+        and not status.modal_active
+        and not status.editing_active
         and _scanner_effective()
     ):
         import simsight_scanner as scanner
@@ -679,7 +690,7 @@ def _scanner_owner_now(changed: bool) -> None:
     menu, dialog, panel or Build."""
     if not changed and not _state.scanner_pending_announce and not _state.scanner_suspended:
         return  # a heartbeat re-post: nothing to do
-    if _modal_active or _editing_active:
+    if status.modal_active or status.editing_active:
         return  # announced when the scanner really has the keys
     import simsight_scanner as scanner
 
@@ -993,7 +1004,7 @@ def _swallowed_snapshot() -> dict[int, int]:
 def _swallow_enabled() -> bool:
     # Always on with keyboard mode (no longer a player option); the hook
     # still needs Ctrl+Alt held, the game in front and no AltGr typing.
-    return _enabled
+    return status.enabled
 
 
 def _trace_hook_event(
@@ -1272,21 +1283,21 @@ def _chord_before_owner(intent: str) -> bool:
     """Chords that only a text field owns (or, for repeat, any owner);
     True when the intent was one of them."""
     if intent == 'scannermode':
-        if not _editing_active:
+        if not status.editing_active:
             _post(_toggle_scanner_mode, _state.input_epoch)
         return True
-    if intent == 'repeat' and (_modal_active or _editing_active):
+    if intent == 'repeat' and (status.modal_active or status.editing_active):
         _send('A11yRepeat')
         return True
     if intent == 'logging':
         # Like the settings row; only a text field owns the key.
-        if not _editing_active and not _post(_toggle_logging):
+        if not status.editing_active and not _post(_toggle_logging):
             _toggle_logging()
         return True
     if intent == 'clock':
         # The clock text is the client's own; dialogs and panels do not
         # change it. Only a text field owns the key.
-        if not _editing_active:
+        if not status.editing_active:
             request_clock()
         return True
     return False
@@ -1296,9 +1307,9 @@ def _switch_sim_chord(index: int) -> None:
     # Direct household switch (glaroc's Ctrl+Alt+digit). Never while
     # typing, and never behind a dialog, picker or focused panel: a
     # switch would pull the context out from under it (Codex review).
-    if _editing_active:
+    if status.editing_active:
         return
-    if _modal_active:
+    if status.modal_active:
         speech.speak('Close the current panel or dialog before switching Sims.', explicit=True)
         return
     if not _post(_switch_household_sim, index, _state.input_epoch):
@@ -1308,7 +1319,7 @@ def _switch_sim_chord(index: int) -> None:
 def _window_chord(intent: str) -> bool:
     """Chords that open a window or read something out; True when handled."""
     if intent == 'phone':
-        if _editing_active or blocking_active():
+        if status.editing_active or blocking_active():
             speech.speak(_PHONE_BLOCKED, explicit=True)
         else:
             _post(_open_waiting_checked)
@@ -1320,14 +1331,14 @@ def _window_chord(intent: str) -> bool:
     if opener is not None:
         # Native pickers, like the accessibility menu: never over a
         # dialog, picker or focused panel, and never while typing.
-        if _modal_active:
+        if status.modal_active:
             speech.speak(lang.t('close the dialog first'), explicit=True)
         elif not _post(opener, intent, _state.input_epoch):
             speech.speak(lang.t('no lot loaded'), explicit=True)
         return True
     message = _INFO_CHORD_MESSAGES.get(intent)
     if message is not None:
-        if not _modal_active:
+        if not status.modal_active:
             _send(message)
         return True
     return False
@@ -1347,19 +1358,23 @@ def _modal_chord(intent: str) -> None:
 def _route_chord(intent: str) -> None:
     if _chord_before_owner(intent):
         return
-    if _editing_active and not _modal_active:
+    if status.editing_active and not status.modal_active:
         return
     if _window_chord(intent):
         return
-    if intent in _BUILD_CHORDS and not _editing_active:
+    if intent in _BUILD_CHORDS and not status.editing_active:
         # Catalog keyboard browsing also owns a scope. Let the native
         # Build handler distinguish it from an actual modal dialog.
         _post(_world_chord, intent, _state.input_epoch)
         return
-    if _modal_active:
+    if status.modal_active:
         _modal_chord(intent)
         return
-    args = (intent, _state.input_epoch, True) if _chord_repeating else (intent, _state.input_epoch)
+    args = (
+        (intent, _state.input_epoch, True)
+        if _state.chord_repeating
+        else (intent, _state.input_epoch)
+    )
     if _post(_world_chord, *args):
         _log_route('queued for world handling', intent)
     else:
@@ -1374,14 +1389,13 @@ def _chord(intent: str) -> None:
         simsight_log.error(f'keys: chord {intent}')
 
 
-def _repeat_chord(intent: str) -> None:
-    """A chord's auto-repeat: _chord sees _chord_repeating while it runs."""
-    global _chord_repeating  # noqa: PLW0603 - a module attribute simsight_mackeys sets too
-    _chord_repeating = True
+def repeat_chord(intent: str) -> None:
+    """A chord's auto-repeat: _chord sees _state.chord_repeating while it runs."""
+    _state.chord_repeating = True
     try:
         _chord(intent)
     finally:
-        _chord_repeating = False
+        _state.chord_repeating = False
 
 
 def _toggle_logging() -> bool:
@@ -1405,7 +1419,7 @@ def _toggle_logging() -> bool:
 def _owner_changed(intent: str, epoch: int) -> bool:
     """Simulation thread: a dialog, picker or text field may have opened
     between the key press and this pump slot (ownership re-checked)."""
-    if epoch != _state.input_epoch or _editing_active or _modal_active:
+    if epoch != _state.input_epoch or status.editing_active or status.modal_active:
         _log_route('dropped: owner changed before the pump turn', intent)
         return True
     return False
@@ -1462,7 +1476,7 @@ def _switch_household_sim(index: int, epoch: int) -> bool:
     """Simulation thread. index is 1-based in the client's selectable order.
     Ownership is re-checked here: a dialog or panel may have taken focus
     between the key press and this pump slot (Codex review)."""
-    if epoch != _state.input_epoch or _editing_active or _modal_active:
+    if epoch != _state.input_epoch or status.editing_active or status.modal_active:
         return False
     try:
         import services
@@ -1483,7 +1497,7 @@ def _open_waiting_checked() -> bool:
     """Simulation thread. The owner can change between the key and this
     pump turn; a dialog, picker or text field that opened meanwhile must
     not see the recipient switch inside open_waiting (Codex review)."""
-    if _editing_active or blocking_active():
+    if status.editing_active or blocking_active():
         _log_route('dropped: a blocking owner opened before the pump turn', 'phone')
         speech.speak(_PHONE_BLOCKED, explicit=True)
         return False
@@ -1505,10 +1519,10 @@ def _world_chord_dropped(intent: str, epoch: int) -> bool:
     if epoch != _state.input_epoch:
         _log_route(_DROPPED_EPOCH, intent)
         return True
-    if _editing_active:
+    if status.editing_active:
         _log_route('dropped: a text field has focus', intent)
         return True
-    if _modal_active and intent not in _BUILD_CHORDS:
+    if status.modal_active and intent not in _BUILD_CHORDS:
         _log_route('dropped: a modal owner opened before the pump turn', intent)
         return True
     return False
@@ -1596,7 +1610,7 @@ def _game_is_foreground(user32: Any, kernel32: Any) -> bool:
 
 
 def _tab_message(shift: bool) -> str | None:
-    if shift and not _modal_active:
+    if shift and not status.modal_active:
         # With no menu open Shift+Tab is the game's own first-person
         # camera switch; Flash lets it through too. Menus keep it.
         return None
@@ -1620,7 +1634,7 @@ def _modal_key_message(vk: int, shift: bool) -> str | None:
         return 'A11yEscape'
     if settings.get('numpad_navigation', False) and vk in NUMPAD_BINDINGS:
         return NUMPAD_BINDINGS[vk]
-    if _editing_active or shift:
+    if status.editing_active or shift:
         return None
     return next(
         (message for message, (_label, combos) in BINDINGS.items() if (vk, False) in combos),
@@ -1632,18 +1646,25 @@ def _plain_message(
     vk: int, ctrl: bool = False, alt: bool = False, shift: bool = False
 ) -> str | None:
     """One policy for native context, editing and optional numpad navigation."""
-    if not _enabled:
+    if not status.enabled:
         return None
-    if vk == 0x4E and ctrl and shift and not alt and not _modal_active and not _editing_active:
+    if (
+        vk == 0x4E
+        and ctrl
+        and shift
+        and not alt
+        and not status.modal_active
+        and not status.editing_active
+    ):
         return 'A11yNeeds'
     if ctrl or alt:
         return None
-    if vk == 0x09 and (not _editing_active or _modal_active):
+    if vk == 0x09 and (not status.editing_active or status.modal_active):
         return _tab_message(shift)
     owned = _owned_key_message(vk, shift)
     if owned is not None:
         return owned
-    if not _modal_active:
+    if not status.modal_active:
         return None
     return _modal_key_message(vk, shift)
 
@@ -1747,7 +1768,7 @@ class _Poller:
             return True
 
     def poll(self) -> bool:
-        if not _enabled or not _game_is_foreground(self.user32, self.kernel32):
+        if not status.enabled or not _game_is_foreground(self.user32, self.kernel32):
             self._focus_left()
             time.sleep(0.05)
             return False
@@ -1756,8 +1777,8 @@ class _Poller:
         # submitting key's tap latch behind; if this poll lands after Flash
         # clears the editing flag, that tap would activate whatever we focus
         # next (settings row, HUD button). Retire it once, here.
-        editing_ended = self.editing_prev and not _editing_active
-        self.editing_prev = _editing_active
+        editing_ended = self.editing_prev and not status.editing_active
+        self.editing_prev = status.editing_active
         if editing_ended:
             fence_opening_input()
         self._lease(now)
@@ -1779,7 +1800,7 @@ class _Poller:
             for (kind, vk), down in self.was_down.items()
             if kind == 'chord' and down
         ]
-        if held and _enabled:
+        if held and status.enabled:
             # Diagnostic: a key still held when focus returns counts
             # as a new press (an unexplained double toggle, 2026-09-26).
             simsight_log.line(
@@ -1927,7 +1948,7 @@ class _Poller:
             sample.tracing
             and raw_tap
             and not sample.chord
-            and not _editing_active
+            and not status.editing_active
             and sample.now - self.chord_seen_at < 0.5
         ):
             simsight_log.line(
@@ -1969,7 +1990,7 @@ class _Poller:
             self.pressed_at[key] = now
             self.last_fire[key] = now
         elif down and repeatable and self._repeat_due(key, now):
-            _repeat_chord(intent)
+            repeat_chord(intent)
             self.last_fire[key] = now
         # Modifier changes are not new letter/arrow presses. Keep
         # tracking the key while Ctrl+Alt are up; otherwise an old H
@@ -2064,11 +2085,6 @@ def stop() -> None:
     stop_swallow()
 
 
-def _set_enabled(on: bool) -> None:
-    global _enabled  # noqa: PLW0603 - a module attribute other modules read and set
-    _enabled = on
-
-
 def _keys_listing(output: Callable[[str], object]) -> None:
     for label, combos in BINDINGS.values():
         output('   {}: {}'.format(label, ' or '.join(_describe(vk, alt) for (vk, alt) in combos)))
@@ -2083,13 +2099,13 @@ def a11y_keys(mode: str = 'on', _connection: Any = None) -> bool:
     try:
         output = sims4.commands.CheatOutput(_connection)
         if mode.lower() in ('off', 'false', '0'):
-            _set_enabled(False)
+            status.enabled = False
             settings.set('keyboard', False)
             _send('A11yKeyboardOff')
             output('simsight: keyboard navigation OFF')
             speech.speak('Keyboard navigation off.', explicit=True)
             return True
-        _set_enabled(True)
+        status.enabled = True
         settings.set('keyboard', True)
         _send('A11yKeyboardOn')
         started = start()
@@ -2132,7 +2148,7 @@ def a11y_keyprobe(mode: str = 'off', _connection: Any = None) -> bool:
 
 
 try:
-    if _enabled:
+    if status.enabled:
         start()
     else:
         simsight_log.line('keys: keyboard navigation disabled by settings')

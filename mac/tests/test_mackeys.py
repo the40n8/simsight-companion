@@ -1,6 +1,7 @@
 """Mac keyboard feeder: families, repeats, key-up, focus loss, owned keys."""
 
 import time
+import types
 import unittest
 
 from fakegame import module
@@ -13,10 +14,9 @@ module('simsight_speech', log_line=lambda m: None)
 module('simsight_pump', alive=lambda: True, post=lambda fn, *a: LOG.append(('post',)))
 KEYS = module(
     'simsight_keys',
-    _enabled=True,
+    status=types.SimpleNamespace(enabled=True),
     _REPEAT_DELAY=0.03,
     _REPEAT_INTERVAL=0.0,
-    _chord_repeating=False,
     CHORDS={0x28: ('next', True), 0x48: ('help', False)},
     _REPEATABLE={'A11yArrowDown'},
     _announce_ui_settings=lambda: None,
@@ -34,7 +34,8 @@ def plain(vk, ctrl, alt, shift):
 
 KEYS._plain_message = plain
 KEYS._send = lambda m: LOG.append(('send', m))
-KEYS._chord = lambda i: LOG.append(('chord', i, KEYS._chord_repeating))
+KEYS._chord = lambda i: LOG.append(('chord', i, False))
+KEYS.repeat_chord = lambda i: LOG.append(('chord', i, True))
 
 
 def read_time():
@@ -49,9 +50,7 @@ import simsight_mackeys as mackeys  # noqa: E402
 class MacKeysTest(unittest.TestCase):
     def setUp(self):
         del LOG[:]
-        mackeys._held.clear()
-        mackeys._last_lease = -1e9
-        mackeys._last_grab = None
+        mackeys.reset()
         KEYS.modal = True
 
     def test_families(self):
@@ -86,7 +85,7 @@ class MacKeysTest(unittest.TestCase):
         mackeys.tick(sent.append)
         self.assertEqual(sent, [{'grab': {'keys': ['13', '40', '9+shift']}}])
         KEYS.modal = False
-        mackeys._last_lease = -1e9
+        mackeys.reset()
         mackeys.tick(sent.append)
         self.assertEqual(sent[-1], {'grab': {'keys': []}})
 

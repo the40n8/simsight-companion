@@ -145,16 +145,18 @@ def _nearby_tables(frame: Any, wanted: str) -> list[tuple[int, Any]]:
     import simsight_grid as grid
     import simsight_tiles as tiles
 
-    i, j = grid._tile
+    i, j = grid.location.tile
     candidates: dict[Any, tuple[int, Any]] = {}
     for di in range(-1, 2):
         for dj in range(-1, 2):
             if not frame.inside(i + di, j + dj):
                 continue
-            if (di or dj) and int(grid._facing) % 4 != side_of(di, dj):
+            if (di or dj) and int(grid.location.facing) % 4 != side_of(di, dj):
                 continue
-            for obj in tiles.objects_on(frame, i + di, j + dj, grid._level):
-                if not _safe_target(obj, grid._level) or wanted not in tag_names(obj.definition):
+            for obj in tiles.objects_on(frame, i + di, j + dj, grid.location.level):
+                if not _safe_target(obj, grid.location.level) or wanted not in tag_names(
+                    obj.definition
+                ):
                     continue
                 row = (di * di + dj * dj, obj)
                 if obj.id not in candidates or row[0] < candidates[obj.id][0]:
@@ -175,7 +177,7 @@ def _target(item: dict[str, Any], frame: Any) -> tuple[Any, Any, bool] | None:
     if (
         focused is not None
         and wanted in tag_names(focused.definition)
-        and _safe_target(focused, grid._level)
+        and _safe_target(focused, grid.location.level)
     ):
         return definition, focused, True
     rows = _nearby_tables(frame, wanted)
@@ -262,7 +264,7 @@ def _request(item: dict[str, Any], frame: Any) -> tuple[ChairRequest | None, str
     definition, table, _explicit = target
     if table is None:
         return None, 'More than one table is equally close. Focus the intended table with 1 first.'
-    point = tiles.position(frame, *grid._tile, grid._level)
+    point = tiles.position(frame, *grid.location.tile, grid.location.level)
     slot = _seat(table, definition, point)
     if slot is None:
         return (
@@ -278,9 +280,9 @@ def _request(item: dict[str, Any], frame: Any) -> tuple[ChairRequest | None, str
         'state': _state(table),
         'slot': _key(slot),
         'slot_state': _slot_state(slot),
-        'tile': tuple(grid._tile),
-        'level': int(grid._level),
-        'facing': int(grid._facing),
+        'tile': tuple(grid.location.tile),
+        'level': int(grid.location.level),
+        'facing': int(grid.location.facing),
         'focused': getattr(focused, 'id', None),
         'seat_tile': tuple(frame.tile_of(slot.position.x, slot.position.z)),
     }
@@ -302,7 +304,7 @@ def try_place(item: dict[str, Any], frame: Any) -> bool | None:
         target = grid.cursor()
         if target is None:
             return False
-        return place.place(target[0], grid._level, grid._surface(), chair_request=request)
+        return place.place(target[0], grid.location.level, grid._surface(), chair_request=request)
     except Exception:
         simsight_log.error('chair snap: request refused')
         speech.speak('The chair seat could not be checked. Nothing was bought.', explicit=True)
@@ -318,9 +320,9 @@ def _same_request(request: ChairRequest, item: dict[str, Any], level: int) -> bo
     return (
         request['zone'] == int(services.current_zone_id())
         and request['product'] == int(item['id'])
-        and request['tile'] == tuple(grid._tile)
-        and request['level'] == int(grid._level)
-        and request['facing'] == int(grid._facing)
+        and request['tile'] == tuple(grid.location.tile)
+        and request['level'] == int(grid.location.level)
+        and request['facing'] == int(grid.location.facing)
         and int(level) == request['level']
         and request['focused'] == getattr(layers.focused_target(), 'id', None)
     )
@@ -385,8 +387,8 @@ def fit_parts(item: dict[str, Any], frame: Any) -> list[str] | None:
 
             table = services.object_manager().get(request['table'])
             di, dj = (
-                request['seat_tile'][0] - grid._tile[0],
-                request['seat_tile'][1] - grid._tile[1],
+                request['seat_tile'][0] - grid.location.tile[0],
+                request['seat_tile'][1] - grid.location.tile[1],
             )
             return [
                 'Chair will snap at ',

@@ -62,7 +62,6 @@ def overview_point_and_act(  # noqa: PLR0913, PLR0917 - same signature as build.
     points = tuple(points_world)
     if not points:
         return False
-    build._hook_replies()
     try:
         for attempt in range(5):
             build.cursor_off()

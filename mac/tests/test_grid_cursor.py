@@ -1,7 +1,7 @@
 """The lot grid and the Build cursor (simsight_grid) on a fake 6 by 8 lot:
 moving, what a tile says, Enter placing exactly or offering the nearest
-tile that fits, and the keys other modules rely on (grid._tile, _level,
-_facing)."""
+tile that fits, and the keys other modules rely on (grid.location.tile, .level,
+.facing)."""
 
 import types
 import unittest
@@ -191,13 +191,15 @@ class BuildCursor(unittest.TestCase):
                 'Bella. Does not fit here facing north: something is in the way. ',
             ],
         )
-        self.assertEqual((grid._tile, grid._level, grid._facing), ((1, 1), 0, 0))
+        self.assertEqual(
+            (grid.location.tile, grid.location.level, grid.location.facing), ((1, 1), 0, 0)
+        )
         self.assertTrue(grid.build_cursor())
 
     def test_arrows_move_one_tile_and_stop_at_the_edge(self):
         said()
         self.assertTrue(grid.on_key('right'))
-        self.assertEqual(grid._tile, (2, 1))
+        self.assertEqual(grid.location.tile, (2, 1))
         self.assertEqual(
             said(), ['Empty floor. Does not fit here facing north: something is in the way. ']
         )
@@ -206,15 +208,15 @@ class BuildCursor(unittest.TestCase):
         said()
         self.assertFalse(grid.on_key('left'))
         self.assertEqual(said(), ['Lot edge.'])
-        self.assertEqual(grid._tile, (0, 1))
+        self.assertEqual(grid.location.tile, (0, 1))
 
     def test_turn_and_floor(self):
         said()
         grid.on_key('turn')
-        self.assertEqual(grid._facing, 1)
+        self.assertEqual(grid.location.facing, 1)
         self.assertEqual(said(), ['Facing east. Does not fit here: something is in the way. '])
         grid.on_key('floorup')
-        self.assertEqual(grid._level, 1)
+        self.assertEqual(grid.location.level, 1)
         said()
         self.assertFalse(grid.on_key('floorup'))
         self.assertEqual(said(), ['Floor limit.'])
@@ -246,7 +248,7 @@ class BuildCursor(unittest.TestCase):
 
     def test_enter_places_exactly_where_it_fits(self):
         grid.focus_position(V(4.2, 0, 6.7), 0)
-        self.assertEqual(grid._tile, (4, 6))
+        self.assertEqual(grid.location.tile, (4, 6))
         self.assertTrue(grid.on_key('open'))
         self.assertEqual(PLACED, [((4.5, 6.5), 0, [('angle', 0.0), ('exact', True)])])
 

@@ -1141,7 +1141,7 @@ def _ui_owns_input() -> bool:
     try:
         import simsight_keys as keys
 
-        return bool(keys._modal_active or keys._editing_active)
+        return bool(keys.status.modal_active or keys.status.editing_active)
     except (ImportError, AttributeError):
         return False  # the keyboard module is not loaded: nothing owns the keys
 
