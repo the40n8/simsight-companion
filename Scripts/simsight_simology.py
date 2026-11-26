@@ -22,13 +22,12 @@ from typing import TYPE_CHECKING, Any
 import simsight_lang as lang
 import simsight_menu as menu
 import simsight_log
+import simsight_names as names
 import simsight_speech as speech
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from simsight_hub import Row
 
-    # (localized name, localized description, Enter callback), for hub._window.
-    Row = tuple[Any, Any, Callable[[], Any]]
     Entry = tuple[Any, Any]  # (milestone tuning, its tracker data)
 
 # sims.sim_info_types.Age member names.
@@ -40,7 +39,7 @@ def _say(term: str) -> None:
 
 
 def _no_rows(term: str, info: Any) -> bool:
-    speech.speak(lang.t(term).format(_name(info)), explicit=True)
+    speech.speak(lang.t(term).format(names.full_name(info)), explicit=True)
     return False
 
 
@@ -66,12 +65,6 @@ def _active_info() -> Any:
 
     client = services.client_manager().get_first_client()
     return getattr(client, 'active_sim_info', None) if client is not None else None
-
-
-def _name(info: Any) -> str:
-    return ' '.join(
-        p for p in (getattr(info, 'first_name', ''), getattr(info, 'last_name', '')) if p
-    )
 
 
 def _lines(*parts: Any) -> Any:
@@ -218,7 +211,9 @@ def milestones_window() -> Any:
         )
     if not rows:
         return _no_rows('no milestones', info)
-    return hub._window('milestones', lang.t('milestones instructions').format(_name(info)), rows)
+    return hub._window(
+        'milestones', lang.t('milestones instructions').format(names.full_name(info)), rows
+    )
 
 
 def milestone_category(sim_id: Any, category: Any) -> Any:
@@ -342,5 +337,7 @@ def values_window() -> Any:
     if not rows:
         return _no_rows('no character values', info)
     return hub._window(
-        'character values', lang.t('character values instructions').format(_name(info)), rows
+        'character values',
+        lang.t('character values instructions').format(names.full_name(info)),
+        rows,
     )

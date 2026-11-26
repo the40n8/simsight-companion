@@ -73,8 +73,8 @@ def _ui(message: str) -> None:
     )
 
 
-def _row_icon() -> Any:
-    """The active Sim's thumbnail for the rows, or None."""
+def row_icon() -> Any:
+    """The active Sim's thumbnail for a window row (its icon_info), or None."""
     import services
 
     try:
@@ -117,7 +117,7 @@ def _window(title: str, description: str, rows: Sequence[Row], localized_title: 
     # Text-only item rows drew a broken-image placeholder in every row
     # (reported 2026-09-15). Object rows with the active Sim's own thumbnail
     # ask the client for a real icon, like the scanner window does.
-    icon_info = _row_icon()
+    icon_info = row_icon()
     callbacks: dict[int, Callable[..., object]] = {}
     for index, (name, detail, callback) in enumerate(rows):
         callbacks[index] = callback

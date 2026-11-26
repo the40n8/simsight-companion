@@ -283,6 +283,7 @@ def _row(
     enabled: bool = True,
     tip: Any = None,
 ) -> Any:
+    import simsight_hub as hub
     from ui.ui_dialog_picker import ObjectPickerRow
 
     return ObjectPickerRow(
@@ -291,25 +292,11 @@ def _row(
         row_description=detail,
         row_tooltip=(lambda *_, text=tip: text) if tip is not None else None,
         icon=None,
-        icon_info=_icon(),
+        icon_info=hub.row_icon(),
         tag=tag,
         is_selected=False,
         is_enable=enabled,
     )
-
-
-def _icon() -> Any:
-    """The active Sim's thumbnail for a row, or None."""
-    try:
-        import services
-        from distributor.shared_messages import IconInfoData
-
-        sim = services.get_active_sim()
-        if sim is not None:
-            return IconInfoData(obj_instance=sim)
-    except Exception:
-        simsight_log.error('phone: row icon')
-    return None
 
 
 def _keys_call(name: str) -> None:

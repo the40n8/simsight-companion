@@ -43,6 +43,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
 
     from simsight_chair_snap import ChairRequest
+    from simsight_hub import Row
 
     _TileKey = tuple[int, int, int]  # x, z, level
     _Area = tuple[Any, 'LotArea', str | None]  # centre, area, room name
@@ -703,7 +704,7 @@ def guided_placement() -> bool:
     if lot is None:
         return False
     owner = _household_id()
-    rows = [
+    rows: list[Row] = [
         (menu._raw(_floor_name(level)), None, lambda value=level: _choose_area(item, owner, value))
         for level in range(int(lot.min_level), int(lot.max_level) + 1)
     ]
@@ -788,7 +789,7 @@ def _choose_area(item: dict[str, Any], owner: Any, level: int) -> bool:
     detail = lang.text(
         'Buy {} for {} simoleons if it fits.', 'Kup {} za {} simoleonów, jeśli się zmieści.'
     ).format(_product_name(), price)
-    rows = []
+    rows: list[Row] = []
     for label, (center, area, _) in zip(labels, areas):
         shown = label
         if labels.count(label) > 1:
