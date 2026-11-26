@@ -588,13 +588,15 @@ def _cached_text(key: int) -> str | None:
     return cached
 
 
-def _loc_value(value: Any) -> Any:
-    """A LocalizedString proto from a tuned value (proto or factory)."""
+def _loc_value(value: Any, sims: tuple[Any, ...] = ()) -> Any:
+    """A LocalizedString proto from a tuned value (proto or factory). A
+    factory is given the Sims the text is about, as the game does, so
+    {M0.father}{F0.mother} tokens get the right Sim."""
     if value is None:
         return None
     if callable(value) and not hasattr(value, 'hash'):
         try:
-            value = value()
+            value = value(*sims)
         except TypeError:
             return None  # a factory that needs arguments (the Sims it is about)
         except Exception:
@@ -664,9 +666,10 @@ def _token_text(t: Any) -> str:
     return _loc_key_text(key) if key else ''
 
 
-def text_of(value: Any, fallback: str = '') -> str:
-    """Game text for a localized value, or fallback until the UI resolves it."""
-    loc = _loc_value(value)
+def text_of(value: Any, fallback: str = '', sims: tuple[Any, ...] = ()) -> str:
+    """Game text for a localized value, or fallback until the UI resolves it.
+    `sims`: the Sims a text factory is about (gendered words, names)."""
+    loc = _loc_value(value, sims)
     if loc is None:
         return fallback
     try:
@@ -748,7 +751,7 @@ def _mood(info: Any) -> Json | None:
     return {'key': _mood_key(mood), 'name': name, 'intensity': intensity}
 
 
-def _moodlet(buff: Any, now: Any) -> Json:
+def _moodlet(buff: Any, now: Any, info: Any) -> Json:
     # Buff instances share the Buff class; the tuning (name, mood, text)
     # is on buff_type.
     btype = getattr(buff, 'buff_type', None) or type(buff)
@@ -761,16 +764,19 @@ def _moodlet(buff: Any, now: Any) -> Json:
     mood_type = tuned('mood_type')
     moodlet = {
         'key': tuning,
-        'name': text_of(tuned('buff_name'), _pretty(tuning, ('buff_',))),
-        'description': text_of(tuned('buff_description')),
+        'name': text_of(tuned('buff_name'), _pretty(tuning, ('buff_',)), (info,)),
+        'description': text_of(tuned('buff_description'), '', (info,)),
         'moodKey': _mood_key(mood_type) if mood_type else '',
         'weight': int(tuned('mood_weight') or 0),
         'minutesLeft': -1,
     }
     with _logged('moodlet time'):
-        timeout = buff.get_timeout_time()
-        if timeout:
-            moodlet['minutesLeft'] = max(0, int((timeout - now).in_minutes()))
+        # (absolute ticks when it ends, rate), or (0, 0) without a timeout.
+        ticks, _rate = buff.get_timeout_time()
+        if ticks:
+            from date_and_time import DateAndTime
+
+            moodlet['minutesLeft'] = max(0, int((DateAndTime(ticks) - now).in_minutes()))
     return moodlet
 
 
@@ -781,7 +787,7 @@ def _moodlets(info: Any) -> list[Json]:
     if buffs is None:
         return []
     now = services.time_service().sim_now
-    return [_moodlet(buff, now) for buff in buffs if getattr(buff, 'visible', False)]
+    return [_moodlet(buff, now, info) for buff in buffs if getattr(buff, 'visible', False)]
 
 
 def _actions(sim: Any) -> list[Json]:
@@ -840,7 +846,8 @@ def _career_title(career: Any, info: Any) -> str:
         title = text_of(career.current_level_tuning.get_title(info))
     if not title:
         with _logged('career name'):
-            title = text_of(career.display_name(info))
+            # As the game's own career panel: the track's name for this Sim.
+            title = text_of(career.current_track_tuning.get_career_name(info))
     return title or _pretty(type(career).__name__, ('career_',))
 
 

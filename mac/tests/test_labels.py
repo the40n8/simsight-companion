@@ -56,5 +56,58 @@ class Labels(unittest.TestCase):
         self.assertEqual(bridge._bit_label(Bit, sim(False), sim(True)), 'Father')
 
 
+class Minutes:
+    def __init__(self, minutes):
+        self.minutes = minutes
+
+    def in_minutes(self):
+        return self.minutes
+
+
+class DateAndTime(int):
+    # The game's: ticks; subtracting gives a time span (here 1 tick = 1 minute).
+    def __sub__(self, other):
+        return Minutes(int(self) - int(other))
+
+
+module('date_and_time', DateAndTime=DateAndTime)
+
+
+class PregnantBuff:
+    """A moodlet whose name says mother or father for the Sim who has it."""
+
+    visible = True
+    mood_type = None
+    mood_weight = 1
+    buff_description = None
+
+    def __init__(self, ends):
+        self.ends = ends
+
+    buff_type = None
+
+    @staticmethod
+    def buff_name(*sims):
+        return Loc(sims)
+
+    def get_timeout_time(self):
+        return (self.ends, 1.0)
+
+
+class Moodlets(unittest.TestCase):
+    def test_name_is_for_the_sim_who_has_it(self):
+        mom = bridge._moodlet(PregnantBuff(0), DateAndTime(0), sim(True))
+        dad = bridge._moodlet(PregnantBuff(0), DateAndTime(0), sim(False))
+        self.assertEqual((mom['name'], dad['name']), ('Mother', 'Father'))
+
+    def test_minutes_left(self):
+        self.assertEqual(
+            bridge._moodlet(PregnantBuff(0), DateAndTime(5), sim(True))['minutesLeft'], -1
+        )
+        self.assertEqual(
+            bridge._moodlet(PregnantBuff(95), DateAndTime(5), sim(True))['minutesLeft'], 90
+        )
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=0)
