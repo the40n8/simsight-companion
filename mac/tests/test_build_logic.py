@@ -31,7 +31,7 @@ module(
     get_object_placement_flags=lambda def_id: FLAGS[def_id],
 )
 module('simsight_speech', speak=lambda text, **kw: SPOKEN.append(text))
-module('simsight_lang', _detect_lang=lambda: 'en', t=lambda text: text)
+module('simsight_lang', detect_lang=lambda: 'en', text=lambda en, pl: en, t=lambda text: text)
 module('simsight_settings', get=lambda key, default=None: SETTINGS.get(key, default))
 module('services', current_zone=lambda: ZONE[0], current_zone_id=lambda: 7)
 distributor = module('distributor')

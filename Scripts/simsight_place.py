@@ -137,10 +137,6 @@ _last: dict[str, Any] = {'obj_id': None, 'position': None, 'household': None, 'z
 _F = TypeVar('_F', bound=Callable[..., Any])
 
 
-def _text(en: str, pl: str) -> str:
-    return pl if lang._detect_lang() == 'pl' else en
-
-
 def _say(parts: list[Any]) -> None:
     import simsight_scanner as scanner
 
@@ -148,7 +144,7 @@ def _say(parts: list[Any]) -> None:
 
 
 def _say_text(en: str, pl: str) -> None:
-    speech.speak(_text(en, pl), explicit=True)
+    speech.speak(lang.text(en, pl), explicit=True)
 
 
 def _zone_id() -> Any:
@@ -226,7 +222,7 @@ def _product_name() -> str:
     item = product()
     if item and item['name']:
         return item['name']
-    return _text('the object', 'obiekt')
+    return lang.text('the object', 'obiekt')
 
 
 # ------------------------------------------------------------------- the funds
@@ -563,7 +559,7 @@ def _name_parts(obj: Any) -> Any:
         entry = scanner._entry_for(obj, obj.position, int(obj.level), False, '', '')
         return scanner._name_part(entry)
     except Exception:  # a detail of the report: never stops it
-        return _text('the object', 'obiekt')
+        return lang.text('the object', 'obiekt')
 
 
 def tile_key(position: Any, level: int) -> _TileKey:
@@ -719,8 +715,8 @@ def guided_placement() -> bool:
 
 def _floor_name(level: int) -> str:
     if level == 0:
-        return _text('Ground floor', 'Parter')
-    return _text(f'Floor {level}', f'Piętro {level}')
+        return lang.text('Ground floor', 'Parter')
+    return lang.text(f'Floor {level}', f'Piętro {level}')
 
 
 def _guided_current(item: dict[str, Any], owner: Any) -> bool:
@@ -751,14 +747,14 @@ def _area_labels(lot: Any, areas: list[_Area]) -> list[str]:
     for center, area, room_name in areas:
         dx, dz = center.x - lot.center.x, center.z - lot.center.z
         label = (
-            _text('Centre of the lot', 'Środek parceli')
+            lang.text('Centre of the lot', 'Środek parceli')
             if area.index == 4
             else lang.t(scanner._COMPASS[scanner._bearing(dx, dz)])
         )
         if area.room_id is not None:
             room_number += 1
             label = '{}, {}'.format(
-                room_name or _text('Room {}', 'Pokój {}').format(room_number), label
+                room_name or lang.text('Room {}', 'Pokój {}').format(room_number), label
             )
         labels.append(label)
     return labels
@@ -789,14 +785,14 @@ def _choose_area(item: dict[str, Any], owner: Any, level: int) -> bool:
         return _guided_current(item, owner) and place(area.points[0], level, surface, area=area)
 
     labels = _area_labels(lot, areas)
-    detail = _text(
+    detail = lang.text(
         'Buy {} for {} simoleons if it fits.', 'Kup {} za {} simoleonów, jeśli się zmieści.'
     ).format(_product_name(), price)
     rows = []
     for label, (center, area, _) in zip(labels, areas):
         shown = label
         if labels.count(label) > 1:
-            shown += _text(', {} metres from centre', ', {} metrów od środka').format(
+            shown += lang.text(', {} metres from centre', ', {} metrów od środka').format(
                 round(math.sqrt(LotArea.distance(center, lot.center)), 1)
             )
         rows.append((menu._raw(shown), menu._raw(detail), lambda value=area: buy(value)))
@@ -817,7 +813,7 @@ def _repeated(item: dict[str, Any], key: _TileKey, guard: bool) -> bool:
     _state.repeat_time = 0.0
     _say(
         [
-            _text(
+            lang.text(
                 'Already placed here. Press Enter again to place another ',
                 'Już umieszczono tutaj. Naciśnij Enter ponownie, aby umieścić kolejny: ',
             ),
@@ -1310,16 +1306,21 @@ def _note_landed(obj: Any, level: int, key: _TileKey) -> None:
 
 def _placed_where(obj: Any, surface: Any, p: _Placement) -> list[Any]:
     if surface is not None:
-        return [_text(' placed on ', ' umieszczono na: '), _name_parts(surface)]
+        return [lang.text(' placed on ', ' umieszczono na: '), _name_parts(surface)]
     if p.area is not None:
         return [
-            _text(' placed in the chosen area, ', ' umieszczono w wybranym obszarze, '),
+            lang.text(' placed in the chosen area, ', ' umieszczono w wybranym obszarze, '),
             _floor_name(p.level),
         ]
     where = _where(obj, p.position, p.level)
     if not where or where == lang.t('here'):
-        return [_text(' placed at the cursor', ' umieszczono przy kursorze')]
-    return [_text(' placed', ' umieszczono'), ', ', where, _text(' from the cursor', ' od kursora')]
+        return [lang.text(' placed at the cursor', ' umieszczono przy kursorze')]
+    return [
+        lang.text(' placed', ' umieszczono'),
+        ', ',
+        where,
+        lang.text(' from the cursor', ' od kursora'),
+    ]
 
 
 def _announce_placed(
@@ -1327,9 +1328,9 @@ def _announce_placed(
 ) -> None:
     _note_landed(obj, p.level, p.key)
     parts = [item['name'] or _product_name(), *_placed_where(obj, surface, p)]
-    parts.append(_text(f', {price} simoleons.', f', {price} simoleonów.'))
+    parts.append(lang.text(f', {price} simoleons.', f', {price} simoleonów.'))
     if _follow(obj, p.level):
-        parts.append(_text(' The cursor moved to it.', ' Kursor przesunięto do niego.'))
+        parts.append(lang.text(' The cursor moved to it.', ' Kursor przesunięto do niego.'))
     _say(parts)
 
 
@@ -1340,7 +1341,7 @@ def _facing_part(f: Any, obj: Any) -> str | None:
         import sims4.math
 
         facing = f.facing_of(sims4.math.yaw_quaternion_to_angle(obj.orientation))
-        return _text(
+        return lang.text(
             f', facing {tiles.direction_name(facing)}',
             f', skierowany na {tiles.direction_name(facing)}',
         )
@@ -1358,7 +1359,7 @@ def _covered_part(f: Any, obj: Any, level: int) -> str | None:
     others = [tiles.relative(ci - base[0], cj - base[1]) for ci, cj in covered if (ci, cj) != base][
         :5
     ]
-    return _text(
+    return lang.text(
         ', covering {} tiles: this one and {}'.format(len(covered), '; '.join(others)),
         ', zajmuje pól: {}: to i {}'.format(len(covered), '; '.join(others)),
     )
@@ -1370,14 +1371,14 @@ def _announce_exact(obj: Any, item: dict[str, Any], price: int, level: int, key:
     import simsight_tiles as tiles
 
     _note_landed(obj, level, key)
-    parts = [item['name'] or _product_name(), _text(' placed', ' umieszczono')]
+    parts = [item['name'] or _product_name(), lang.text(' placed', ' umieszczono')]
     f = tiles.frame()
     if f is not None:
         details = (_facing_part(f, obj), _covered_part(f, obj, level))
         parts.extend(part for part in details if part is not None)
-    parts.append(_text(f', {price} simoleons.', f', {price} simoleonów.'))
+    parts.append(lang.text(f', {price} simoleons.', f', {price} simoleonów.'))
     if _follow(obj, level):
-        parts.append(_text(' The cursor is on it.', ' Kursor jest na nim.'))
+        parts.append(lang.text(' The cursor is on it.', ' Kursor jest na nim.'))
     _say(parts)
 
 
@@ -1458,7 +1459,7 @@ def _say_removed(name: Any, price: int, paid: bool) -> None:
         _say(
             [
                 name,
-                _text(
+                lang.text(
                     ' removed. The refund failed and will be retried with your next Build action.',
                     ' usunięto. Zwrot pieniędzy nie powiódł się i zostanie ponowiony przy następnej akcji.',
                 ),
@@ -1468,7 +1469,7 @@ def _say_removed(name: Any, price: int, paid: bool) -> None:
         _say(
             [
                 name,
-                _text(
+                lang.text(
                     f' removed, {price} simoleons refunded.',
                     f' usunięto, zwrócono {price} simoleonów.',
                 ),
@@ -1601,7 +1602,7 @@ def _say_sold(name: Any, value: int, paid: bool) -> None:
         _say(
             [
                 name,
-                _text(
+                lang.text(
                     ' removed. The money did not come back yet and will be retried with your next Build action.',
                     ' usunięto. Pieniądze jeszcze nie wróciły; zwrot zostanie ponowiony przy następnej akcji.',
                 ),
@@ -1611,7 +1612,7 @@ def _say_sold(name: Any, value: int, paid: bool) -> None:
         _say(
             [
                 name,
-                _text(
+                lang.text(
                     f' sold for {value} simoleons.',
                     f' sprzedano za {value} simoleonów.',
                 ),
@@ -1640,9 +1641,9 @@ def sell(obj: Any) -> bool:
         _state.sell_id, _state.sell_time = obj.id, now
         _say(
             [
-                _text('Sell ', 'Sprzedać: '),
+                lang.text('Sell ', 'Sprzedać: '),
                 name,
-                _text(
+                lang.text(
                     f' for {value} simoleons? Press again to confirm.',
                     f' za {value} simoleonów? Naciśnij ponownie, aby potwierdzić.',
                 ),

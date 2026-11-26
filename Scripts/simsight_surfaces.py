@@ -11,6 +11,7 @@ from __future__ import annotations
 import math
 from typing import TYPE_CHECKING, Any
 
+import simsight_lang as lang
 import simsight_log
 
 if TYPE_CHECKING:
@@ -29,12 +30,6 @@ SETTING = {
 
 def _log(message: str) -> None:
     simsight_log.line('surfaces: ' + message)
-
-
-def _text(en: str, pl: str) -> str:
-    import simsight_grid as grid
-
-    return grid._text(en, pl)
 
 
 def handles(need: Any) -> bool:
@@ -144,11 +139,11 @@ def _fence_point() -> tuple[Frame, int, Any, float] | None:
 
 def _terrain_fit(position: Any, level: int) -> str:
     if _natural_ground(position, level) is True:
-        return _text(
+        return lang.text(
             'Experimental bare-ground placement. Natural ground detected; Enter asks the game to validate it. ',
             'Eksperymentalne umieszczanie na ziemi. Wykryto naturalny teren; Enter prosi grę o sprawdzenie. ',
         )
-    return _text(
+    return lang.text(
         'Experimental bare-ground placement. This tile has flooring or is not natural ground. ',
         'Eksperymentalne umieszczanie na ziemi. To pole ma podłogę albo nie jest naturalnym terenem. ',
     )
@@ -157,11 +152,11 @@ def _terrain_fit(position: Any, level: int) -> str:
 def _water_fit(position: Any, level: int) -> str:
     point, depth, kind = _water_point(position, level)
     if point is None:
-        return _text(
+        return lang.text(
             'Experimental water placement. No water surface detected here. ',
             'Eksperymentalne umieszczanie w wodzie. Nie wykryto tutaj powierzchni wody. ',
         )
-    return _text(
+    return lang.text(
         'Experimental water placement. {} detected, depth {:.1f} metres; Enter asks the game to validate it. ',
         'Eksperymentalne umieszczanie w wodzie. Wykryto {}, głębokość {:.1f} metra; Enter prosi grę o sprawdzenie. ',
     ).format(kind, depth)
@@ -170,11 +165,11 @@ def _water_fit(position: Any, level: int) -> str:
 def _ceiling_fit(position: Any, level: int) -> str:
     point = _ceiling_point(position, level)
     if point is None:
-        return _text(
+        return lang.text(
             'Experimental ceiling placement. No ceiling anchor could be sampled here. ',
             'Eksperymentalne umieszczanie na suficie. Nie znaleziono punktu sufitu. ',
         )
-    return _text(
+    return lang.text(
         'Experimental ceiling placement. Sampled height {:.1f} metres; Enter asks the game to validate it. ',
         'Eksperymentalne umieszczanie na suficie. Wysokość {:.1f} metra; Enter prosi grę o sprawdzenie. ',
     ).format(float(point.y) - float(position.y))
@@ -182,11 +177,11 @@ def _ceiling_fit(position: Any, level: int) -> str:
 
 def _fence_fit(_position: Any, _level: int) -> str:
     if _fence_point() is None:
-        return _text(
+        return lang.text(
             'Experimental fence placement. Selected side has no blocked edge; turn with R. ',
             'Eksperymentalne umieszczanie na płocie. Po wybranej stronie nie ma krawędzi; obróć R. ',
         )
-    return _text(
+    return lang.text(
         'Experimental fence placement. Enter asks the game to validate the selected edge as a fence. ',
         'Eksperymentalne umieszczanie na płocie. Enter prosi grę o sprawdzenie wybranej krawędzi jako płotu. ',
     )
@@ -206,7 +201,7 @@ def fit_parts(need: str) -> list[str]:
     position = _cursor_position()
     if position is None:
         return [
-            _text(
+            lang.text(
                 'Experimental placement: this tile cannot be checked. ',
                 'Umieszczanie eksperymentalne: nie można sprawdzić pola. ',
             )

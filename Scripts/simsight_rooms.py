@@ -14,6 +14,7 @@ import json
 import os
 from typing import TYPE_CHECKING, Any
 
+import simsight_lang as lang
 import simsight_log
 import simsight_speech as speech
 
@@ -266,7 +267,7 @@ def _facing_part(here: str, separated: list[tuple[int, str, Any]]) -> str | None
     item = place.product()
     faces_wall = any(side == int(grid.location.facing) % 4 for side, _d, _t in separated)
     if item is not None and place.requirement(item['id']) == 'wall' and faces_wall:
-        return grid._text(
+        return lang.text(
             'Selected object faces into {}. ', 'Wybrany obiekt jest skierowany do: {}. '
         ).format(here)
     return None
@@ -278,17 +279,17 @@ def _wall_parts(frame: Any, parts: list[str]) -> None:
     i, j = grid.location.tile
     level = grid.location.level
     here_id, here_outside = _room_at(i, j, level)
-    unnamed = grid._text('unlabelled room', 'pomieszczenie bez nazwy')
+    unnamed = lang.text('unlabelled room', 'pomieszczenie bez nazwy')
     here_name = room_name(here_id, here_outside, level)
     separated, named_across = _separated(frame, i, j, level)
     named = (here_name is not None and not here_outside) or named_across
     if not separated or not named:
         return
     here = here_name or unnamed
-    parts.append(grid._text('Current room: {}. ', 'Bieżące pomieszczenie: {}. ').format(here))
+    parts.append(lang.text('Current room: {}. ', 'Bieżące pomieszczenie: {}. ').format(here))
     for _side, direction, there in separated:
         parts.append(
-            grid._text('Across {}: {}. ', 'Za ścianą {}: {}. ').format(direction, there or unnamed)
+            lang.text('Across {}: {}. ', 'Za ścianą {}: {}. ').format(direction, there or unnamed)
         )
     facing = _facing_part(here, separated)
     if facing is not None:

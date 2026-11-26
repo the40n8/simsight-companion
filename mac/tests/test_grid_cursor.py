@@ -20,7 +20,7 @@ def said():
     return out
 
 
-module('simsight_lang', _detect_lang=lambda: 'en')
+module('simsight_lang', detect_lang=lambda: 'en', text=lambda en, pl: en)
 module('simsight_speech', speak=lambda text, explicit=False: SAID.append(text))
 sims4 = module('sims4')
 sims4.commands = module(

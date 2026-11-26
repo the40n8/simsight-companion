@@ -130,14 +130,10 @@ _REPLIES = {
 _F = TypeVar('_F', bound=Callable[..., Any])
 
 
-def _text(en: str, pl: str) -> str:
-    return pl if lang._detect_lang() == 'pl' else en
-
-
 def _say(en: str, pl: str) -> None:
     # simsight_plus_build replaces this function to read aim replies: every
     # call here looks it up by name.
-    speech.speak(_text(en, pl), explicit=True)
+    speech.speak(lang.text(en, pl), explicit=True)
 
 
 def _send_ui(message: str) -> None:
@@ -557,7 +553,7 @@ def _release_silently() -> None:
 
 def _announce_reply(result: str, x: int, y: int, step: int) -> None:
     if result in _POSITION_REPLIES:
-        prefix = _text(*_REPLIES[result]) if result in _REPLIES else ''
+        prefix = lang.text(*_REPLIES[result]) if result in _REPLIES else ''
         feedback = (
             ' ' + _state.last_feedback
             if _state.last_feedback and result in ('click', 'status')

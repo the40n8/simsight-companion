@@ -79,12 +79,8 @@ _REASONS = (
 )
 
 
-def text(en: str, pl: str) -> str:
-    return pl if lang._detect_lang() == 'pl' else en
-
-
 def direction_name(index: int) -> str:
-    return text(*DIRECTIONS[index % 4])
+    return lang.text(*DIRECTIONS[index % 4])
 
 
 class Frame:
@@ -187,7 +183,7 @@ def relative(di: int, dj: int) -> str:
     for amount, positive, negative in ((dj, 0, 2), (di, 1, 3)):
         if amount:
             parts.append(f'{abs(amount)} {direction_name(positive if amount > 0 else negative)}')
-    return ', '.join(parts) if parts else text('here', 'tutaj')
+    return ', '.join(parts) if parts else lang.text('here', 'tutaj')
 
 
 # ------------------------------------------------------------- game queries
@@ -462,8 +458,8 @@ def reason(errors: Any) -> str:
     words = str(errors or '').lower()
     for needles, en, pl in _REASONS:
         if any(needle in words for needle in needles):
-            return text(en, pl)
-    return text('the game will not allow it here', 'gra nie pozwala na to tutaj')
+            return lang.text(en, pl)
+    return lang.text('the game will not allow it here', 'gra nie pozwala na to tutaj')
 
 
 def fit_at(

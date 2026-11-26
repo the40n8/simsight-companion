@@ -11,7 +11,11 @@ from fakegame import V, module
 
 fakegame.scripts_on_path()
 LANG = ['en']
-module('simsight_lang', _detect_lang=lambda: LANG[0])
+module(
+    'simsight_lang',
+    detect_lang=lambda: LANG[0],
+    text=lambda en, pl: pl if LANG[0] == 'pl' else en,
+)
 module('services', current_zone_id=lambda: 1)
 module('terrain', get_terrain_height=lambda x, z, routing_surface=None: 0.0)
 module(

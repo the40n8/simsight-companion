@@ -38,7 +38,7 @@ sims4.commands = module(
 )
 module('build_buy', register_build_buy_exit_callback=id, register_build_buy_enter_callback=id)
 module('simsight_speech', speak=lambda *a, **k: None, log_line=lambda *a: None)
-module('simsight_lang', _detect_lang=lambda: 'en', t=lambda text: text)
+module('simsight_lang', detect_lang=lambda: 'en', text=lambda en, pl: en, t=lambda text: text)
 module('simsight_plus_build')
 module('simsight_house_planner')
 

@@ -1832,7 +1832,7 @@ _state = _State()
 
 def locale_lang() -> str | None:
     """The detected language code, or None while no client locale is known
-    (unlike _detect_lang, this never looks for one)."""
+    (unlike detect_lang, this never looks for one)."""
     return _state.locale_lang
 
 
@@ -1845,7 +1845,7 @@ def _client_locale() -> str | None:
     return None
 
 
-def _detect_lang() -> str:
+def detect_lang() -> str:
     """Language prefix from the connected client's account locale."""
     if _state.locale_lang is not None:
         return _state.locale_lang
@@ -1878,6 +1878,11 @@ _MAC_TRANSLATIONS: dict[str, dict[str, str]] = {
 }
 
 
+def text(en: str, pl: str) -> str:
+    """The Polish text when the game speaks Polish, else the English."""
+    return pl if detect_lang() == 'pl' else en
+
+
 def t(term: str) -> str:
     """Localized narration term; falls back to English."""
     entry = (
@@ -1885,4 +1890,4 @@ def t(term: str) -> str:
     ) or _TRANSLATIONS.get(term)
     if not entry:
         return term
-    return entry.get(_detect_lang(), entry['en'])
+    return entry.get(detect_lang(), entry['en'])

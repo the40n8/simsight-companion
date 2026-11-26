@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+import simsight_lang as lang
 import simsight_log
 
 if TYPE_CHECKING:
@@ -46,12 +47,6 @@ def _log(message: str) -> None:
     simsight_log.line('layers: ' + message)
 
 
-def _text(en: str, pl: str) -> str:
-    import simsight_grid as grid
-
-    return grid._text(en, pl)
-
-
 def wall_height() -> tuple[str, float]:
     """(label, metres) of the chosen wall height."""
     import simsight_wall as wall
@@ -62,11 +57,11 @@ def wall_height() -> tuple[str, float]:
 def _mode_info() -> tuple[str, str, float | None]:
     """(kind, spoken label, wall height or None) of the target layer."""
     if _state.mode == 0:
-        return 'ground', _text('ground', 'podłoga'), None
+        return 'ground', lang.text('ground', 'podłoga'), None
     if _state.mode == CEILING:
-        return 'ceiling', _text('ceiling', 'sufit'), None
+        return 'ceiling', lang.text('ceiling', 'sufit'), None
     label, height = wall_height()
-    return 'wall', _text('wall {}', 'ściana {}').format(label), height
+    return 'wall', lang.text('wall {}', 'ściana {}').format(label), height
 
 
 def wall_refusal() -> bool:
@@ -131,13 +126,13 @@ def _label(
 ) -> str:
     kind = _kind(obj)
     if kind == 'ceiling':
-        return _text('ceiling', 'sufit')
+        return lang.text('ceiling', 'sufit')
     if kind == 'wall':
         value = _height(obj, _floor_y(frame, i, j, level)) if frame is not None else None
         if value is not None:
-            return _text('wall, {:.1f} metres', 'ściana, {:.1f} metra').format(value)
-        return _text('wall', 'ściana')
-    return _text('ground', 'podłoga')
+            return lang.text('wall, {:.1f} metres', 'ściana, {:.1f} metra').format(value)
+        return lang.text('wall', 'ściana')
+    return lang.text('ground', 'podłoga')
 
 
 def _matches(obj: Any, frame: Frame, i: int, j: int, level: int) -> bool:
@@ -229,18 +224,18 @@ def focus_detail(frame: Frame) -> bool:
     index = (_state.focus_index + 1) % len(matches) if same else 0
     obj = matches[index]
     _state.focus_id, _state.focus_where, _state.focus_index = obj.id, context, index
-    parts = [_text('Focused: ', 'Wybrano: ')]
+    parts = [lang.text('Focused: ', 'Wybrano: ')]
     parts.extend(_name_parts(obj))
     parts.extend([', ', _label(obj, frame, i, j, grid.location.level), '. '])
     if len(matches) > 1:
         parts.append(
-            _text(
+            lang.text(
                 'Object {} of {}; press 1 again for the next. ',
                 'Obiekt {} z {}; naciśnij ponownie 1, aby przejść dalej. ',
             ).format(index + 1, len(matches))
         )
     # Number 1 still lists everything on the tile, with contents and free spots.
-    parts.append(_text('Objects here: ', 'Obiekty tutaj: '))
+    parts.append(lang.text('Objects here: ', 'Obiekty tutaj: '))
     parts.extend(grid._object_parts(frame, objects))
     scanner._speak_parts(parts)
     return True
@@ -250,15 +245,15 @@ def _no_match_parts(frame: Frame, objects: list[Any]) -> list[Any]:
     import simsight_grid as grid
 
     parts: list[Any] = [
-        _text(
+        lang.text(
             'Nothing at the selected {} layer. ', 'Brak obiektów na wybranej warstwie {}. '
         ).format(_mode_info()[1])
     ]
     if objects:
-        parts.append(_text('Objects here: ', 'Obiekty tutaj: '))
+        parts.append(lang.text('Objects here: ', 'Obiekty tutaj: '))
         parts.extend(grid._object_parts(frame, objects))
     else:
-        parts.append(_text('Nothing here.', 'Nic tu nie ma.'))
+        parts.append(lang.text('Nothing here.', 'Nic tu nie ma.'))
     return parts
 
 
@@ -320,7 +315,9 @@ def nearby_detail(frame: Frame) -> bool:
             break
     if not count:
         parts = [
-            _text('Nothing within {} tiles.', 'Nic w promieniu {} pól.').format(tiles.NEARBY_RADIUS)
+            lang.text('Nothing within {} tiles.', 'Nic w promieniu {} pól.').format(
+                tiles.NEARBY_RADIUS
+            )
         ]
     scanner._speak_parts(parts)
     return True

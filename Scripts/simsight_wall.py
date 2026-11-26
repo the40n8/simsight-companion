@@ -13,6 +13,7 @@ import threading
 import time
 from typing import TYPE_CHECKING, Any
 
+import simsight_lang as lang
 import simsight_log
 import simsight_settings as settings
 
@@ -46,12 +47,6 @@ _state = _State()
 
 def _log(message: str) -> None:
     simsight_log.line('wall: ' + message)
-
-
-def _text(en: str, pl: str) -> str:
-    import simsight_grid as grid
-
-    return grid._text(en, pl)
 
 
 def _blocked(state: str | None) -> bool:
@@ -132,17 +127,17 @@ def _wall_anchor(frame: Frame, side: int) -> tuple[Any, float]:
 def _side_state(frame: Frame, index: int, sides: dict[int, str], doors: dict[int, Any]) -> str:
     """What number 3 says about one side of the cursor tile."""
     if index in doors:
-        return _text('door', 'drzwi')
+        return lang.text('door', 'drzwi')
     if _blocked(sides.get(index)) and separates_rooms(frame, index):
-        return _text('wall', 'ściana')
-    maybe_fence = _text('wall, or possibly a fence', 'ściana lub prawdopodobnie płot')
+        return lang.text('wall', 'ściana')
+    maybe_fence = lang.text('wall, or possibly a fence', 'ściana lub prawdopodobnie płot')
     return {
         'blocked': maybe_fence,
         'wall': maybe_fence,
-        'object': _text('an object is in the way', 'przeszkadza obiekt'),
-        'edge': _text('lot edge', 'granica parceli'),
-        'open': _text('open', 'wolne'),
-    }.get(sides.get(index) or '', _text('unknown', 'nieznane'))
+        'object': lang.text('an object is in the way', 'przeszkadza obiekt'),
+        'edge': lang.text('lot edge', 'granica parceli'),
+        'open': lang.text('open', 'wolne'),
+    }.get(sides.get(index) or '', lang.text('unknown', 'nieznane'))
 
 
 def wall_parts(frame: Frame, all_sides: bool = False, objects: Any = None) -> list[str]:
@@ -164,16 +159,16 @@ def wall_parts(frame: Frame, all_sides: bool = False, objects: Any = None) -> li
         if _blocked(sides.get(index)) and index not in doors:
             (walls if separates_rooms(frame, index) else maybe).append(tiles.direction_name(index))
     door_dirs = [tiles.direction_name(index) for index in sorted(doors)]
-    joiner = _text(' and ', ' i ')
+    joiner = lang.text(' and ', ' i ')
     parts = []
     if walls:
-        parts.append(_text('Wall {}. ', 'Ściana: {}. ').format(joiner.join(walls)))
+        parts.append(lang.text('Wall {}. ', 'Ściana: {}. ').format(joiner.join(walls)))
     if maybe:
         parts.append(
-            _text('Wall or fence {}. ', 'Ściana lub płot: {}. ').format(joiner.join(maybe))
+            lang.text('Wall or fence {}. ', 'Ściana lub płot: {}. ').format(joiner.join(maybe))
         )
     if door_dirs:
-        parts.append(_text('Door {}. ', 'Drzwi: {}. ').format(joiner.join(door_dirs)))
+        parts.append(lang.text('Door {}. ', 'Drzwi: {}. ').format(joiner.join(door_dirs)))
     return parts
 
 
@@ -330,30 +325,36 @@ def hang_report() -> tuple[str, list[str]]:
         return 'no wall', []
     frame, side = selected
     if column_here(frame):
-        return 'no', [_text('a column is in the way', 'przeszkadza kolumna')]
+        return 'no', [lang.text('a column is in the way', 'przeszkadza kolumna')]
     past = _state.history.get(_spot_key(side))
     reasons: list[str] = []
     verdict = 'yes'
     for name, kind in _on_this_wall(frame, side):
         if kind == 'object':
-            reasons.append(_text('{} already hangs here', '{} już tu wisi').format(_plain(name)))
+            reasons.append(
+                lang.text('{} already hangs here', '{} już tu wisi').format(_plain(name))
+            )
         else:
             reasons.append(
-                _text('{} is in this stretch of wall', '{} jest na tym odcinku ściany').format(
+                lang.text('{} is in this stretch of wall', '{} jest na tym odcinku ściany').format(
                     _plain(name)
                 )
             )
         verdict = 'no'
     open_ends, doors_beside = _wall_continues(frame, side)
-    joiner = _text(' and ', ' i ')
+    joiner = lang.text(' and ', ' i ')
     if doors_beside:
         reasons.append(
-            _text('a door is just {}', 'tuż obok, {}, są drzwi').format(joiner.join(doors_beside))
+            lang.text('a door is just {}', 'tuż obok, {}, są drzwi').format(
+                joiner.join(doors_beside)
+            )
         )
         verdict = 'maybe' if verdict == 'yes' else verdict
     if open_ends:
         reasons.append(
-            _text('the wall ends to the {}', 'ściana kończy się: {}').format(joiner.join(open_ends))
+            lang.text('the wall ends to the {}', 'ściana kończy się: {}').format(
+                joiner.join(open_ends)
+            )
         )
         verdict = 'maybe' if verdict == 'yes' else verdict
     if past is not None:
@@ -365,11 +366,11 @@ def _with_history(past: tuple[bool, str], reasons: list[str], verdict: str) -> s
     """Put what the game said here before first; return the new verdict."""
     hung, message = past
     if hung:
-        reasons.insert(0, _text('it hung here before', 'już tu wisiało'))
+        reasons.insert(0, lang.text('it hung here before', 'już tu wisiało'))
         return 'yes' if verdict != 'no' else verdict
     reasons.insert(
         0,
-        _text('the game refused this spot before', 'gra wcześniej odrzuciła to miejsce')
+        lang.text('the game refused this spot before', 'gra wcześniej odrzuciła to miejsce')
         + (': ' + message.rstrip('.') if message else ''),
     )
     return 'no'
@@ -381,24 +382,24 @@ def fit_parts() -> list[str]:
     verdict, reasons = hang_report()
     if verdict == 'no wall':
         return [
-            _text(
+            lang.text(
                 'Selected side has no wall. Turn with R or move to a tile beside a wall. Height {}, {:.1f} metres. ',
                 'Po wybranej stronie nie ma ściany. Obracaj R albo przejdź obok ściany. Wysokość {}, {:.1f} metra. ',
             ).format(label, height)
         ]
     opening = {
-        'yes': _text('Should hang here', 'Powinno tu zawisnąć'),
-        'maybe': _text('Might not fit', 'Może się nie zmieścić'),
-        'no': _text('Will not hang here', 'Tu nie zawiśnie'),
+        'yes': lang.text('Should hang here', 'Powinno tu zawisnąć'),
+        'maybe': lang.text('Might not fit', 'Może się nie zmieścić'),
+        'no': lang.text('Will not hang here', 'Tu nie zawiśnie'),
     }[verdict]
     parts = [opening + (': ' + '; '.join(reasons) if reasons else '') + '. ']
     parts.append(
-        _text('Height {}, {:.1f} metres. ', 'Wysokość {}, {:.1f} metra. ').format(label, height)
+        lang.text('Height {}, {:.1f} metres. ', 'Wysokość {}, {:.1f} metra. ').format(label, height)
     )
     if not _state.hinted:
         _state.hinted = True
         parts.append(
-            _text(
+            lang.text(
                 'Control Alt U and D change the height. Enter hangs it. ',
                 'Control Alt U i D zmieniają wysokość. Enter wiesza. ',
             )

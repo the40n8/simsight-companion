@@ -15,7 +15,7 @@ from fakegame import V, module
 
 fakegame.scripts_on_path()
 SAID = []
-module('simsight_lang', _detect_lang=lambda: 'en')
+module('simsight_lang', detect_lang=lambda: 'en', text=lambda en, pl: en)
 module('simsight_plus_core', speak=SAID.append)
 
 

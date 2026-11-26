@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+import simsight_lang as lang
 import simsight_log
 
 if TYPE_CHECKING:
@@ -42,15 +43,6 @@ _SIDE_ON = (
 
 def _log(message: str) -> None:
     simsight_log.line('chair alignment: ' + message)
-
-
-def _text(en: str, pl: str) -> str:
-    try:
-        import simsight_grid as grid
-
-        return grid._text(en, pl)
-    except (ImportError, AttributeError):
-        return en
 
 
 def _enabled() -> bool:
@@ -152,9 +144,9 @@ def _hint_parts(frame: Any) -> list[str]:
     facing = int(grid.location.facing) % 4
     relation, en, pl = _relation(facing, side)
     if side is None:
-        result = _text(en, pl).format(target_label)
+        result = lang.text(en, pl).format(target_label)
     else:
-        result = _text(en, pl).format(target_label, tiles.direction_name(side))
+        result = lang.text(en, pl).format(target_label, tiles.direction_name(side))
     _log(
         'product {} {} target {} tile {} facing {} relation {}'.format(
             item['id'],

@@ -86,12 +86,8 @@ def _set_cursor(
         location.facing = facing
 
 
-def _text(en: str, pl: str) -> str:
-    return pl if lang._detect_lang() == 'pl' else en
-
-
 def _say(en: str, pl: str) -> None:
-    speech.speak(_text(en, pl), explicit=True)
+    speech.speak(lang.text(en, pl), explicit=True)
 
 
 def _controls_enabled() -> bool:
@@ -188,7 +184,7 @@ def enter() -> bool:
             'Najpierw wczytaj rodzinę z aktywnym Simem.',
         )
         return False
-    note = (_text(*start_note) + ' ') if start_note is not None else ''
+    note = (lang.text(*start_note) + ' ') if start_note is not None else ''
     if building and _start_build(note):
         return describe()
     if building:
@@ -209,7 +205,7 @@ def _selected_parts() -> Parts:
 
     item = place.product()
     if item is not None and item['name']:
-        return [_text('Selected: ', 'Wybrano: '), item['name'], '. ']
+        return [lang.text('Selected: ', 'Wybrano: '), item['name'], '. ']
     return []
 
 
@@ -218,7 +214,7 @@ def announce_placement(note: str = '') -> bool:
 
     parts: Parts = [
         note,
-        _text(
+        lang.text(
             'Build placement on. Control Alt arrows move one metre, Page Up and Page Down change floor, '
             'Control Alt Enter places the object chosen in the Build catalog, brackets rotate it, '
             'Z undoes, X sells what is here. ',
@@ -228,7 +224,7 @@ def announce_placement(note: str = '') -> bool:
         ),
     ]
     parts += _selected_parts() or [
-        _text(
+        lang.text(
             'Choose an object in the Build catalog, close the catalog, then come back here. ',
             'Wybierz obiekt w katalogu, zamknij katalog i wróć tutaj. ',
         )
@@ -544,13 +540,13 @@ def _add_origin_parts(parts: Parts) -> None:
     objects = _objects_at_origin()
     if not objects:
         parts.append(
-            _text(
+            lang.text(
                 'No object origins in this sample.',
                 'Brak punktów początkowych obiektów w tym polu.',
             )
         )
         return
-    parts.append(_text('Object origins here: ', 'Punkty początkowe obiektów tutaj: '))
+    parts.append(lang.text('Object origins here: ', 'Punkty początkowe obiektów tutaj: '))
     for index, obj in enumerate(objects[:5]):
         if index:
             parts.append(', ')
@@ -559,7 +555,7 @@ def _add_origin_parts(parts: Parts) -> None:
         )
         parts.append(scanner._name_part(entry))
     if len(objects) > 5:
-        parts.append(_text(' and {} more', ' i {} więcej').format(len(objects) - 5))
+        parts.append(lang.text(' and {} more', ' i {} więcej').format(len(objects) - 5))
 
 
 def describe() -> bool:
@@ -571,7 +567,7 @@ def describe() -> bool:
 
     ox, oz = _state.origin
     parts: Parts = [
-        _text('Grid x {}, z {}, floor {}. ', 'Siatka x {}, z {}, piętro {}. ').format(
+        lang.text('Grid x {}, z {}, floor {}. ', 'Siatka x {}, z {}, piętro {}. ').format(
             int(round(_state.x - ox)), int(round(_state.z - oz)), location.level
         )
     ]
@@ -580,14 +576,14 @@ def describe() -> bool:
         if key in values:
             label = pair[0 if values[key] else 1]
             if label:
-                parts.append(_text(*label) + '. ')
+                parts.append(lang.text(*label) + '. ')
     if not values:
-        parts.append(_text('Tile information unavailable. ', 'Informacje o polu niedostępne. '))
+        parts.append(lang.text('Tile information unavailable. ', 'Informacje o polu niedostępne. '))
     try:
         _add_origin_parts(parts)
     except Exception:  # objects the game will not describe
         parts.append(
-            _text('Object information unavailable.', 'Informacje o obiektach niedostępne.')
+            lang.text('Object information unavailable.', 'Informacje o obiektach niedostępne.')
         )
     scanner._speak_parts(parts)
     return True
@@ -702,7 +698,7 @@ def _street_parts(f: Frame) -> Parts:
     if street is None:
         return []
     return [
-        _text('The street is to the {}. ', 'Ulica jest na {}. ').format(
+        lang.text('The street is to the {}. ', 'Ulica jest na {}. ').format(
             tiles.direction_name(street)
         )
     ]
@@ -725,7 +721,7 @@ def _start_build(note: str) -> bool:
 
     parts: Parts = [
         note,
-        _text(
+        lang.text(
             'Build placement on. Arrow keys move one tile. R turns the object, Enter places it, '
             'number keys 1 to 6 read details, Space repeats, Escape leaves. ',
             'Umieszczanie włączone. Strzałki przesuwają o jedno pole. R obraca obiekt, Enter go umieszcza, '
@@ -733,7 +729,7 @@ def _start_build(note: str) -> bool:
         ),
     ]
     parts += _selected_parts() or [
-        _text(
+        lang.text(
             'Choose an object in the Build catalog; Tab returns to it. ',
             'Wybierz obiekt w katalogu; Tab do niego wraca. ',
         )
@@ -793,16 +789,16 @@ def _name(obj: Any) -> Part:
         )
         return scanner._name_part(entry)
     except Exception:  # an object the scanner cannot name
-        return _text('an object', 'obiekt')
+        return lang.text('an object', 'obiekt')
 
 
 def _children_parts(children: list[Any]) -> Parts:
-    parts: Parts = [_text(' with ', ' z: ')]
+    parts: Parts = [lang.text(' with ', ' z: ')]
     for number, child in enumerate(children[:3]):
         if number:
-            parts.append(_text(' and ', ' i '))
+            parts.append(lang.text(' and ', ' i '))
         parts.append(_name(child))
-    parts.append(_text(' on it', ' na nim'))
+    parts.append(lang.text(' on it', ' na nim'))
     return parts
 
 
@@ -820,9 +816,9 @@ def _object_parts(f: Frame, objects: list[Any], spots: bool = True) -> Parts:
         if spots:
             free = tiles.free_spots(obj)
             if free:
-                parts.append(_text(', free spots: {}', ', wolne miejsca: {}').format(free))
+                parts.append(lang.text(', free spots: {}', ', wolne miejsca: {}').format(free))
     if len(objects) > 4:
-        parts.append(_text(' and {} more', ' i {} więcej').format(len(objects) - 4))
+        parts.append(lang.text(' and {} more', ' i {} więcej').format(len(objects) - 4))
     parts.append('. ')
     return parts
 
@@ -845,17 +841,17 @@ def _room_change(label: str | None, room: int | None, outside: bool | None) -> P
     previous_room, previous_outside = _state.last_room
     if previous_outside is not None and outside is not None and outside != previous_outside:
         if outside:
-            return [_text('Outside. ', 'Na zewnątrz. ')]
+            return [lang.text('Outside. ', 'Na zewnątrz. ')]
         return [
-            _text('Inside {}. ', 'Wewnątrz: {}. ').format(label)
+            lang.text('Inside {}. ', 'Wewnątrz: {}. ').format(label)
             if label
-            else _text('Inside. ', 'Wewnątrz. ')
+            else lang.text('Inside. ', 'Wewnątrz. ')
         ]
     if previous_room is not None and room is not None and room != previous_room and not outside:
         return [
-            _text('Entering {}. ', 'Wchodzisz: {}. ').format(label)
+            lang.text('Entering {}. ', 'Wchodzisz: {}. ').format(label)
             if label
-            else _text('Another room. ', 'Inne pomieszczenie. ')
+            else lang.text('Another room. ', 'Inne pomieszczenie. ')
         ]
     return []
 
@@ -897,14 +893,14 @@ def _special_fit(f: Frame, item: dict[str, Any], need: Any) -> Parts | None:
             obj for obj in tiles.objects_on(f, i, j, location.level) if tiles.free_spots(obj)
         ]
         return [
-            _text('It can go on a surface here. ', 'Może stanąć tu na powierzchni. ')
+            lang.text('It can go on a surface here. ', 'Może stanąć tu na powierzchni. ')
             if surfaces
-            else _text(
+            else lang.text(
                 'It needs a surface with a free spot. ', 'Wymaga powierzchni z wolnym miejscem. '
             )
         ]
     if need in place._NEEDS:
-        return [_text(*place._NEEDS[need]), ' ']
+        return [lang.text(*place._NEEDS[need]), ' ']
     return None
 
 
@@ -913,16 +909,18 @@ def _fit_verdict(point: Any, why: str | None, facing: str | None) -> Parts:
     facing when one is given."""
     if point is not None:
         if facing is None:
-            return [_text('Fits here. ', 'Mieści się tutaj. ')]
+            return [lang.text('Fits here. ', 'Mieści się tutaj. ')]
         return [
-            _text('Fits here, facing {}. ', 'Mieści się tutaj, skierowany na {}. ').format(facing)
+            lang.text('Fits here, facing {}. ', 'Mieści się tutaj, skierowany na {}. ').format(
+                facing
+            )
         ]
     if why is None:
-        return [_text('Fit unknown here. ', 'Nie wiadomo, czy się tu zmieści. ')]
+        return [lang.text('Fit unknown here. ', 'Nie wiadomo, czy się tu zmieści. ')]
     if facing is None:
-        return [_text('Does not fit here: {}. ', 'Nie mieści się tutaj: {}. ').format(why)]
+        return [lang.text('Does not fit here: {}. ', 'Nie mieści się tutaj: {}. ').format(why)]
     return [
-        _text(
+        lang.text(
             'Does not fit here facing {}: {}. ', 'Nie mieści się tutaj, skierowany na {}: {}. '
         ).format(facing, why)
     ]
@@ -952,10 +950,10 @@ def _ground_part(objects: list[Any], ground: dict[str, bool], f: Frame) -> Parts
     if objects:
         return _object_parts(f, objects)
     if ground.get('pool'):
-        return [_text('Pool. ', 'Basen. ')]
+        return [lang.text('Pool. ', 'Basen. ')]
     if ground.get('floor') is False and ground.get('outside'):
-        return [_text('Empty ground. ', 'Pusty teren. ')]
-    return [_text('Empty floor. ', 'Pusta podłoga. ')]
+        return [lang.text('Empty ground. ', 'Pusty teren. ')]
+    return [lang.text('Empty floor. ', 'Pusta podłoga. ')]
 
 
 def describe_build() -> bool:
@@ -988,7 +986,7 @@ def _objects_detail(f: Frame) -> Parts:
 
     i, j = location.tile
     objects = tiles.objects_on(f, i, j, location.level)
-    return _object_parts(f, objects) if objects else [_text('Nothing here.', 'Nic tu nie ma.')]
+    return _object_parts(f, objects) if objects else [lang.text('Nothing here.', 'Nic tu nie ma.')]
 
 
 def _ground_detail(f: Frame) -> Parts:
@@ -997,7 +995,7 @@ def _ground_detail(f: Frame) -> Parts:
 
     i, j = location.tile
     ground = tiles.ground(f, i, j, location.level)
-    parts: Parts = [_text('Floor {}. ', 'Piętro {}. ').format(location.level)]
+    parts: Parts = [lang.text('Floor {}. ', 'Piętro {}. ').format(location.level)]
     for key, yes, no in (
         ('outside', ('Outside', 'Na zewnątrz'), ('Inside', 'Wewnątrz')),
         ('floor', ('Floor tiles', 'Podłoga'), ('No floor tiles', 'Brak podłogi')),
@@ -1006,7 +1004,7 @@ def _ground_detail(f: Frame) -> Parts:
         if key in ground:
             label = yes if ground[key] else no
             if label:
-                parts.append(_text(*label) + '. ')
+                parts.append(lang.text(*label) + '. ')
     return parts
 
 
@@ -1048,7 +1046,7 @@ def _nearby_detail(f: Frame) -> Parts:
         if len(seen) >= 8:
             break
     if not seen:
-        return [_text('Nothing within {} tiles.', 'Nic w promieniu {} pól.').format(radius)]
+        return [lang.text('Nothing within {} tiles.', 'Nic w promieniu {} pól.').format(radius)]
     return parts
 
 
@@ -1060,15 +1058,17 @@ def _product_detail(f: Frame) -> Parts:
     item = place.product()
     if item is None:
         return [
-            _text(
+            lang.text(
                 'No object chosen. Tab returns to the Build catalog.',
                 'Nie wybrano obiektu. Tab wraca do katalogu.',
             )
         ]
     parts: Parts = [
-        item['name'] or _text('The object', 'Obiekt'),
+        item['name'] or lang.text('The object', 'Obiekt'),
         '. ',
-        _text('Facing {}. ', 'Skierowany na {}. ').format(tiles.direction_name(location.facing)),
+        lang.text('Facing {}. ', 'Skierowany na {}. ').format(
+            tiles.direction_name(location.facing)
+        ),
     ]
     return parts + _fit_parts(f)
 
@@ -1084,7 +1084,9 @@ def _front_door_parts(f: Frame) -> Parts:
             return []
         i, j = f.tile_of(door.position.x, door.position.z)
         di, dj = i - location.tile[0], j - location.tile[1]
-        return [_text('Front door: {}. ', 'Drzwi frontowe: {}. ').format(tiles.relative(di, dj))]
+        return [
+            lang.text('Front door: {}. ', 'Drzwi frontowe: {}. ').format(tiles.relative(di, dj))
+        ]
     except Exception:  # no front door the game will say
         return []
 
@@ -1093,7 +1095,7 @@ def _position_detail(f: Frame) -> Parts:
     """Number 6: column and row on the lot, the street and the front door."""
     i, j = location.tile
     parts: Parts = [
-        _text(
+        lang.text(
             'Column {} of {}, row {} of {}, floor {}. ',
             'Kolumna {} z {}, rząd {} z {}, piętro {}. ',
         ).format(i + 1, f.width, j + 1, f.depth, location.level)
@@ -1146,7 +1148,11 @@ def _turn(step: int) -> bool:
         _say('Choose an object in the Build catalog first.', 'Najpierw wybierz obiekt w katalogu.')
         return False
     scanner._speak_parts(
-        [_text('Facing {}. ', 'Skierowany na {}. ').format(tiles.direction_name(location.facing))]
+        [
+            lang.text('Facing {}. ', 'Skierowany na {}. ').format(
+                tiles.direction_name(location.facing)
+            )
+        ]
         + _fit_parts(f, with_facing=False)
     )
     return True
@@ -1252,13 +1258,13 @@ def _offer_nearest(f: Frame, item: dict[str, Any], why: str, now: float) -> None
     import simsight_tiles as tiles
 
     i, j = location.tile
-    name = item['name'] or _text('It', 'Obiekt')
+    name = item['name'] or lang.text('It', 'Obiekt')
     found = tiles.nearest_fit(f, item['id'], i, j, location.level, location.facing)
     if found is None:
         scanner._speak_parts(
             [
                 name,
-                _text(
+                lang.text(
                     ' does not fit here: {}. No tile within {} fits it either. Try another spot or facing.',
                     ' nie mieści się tutaj: {}. W promieniu {} pól też nie ma miejsca. Spróbuj innego miejsca lub kierunku.',
                 ).format(why, tiles.NEAREST_RADIUS),
@@ -1270,7 +1276,7 @@ def _offer_nearest(f: Frame, item: dict[str, Any], why: str, now: float) -> None
     scanner._speak_parts(
         [
             name,
-            _text(
+            lang.text(
                 ' does not fit here: {}. It fits {}, facing {}. Press Enter again to place it there, or move to cancel.',
                 ' nie mieści się tutaj: {}. Zmieści się: {}, skierowany na {}. Naciśnij Enter ponownie, aby go tam umieścić, albo przesuń kursor.',
             ).format(why, tiles.relative(ni - i, nj - j), tiles.direction_name(facing)),
@@ -1356,7 +1362,7 @@ def _move_key() -> bool:
     if _state.move_id is None:
         return _pick_up()
     obj = services.object_manager().get(_state.move_id)
-    name = _state.move_name or _text('Object', 'Obiekt')
+    name = _state.move_name or lang.text('Object', 'Obiekt')
     if obj is None:
         _clear_move()
         _say('The selected object is no longer available.', 'Wybrany obiekt nie jest już dostępny.')
