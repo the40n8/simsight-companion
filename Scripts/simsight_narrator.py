@@ -31,6 +31,7 @@ from urllib.parse import unquote_to_bytes
 import sims4.commands
 
 import simsight_lang as lang
+from simsight_commands import real_annotations
 import simsight_log
 import simsight_settings as settings
 import simsight_speech as speech
@@ -49,26 +50,14 @@ _ROW_TOLERANCE = 8
 
 # ------------------------------------------------------------------ commands
 
-# EA's command parser converts each argument with the function's own
-# annotation (str, int, float, bool), read when the command is registered.
-# With postponed annotations they are strings ('str'), which EA would call
-# and fail on, so the registration gets the real types back first.
-_COMMAND_TYPES: dict[str, type] = {'str': str, 'int': int, 'float': float, 'bool': bool}
-
 
 def live_command(*names: str) -> Callable[[_F], _F]:
-    """sims4.commands.Command(*names, Live) for a module with postponed
-    annotations: only parameters annotated with str/int/float/bool keep an
-    annotation (the type itself), as EA's parser expects."""
+    """sims4.commands.Command(*names, Live) with the argument types EA's
+    parser needs (see simsight_commands.real_annotations)."""
     register = sims4.commands.Command(*names, command_type=sims4.commands.CommandType.Live)
 
     def decorate(func: _F) -> _F:
-        func.__annotations__ = {
-            name: _COMMAND_TYPES[value]
-            for name, value in func.__annotations__.items()
-            if name != 'return' and isinstance(value, str) and value in _COMMAND_TYPES
-        }
-        return register(func)
+        return register(real_annotations(func))
 
     return decorate
 

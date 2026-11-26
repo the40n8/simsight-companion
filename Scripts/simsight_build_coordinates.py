@@ -18,6 +18,7 @@ from urllib.parse import unquote
 
 import sims4.commands
 import simsight_display_diagnostic as display
+from simsight_commands import real_annotations
 import simsight_log
 import simsight_speech as speech
 
@@ -253,7 +254,7 @@ def _receive(text: str) -> bool:
 @sims4.commands.Command(
     'simsight.coords_enc', 'a11y.coords_enc', command_type=sims4.commands.CommandType.Live
 )
-@display.command_arg_types
+@real_annotations
 def receive(text: str = '', _connection: Any = None) -> bool:
     """UI reply to a projection request: serial|zone|status|x|y|width|height|mode|align|layout|bounds."""
     try:
@@ -551,7 +552,7 @@ def _preflight_work() -> None:
 @sims4.commands.Command(
     'simsight.buildcoords', 'a11y.buildcoords', command_type=sims4.commands.CommandType.Live
 )
-@display.command_arg_types
+@real_annotations
 def preflight(delay: float = 5, _connection: Any = None) -> bool:
     if not math.isfinite(delay):
         return False

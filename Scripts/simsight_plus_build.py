@@ -11,6 +11,7 @@ import threading
 import time
 from typing import TYPE_CHECKING, Any
 
+from simsight_commands import real_annotations
 import simsight_log
 import simsight_plus_core as core
 
@@ -1259,6 +1260,7 @@ def _register_flash_command() -> None:
     import sims4.commands
 
     @sims4.commands.Command('a11yplus.flash', command_type=sims4.commands.CommandType.Live)
+    @real_annotations
     def a11yplus_flash(encoded: str = '', _connection: Any = None) -> bool:
         try:
             return _flash_reply(encoded)

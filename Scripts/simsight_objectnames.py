@@ -53,29 +53,14 @@ from objects.hovertip import TooltipFields
 from protocolbuffers import UI_pb2 as ui_protocols
 from sims4.localization import LocalizationHelperTuning
 
+from simsight_commands import real_annotations
 import simsight_log
 import simsight_settings as settings
 
 _F = TypeVar('_F')
 
-# The game's command parser converts each argument with the type named in
-# its annotation; it needs the type itself, not the name (see _game_types).
-_ARG_TYPES: dict[str, type] = {'str': str, 'int': int, 'float': float, 'bool': bool}
 
 _DIAG_MAX_OBJECTS = 8  # simsight.objdiag lists at most this many matches
-
-
-def _game_types(func: _F) -> _F:
-    """Annotations are strings in this module (__future__ annotations), but
-    the game's command parser calls the annotation to convert each argument.
-    Give it back the real argument types, and nothing else, as before."""
-    notes = getattr(func, '__annotations__', {})
-    func.__annotations__ = {
-        name: _ARG_TYPES[note]
-        for name, note in notes.items()
-        if name != 'return' and note in _ARG_TYPES
-    }
-    return func
 
 
 def _speak(text: str) -> None:
@@ -435,7 +420,7 @@ def _objdiag(match: str, output: Any) -> None:
 @sims4.commands.Command(
     'simsight.objdiag', 'a11y.objdiag', command_type=sims4.commands.CommandType.Live
 )
-@_game_types
+@real_annotations
 def a11y_objdiag(match: str = '', _connection: Any = None) -> bool:
     """simsight.objdiag <substring of tuning name>: log tooltip state of matching
     objects (e.g. `simsight.objdiag bedDouble`)."""
@@ -491,7 +476,7 @@ def _objectnames(mode: str, output: Any) -> None:
 @sims4.commands.Command(
     'simsight.objectnames', 'a11y.objectnames', command_type=sims4.commands.CommandType.Live
 )
-@_game_types
+@real_annotations
 def a11y_objectnames(mode: str = 'on', _connection: Any = None) -> bool:
     try:
         _objectnames(mode, sims4.commands.CheatOutput(_connection))

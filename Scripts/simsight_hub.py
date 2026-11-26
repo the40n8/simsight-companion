@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Callable, Sequence
 import sims4.commands
 import simsight_contacts as contacts
 import simsight_lang as lang
+from simsight_commands import real_annotations
 import simsight_log
 import simsight_menu as menu
 import simsight_pump as pump
@@ -177,6 +178,7 @@ def away_actions() -> bool:
 
 
 @sims4.commands.Command('simsight.away', 'a11y.away', command_type=sims4.commands.CommandType.Live)
+@real_annotations
 def a11y_away(_connection: Any = None) -> bool:
     return _command('away', away_actions)
 
@@ -808,6 +810,7 @@ def end_event(situation_id: int, send_home: bool, end: bool) -> bool:
 @sims4.commands.Command(
     'simsight.events', 'a11y.events', command_type=sims4.commands.CommandType.Live
 )
+@real_annotations
 def a11y_events(_connection: Any = None) -> bool:
     return _command('events', events_window)
 
@@ -815,6 +818,7 @@ def a11y_events(_connection: Any = None) -> bool:
 @sims4.commands.Command(
     'simsight.invitem_enc', 'a11y.invitem_enc', command_type=sims4.commands.CommandType.Live
 )
+@real_annotations
 def a11y_invitem_enc(text: str = '', _connection: Any = None) -> bool:
     try:
         obj_id = int(text.strip())
@@ -1038,6 +1042,7 @@ def _command(name: str, run: Callable[[], bool]) -> bool:
 
 
 @sims4.commands.Command('simsight.hub', 'a11y.hub', command_type=sims4.commands.CommandType.Live)
+@real_annotations
 def a11y_hub(_connection: Any = None) -> bool:
     return _command('hub', open_hub)
 
@@ -1045,6 +1050,7 @@ def a11y_hub(_connection: Any = None) -> bool:
 @sims4.commands.Command(
     'simsight.buildmenu', 'a11y.buildmenu', command_type=sims4.commands.CommandType.Live
 )
+@real_annotations
 def a11y_buildmenu(_connection: Any = None) -> bool:
     return _command('buildmenu', build_actions)
 
@@ -1052,6 +1058,7 @@ def a11y_buildmenu(_connection: Any = None) -> bool:
 @sims4.commands.Command(
     'simsight.household', 'a11y.household', command_type=sims4.commands.CommandType.Live
 )
+@real_annotations
 def a11y_household(_connection: Any = None) -> bool:
     return _command('household', household)
 
@@ -1059,5 +1066,6 @@ def a11y_household(_connection: Any = None) -> bool:
 @sims4.commands.Command(
     'simsight.funds', 'a11y.funds', command_type=sims4.commands.CommandType.Live
 )
+@real_annotations
 def a11y_funds(_connection: Any = None) -> bool:
     return _command('funds', funds)

@@ -41,6 +41,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 import sims4.commands
 
 import simsight_lang as lang
+from simsight_commands import real_annotations
 import simsight_log
 import simsight_menu as menu
 import simsight_pump as pump
@@ -79,10 +80,6 @@ _MAX_DAILY_PRICE = 2**31 - 1  # the client reports an unsigned int; anything lar
 _LEASE_INTERVAL = 2.0
 _REQUEST_DEADLINE = 3.0
 _REQUEST_HISTORY = 64
-
-# The game's command parser converts each argument with the type named in
-# its annotation; it needs the type itself, not the name (see _game_types).
-_ARG_TYPES: dict[str, type] = {'str': str, 'int': int, 'float': float, 'bool': bool}
 
 
 class _Pending:
@@ -216,19 +213,6 @@ class _State:
 
 
 _state = _State()
-
-
-def _game_types(func: _F) -> _F:
-    """Annotations are strings in this module (__future__ annotations), but
-    the game's command parser calls the annotation to convert each argument.
-    Give it back the real argument types, and nothing else, as before."""
-    notes = getattr(func, '__annotations__', {})
-    func.__annotations__ = {
-        name: _ARG_TYPES[note]
-        for name, note in notes.items()
-        if name != 'return' and note in _ARG_TYPES
-    }
-    return func
 
 
 def _say(term: str) -> None:
@@ -1387,7 +1371,7 @@ def _client_price(payload: str) -> bool:
 @sims4.commands.Command(
     'simsight.lotprice_enc', 'a11y.lotprice_enc', command_type=sims4.commands.CommandType.Live
 )
-@_game_types
+@real_annotations
 def a11y_lotprice_enc(payload: str = '', _connection: Any = None) -> bool:
     """Client bridge reply: <zone id>|<per-day price>|<generation> as the map
     computes it. Only the open vacation request that asked (same
@@ -1402,7 +1386,7 @@ def a11y_lotprice_enc(payload: str = '', _connection: Any = None) -> bool:
 @sims4.commands.Command(
     'simsight.lot_value', 'a11y.lot_value', command_type=sims4.commands.CommandType.Live
 )
-@_game_types
+@real_annotations
 def a11y_lot_value(zone: str = '0', _connection: Any = None) -> bool:
     """Log every lot value source for a zone and the price the list would use."""
     try:
@@ -1424,7 +1408,7 @@ def a11y_lot_value(zone: str = '0', _connection: Any = None) -> bool:
 @sims4.commands.Command(
     'simsight.travel_probe', 'a11y.travel_probe', command_type=sims4.commands.CommandType.Live
 )
-@_game_types
+@real_annotations
 def a11y_travel_probe(_connection: Any = None) -> bool:
     """Log every row of the last travel request with its region facts."""
     try:
@@ -1916,7 +1900,7 @@ def _travel_ingress(lease: str, request: str) -> bool:
 @sims4.commands.Command(
     'simsight.travel', 'a11y.travel', command_type=sims4.commands.CommandType.Live
 )
-@_game_types
+@real_annotations
 def a11y_travel(lease: str = '0', request: str = '0', _connection: Any = None) -> bool:
     """Flash posts simsight.travel <epoch> <request> after its native guards.
     Refusals here happen at ingress, before anything is queued."""
@@ -1955,7 +1939,7 @@ def _travel_cancel(request: str, lease: str) -> bool:
 @sims4.commands.Command(
     'simsight.travel_cancel', 'a11y.travel_cancel', command_type=sims4.commands.CommandType.Live
 )
-@_game_types
+@real_annotations
 def a11y_travel_cancel(request: str = '0', lease: str = '', _connection: Any = None) -> bool:
     """Flash invalidates one exact request (another M, Escape, zone change,
     its bounded timeout). Applied at ingress, never queued, so it always

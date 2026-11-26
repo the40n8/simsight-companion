@@ -112,6 +112,24 @@ mac/release.sh    # player release in dist/release (zip, SHA256SUMS, install.sh)
                   # --publish creates the GitHub release
 ```
 
+**Python rules.** `tools/check.sh` runs every check of the mod's Python:
+ruff (lint and format, `ruff.toml`), mypy (`mypy.ini`), the Python 3.7
+compile for both platforms and the offline tests. `tools/check.sh quick`
+runs only the first three. The rules in short:
+
+- Every module starts with `from __future__ import annotations` and every
+  function is typed; EA's game objects are `Any`. Nothing newer than
+  Python 3.7 at runtime (no `typing.Protocol`/`Literal` outside
+  `if TYPE_CHECKING:`).
+- Console commands: put `@real_annotations` (`simsight_commands`) under
+  `@sims4.commands.Command`, or EA's parser cannot convert typed arguments.
+- Errors: `simsight_log.error('<module>: <what>')` where the game calls us
+  (hooks, commands, callbacks); narrow exception types elsewhere. Nothing
+  may raise into the game.
+- No `global` for private state: one state object per module.
+- `tools/samecode.py <old> <new>` proves a cleanup left the bytecode
+  unchanged; `tools/command_types.py` lists every command's argument types.
+
 GitHub builds and tests every push to `main` the same way (Actions >
 Release). To publish without a Mac at hand: **Actions > Release > Run
 workflow**, tick **Publish**. It runs `mac/release.sh --publish` on a GitHub

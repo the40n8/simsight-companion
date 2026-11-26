@@ -6,6 +6,7 @@ import threading
 import time
 from typing import Any, NamedTuple
 
+from simsight_commands import real_annotations
 import simsight_log
 
 _REPLY_SECONDS = 4.0  # a reply later than this is ignored
@@ -96,6 +97,7 @@ def _register() -> None:
         'a11y.eventgoals_enc',
         command_type=sims4.commands.CommandType.Live,
     )
+    @real_annotations
     def command(text: str = '', _connection: Any = None) -> bool:
         return receive(text)
 

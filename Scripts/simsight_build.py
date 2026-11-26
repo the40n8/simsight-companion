@@ -14,6 +14,7 @@ from urllib.parse import unquote
 
 import sims4.commands
 import simsight_lang as lang
+from simsight_commands import real_annotations
 import simsight_log
 import simsight_speech as speech
 
@@ -129,18 +130,6 @@ _REPLIES = {
 }
 
 _F = TypeVar('_F', bound=Callable[..., Any])
-_ARG_TYPES = {'str': str, 'int': int, 'float': float, 'bool': bool}
-
-
-def _command_arg_types(func: _F) -> _F:
-    """The game converts console arguments by their annotations, which the
-    __future__ import keeps as strings: give it the real types back."""
-    func.__annotations__ = {
-        name: _ARG_TYPES[hint]
-        for name, hint in func.__annotations__.items()
-        if name != 'return' and hint in _ARG_TYPES
-    }
-    return func
 
 
 def _text(en: str, pl: str) -> str:
@@ -451,7 +440,7 @@ except Exception:
 @sims4.commands.Command(
     'simsight.build', 'a11y.build', command_type=sims4.commands.CommandType.Live
 )
-@_command_arg_types
+@real_annotations
 def command(action: str = 'toggle', _connection: Any = None) -> bool:
     try:
         return request(action.lower())
@@ -487,7 +476,7 @@ def _info(encoded: str) -> bool:
 @sims4.commands.Command(
     'simsight.buildinfo', 'a11y.buildinfo', command_type=sims4.commands.CommandType.Live
 )
-@_command_arg_types
+@real_annotations
 def info(encoded: str = '', _connection: Any = None) -> bool:
     """Native localized hovered-object/error text; never infer placement success."""
     try:
@@ -516,7 +505,7 @@ def _client_log(encoded: str) -> bool:
 @sims4.commands.Command(
     'simsight.buildlog', 'a11y.buildlog', command_type=sims4.commands.CommandType.Live
 )
-@_command_arg_types
+@real_annotations
 def buildlog(encoded: str = '', _connection: Any = None) -> bool:
     """Client lifecycle diagnostics for the Build cursor and the catalog
     product memory: written to the log, never spoken, capped per window."""
@@ -608,7 +597,7 @@ def _client_state(encoded: str) -> bool:
 @sims4.commands.Command(
     'simsight.buildstate', 'a11y.buildstate', command_type=sims4.commands.CommandType.Live
 )
-@_command_arg_types
+@real_annotations
 def state(encoded: str = '', _connection: Any = None) -> bool:
     """Client reply: serial|active|result|x|y|step. Coordinates are pixels."""
     try:

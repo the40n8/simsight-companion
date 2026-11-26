@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any, Callable, TypeVar
 import sims4.commands
 
 import simsight_lang as lang
+from simsight_commands import real_annotations
 import simsight_log
 import simsight_settings as settings
 import simsight_speech as speech
@@ -54,20 +55,6 @@ _CTYPES_ERRORS: tuple[type[BaseException], ...] = (
 ) + ((ctypes.ArgumentError,) if ctypes is not None else ())
 
 _F = TypeVar('_F', bound=Callable[..., Any])
-_RUNTIME_TYPES = {'str': str, 'int': int, 'bool': bool, 'float': float}
-
-
-def _command_types(func: _F) -> _F:
-    """sims4.commands converts arguments by their annotations, read once when
-    the command is registered. Under `from __future__ import annotations`
-    they are strings, which it would call: give it the real types, and only
-    those (an unannotated _connection, as before)."""
-    func.__annotations__ = {
-        name: _RUNTIME_TYPES[hint]
-        for name, hint in func.__annotations__.items()
-        if name != 'return' and hint in _RUNTIME_TYPES
-    }
-    return func
 
 
 VK_SHIFT = 0x10
@@ -345,7 +332,7 @@ def fence_opening_input() -> None:
 @sims4.commands.Command(
     'simsight.inputfence', 'a11y.inputfence', command_type=sims4.commands.CommandType.Live
 )
-@_command_types
+@real_annotations
 def a11y_inputfence(payload: str = '', _connection: Any = None) -> bool:
     # Flash supplies an empty positional payload; the native command wrapper
     # also supplies _connection by keyword. Keep them separate. The startup
@@ -365,7 +352,7 @@ def _log_route(reason: str, intent: str) -> None:
 @sims4.commands.Command(
     'simsight.modalstate', 'a11y.modalstate', command_type=sims4.commands.CommandType.Live
 )
-@_command_types
+@real_annotations
 def a11y_modalstate(state: str = '00', _connection: Any = None) -> bool:
     try:
         return apply_modal_state(state, 'modalstate')
@@ -459,7 +446,7 @@ def blocking_active() -> bool:
 @sims4.commands.Command(
     'simsight.blocking', 'a11y.blocking', command_type=sims4.commands.CommandType.Live
 )
-@_command_types
+@real_annotations
 def a11y_blocking(state: str = '1', _connection: Any = None) -> bool:
     """Flash: the blocking bit alone, posted on change after the owner
     report (context, modalstate, blocking) and again after a sender reset."""
@@ -629,7 +616,7 @@ def _build_grid_key(intent: str, epoch: int) -> None:
 @sims4.commands.Command(
     'simsight.buildgridowner', 'a11y.buildgridowner', command_type=sims4.commands.CommandType.Live
 )
-@_command_types
+@real_annotations
 def a11y_buildgridowner(state: str = '0', _connection: Any = None) -> bool:
     """Flash: whether the Build cursor owns plain keys now (on change)."""
     global _build_grid_owner  # noqa: PLW0603 - a module attribute other modules read
@@ -739,7 +726,7 @@ def _scanner_owner_report(state: object) -> bool:
 @sims4.commands.Command(
     'simsight.scannerowner', 'a11y.scannerowner', command_type=sims4.commands.CommandType.Live
 )
-@_command_types
+@real_annotations
 def a11y_scannerowner(state: str = '0', _connection: Any = None) -> bool:
     """Flash: whether the scanner owns bare keys now. Posted on change and
     again with every mode heartbeat; only a change does anything here."""
@@ -766,7 +753,7 @@ def _scanner_call(name: str, *args: object) -> Any:
 @sims4.commands.Command(
     'simsight.scannerlive', 'a11y.scannerlive', command_type=sims4.commands.CommandType.Live
 )
-@_command_types
+@real_annotations
 def a11y_scannerlive(state: str = '0', _connection: Any = None) -> bool:
     """Flash: Live mode with scanner mode on, whatever owns the keys (menus
     and text fields keep it on; Build, CAS and the main menu turn it off).
@@ -790,7 +777,7 @@ def a11y_scannerlive(state: str = '0', _connection: Any = None) -> bool:
 @sims4.commands.Command(
     'simsight.scannermode', 'a11y.scannermode', command_type=sims4.commands.CommandType.Live
 )
-@_command_types
+@real_annotations
 def a11y_scannermode(action: str = 'toggle', _connection: Any = None) -> bool:
     """simsight.scannermode [on|off|toggle]"""
     action = str(action).lower()
@@ -2091,7 +2078,7 @@ def _keys_listing(output: Callable[[str], object]) -> None:
 
 
 @sims4.commands.Command('simsight.keys', 'a11y.keys', command_type=sims4.commands.CommandType.Live)
-@_command_types
+@real_annotations
 def a11y_keys(mode: str = 'on', _connection: Any = None) -> bool:
     try:
         output = sims4.commands.CheatOutput(_connection)
@@ -2125,7 +2112,7 @@ def _describe(vk: int, needs_alt: bool) -> str:
 @sims4.commands.Command(
     'simsight.keyprobe', 'a11y.keyprobe', command_type=sims4.commands.CommandType.Live
 )
-@_command_types
+@real_annotations
 def a11y_keyprobe(mode: str = 'off', _connection: Any = None) -> bool:
     """Optional, non-consuming native/stage input diagnostics for one minute."""
     value = mode.lower()

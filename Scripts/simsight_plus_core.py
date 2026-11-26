@@ -10,6 +10,7 @@ import traceback
 from typing import TYPE_CHECKING, Any
 
 import sims4.commands
+from simsight_commands import real_annotations
 import simsight_log
 
 if TYPE_CHECKING:
@@ -782,6 +783,7 @@ except Exception:
 
 
 @sims4.commands.Command('a11yplus.status', command_type=sims4.commands.CommandType.Live)
+@real_annotations
 def _status(_connection: Any = None) -> bool:
     try:
         out = sims4.commands.CheatOutput(_connection)

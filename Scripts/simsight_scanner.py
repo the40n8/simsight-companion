@@ -42,13 +42,14 @@ import contextlib
 import math
 import threading
 import time
-from typing import TYPE_CHECKING, Any, Callable, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, Sequence, TypeVar
 
 import sims4.commands
 
 import simsight_availability as availability
 import simsight_buycat as buycat
 import simsight_lang as lang
+from simsight_commands import real_annotations
 import simsight_log
 import simsight_pump as pump
 import simsight_settings as settings
@@ -94,9 +95,6 @@ MENU_KEYS = {
 
 _F = TypeVar('_F')
 
-# The game's command parser converts each argument with the type named in
-# its annotation; it needs the type itself, not the name (see _game_types).
-_ARG_TYPES: dict[str, type] = {'str': str, 'int': int, 'float': float, 'bool': bool}
 
 _REFRESH_SECONDS = 2.0
 _IDLE_SECONDS = 30.0
@@ -223,19 +221,6 @@ def __getattr__(name: str) -> Any:
     raise AttributeError(name)
 
 
-def _game_types(func: _F) -> _F:
-    """Annotations are strings in this module (__future__ annotations), but
-    the game's command parser calls the annotation to convert each argument.
-    Give it back the real argument types, and nothing else, as before."""
-    notes = getattr(func, '__annotations__', {})
-    func.__annotations__ = {
-        name: _ARG_TYPES[note]
-        for name, note in notes.items()
-        if name != 'return' and note in _ARG_TYPES
-    }
-    return func
-
-
 def _touch() -> None:
     _state.refresh_requested = True
     _state.last_activity = time.monotonic()
@@ -319,7 +304,7 @@ def _finish_late(pending: _Pending) -> None:
         simsight_log.error('scanner: speak after loc timeout')
 
 
-def _speak_parts(parts: list[Part]) -> None:
+def _speak_parts(parts: Sequence[Part]) -> None:
     """Speak a list of strings and ('loc', hash) parts once the client has
     resolved every key (or the timeout passes). Simulation thread only."""
     need_send = []
@@ -368,7 +353,7 @@ def _loc_reply(text: str) -> None:
 @sims4.commands.Command(
     'simsight.loc_enc', 'a11y.loc_enc', command_type=sims4.commands.CommandType.Live
 )
-@_game_types
+@real_annotations
 def a11y_loc_enc(text: str = '', _connection: Any = None) -> bool:
     """Flash reply: "<hash>|<percent-encoded localized text>"."""
     try:
@@ -1485,7 +1470,7 @@ def _do_open() -> None:
 @sims4.commands.Command(
     'simsight.menuempty', 'a11y.menuempty', command_type=sims4.commands.CommandType.Live
 )
-@_game_types
+@real_annotations
 def a11y_menuempty(arg: str = '', _connection: Any = None) -> bool:
     """Flash: the requested pie menu had no options."""
     try:
@@ -1573,7 +1558,7 @@ def note_menu_open() -> None:
 @sims4.commands.Command(
     'simsight.menuclosed', 'a11y.menuclosed', command_type=sims4.commands.CommandType.Live
 )
-@_game_types
+@real_annotations
 def a11y_menuclosed(arg: str = '', _connection: Any = None) -> bool:
     if _state.menu_open:
         simsight_log.line('scanner: menu flag cleared')
@@ -1606,7 +1591,7 @@ def _scan_command(action: str, output: Any) -> None:
 
 
 @sims4.commands.Command('simsight.scan', 'a11y.scan', command_type=sims4.commands.CommandType.Live)
-@_game_types
+@real_annotations
 def a11y_scan(action: str = 'rescan', _connection: Any = None) -> bool:
     """simsight.scan [rescan|next|prev|nextcat|prevcat|nextsub|prevsub|open|back|
     where] runs one scanner action from the console (same as the chords)."""

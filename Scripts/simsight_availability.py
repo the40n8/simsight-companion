@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 
 import sims4.commands
 
+from simsight_commands import real_annotations
 import simsight_log
 import simsight_pump as pump
 import simsight_settings as settings
@@ -760,6 +761,7 @@ def _nearest(sim: Any, manager: Any) -> list[tuple[float, Any, _Verdict]]:
 @sims4.commands.Command(
     'simsight.availability', 'a11y.availability', command_type=sims4.commands.CommandType.Live
 )
+@real_annotations
 def a11y_availability(_connection: Any = None) -> None:
     output = sims4.commands.CheatOutput(_connection)
     output(status())

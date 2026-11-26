@@ -17,6 +17,7 @@ select = [
   "PL",            # pylint
   "UP",            # modern syntax (for 3.7)
   "RET", "PIE", "C4", "ISC", "PERF",
+  "ANN",           # every function typed
 ]
 ignore = [
   # Game modules are imported where they are used: some do not exist yet when
@@ -24,6 +25,7 @@ ignore = [
   "PLC0415",
   "PLR2004",  # numbers in comparisons: the game's own constants
   "E501",     # the formatter decides line length
+  "ANN401",   # Any is right for EA's game objects (no type information)
 ]
 
 [lint.mccabe]
@@ -34,3 +36,9 @@ max-args = 6
 max-branches = 14
 max-returns = 8
 max-statements = 50
+
+[lint.per-file-ignores]
+# Tests and tools may stay untyped; the mod's own code may not.
+"mac/tests/*" = ["ANN"]
+"tools/*" = ["ANN"]
+"mac/build.py" = ["ANN"]

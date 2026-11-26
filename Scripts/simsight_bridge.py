@@ -33,6 +33,7 @@ try:
 except ImportError:  # not every Python the game ships has it: no companion then
     subprocess = None  # type: ignore[assignment]
 
+from simsight_commands import real_annotations
 import simsight_log
 import simsight_speech as speech
 
@@ -2022,11 +2023,13 @@ try:
     @sims4.commands.Command(
         'simsight.companion', 'a11y.companion', command_type=sims4.commands.CommandType.Live
     )
+    @real_annotations
     def a11y_companion(_connection: Any = None) -> bool:
         """Open the phone companion's QR code on the Mac."""
         return open_pairing_page()
 
     @sims4.commands.Command('simsight.setup', command_type=sims4.commands.CommandType.Live)
+    @real_annotations
     def simsight_setup(_connection: Any = None) -> bool:
         """Open SimSight setup on the Mac (phone address, meeting point)."""
         return open_setup_page()

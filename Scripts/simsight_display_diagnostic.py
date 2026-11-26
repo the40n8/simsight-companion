@@ -11,22 +11,10 @@ import time
 from typing import Any, Callable, TypeVar
 
 import sims4.commands
+from simsight_commands import real_annotations
 import simsight_log
 
 _F = TypeVar('_F', bound=Callable[..., Any])
-_ARG_TYPES = {'str': str, 'int': int, 'float': float, 'bool': bool}
-
-
-def command_arg_types(func: _F) -> _F:
-    """The game converts console arguments by their annotations, which the
-    __future__ import keeps as strings: give it the real types back
-    (the parameters typed str, int, float or bool; nothing else)."""
-    func.__annotations__ = {
-        name: _ARG_TYPES[hint]
-        for name, hint in func.__annotations__.items()
-        if name != 'return' and hint in _ARG_TYPES
-    }
-    return func
 
 
 class POINT(ctypes.Structure):
@@ -301,7 +289,7 @@ def _capture(build: Any) -> None:
 @sims4.commands.Command(
     'simsight.inspect_display', 'a11y.inspect_display', command_type=sims4.commands.CommandType.Live
 )
-@command_arg_types
+@real_annotations
 def inspect_display(delay: float = 5, _connection: Any = None) -> bool:
     output = sims4.commands.CheatOutput(_connection)
     if not math.isfinite(delay):

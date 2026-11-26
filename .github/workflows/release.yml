@@ -62,6 +62,12 @@ jobs:
             -p "$GITHUB_WORKSPACE/../py37" --platform osx-64 -c conda-forge python=3.7
           "$PY37" -V
 
+      - uses: astral-sh/setup-uv@v6
+
+      # Lint, format and types of the mod's Python (tests run in release.sh).
+      - name: Python checks
+        run: ./tools/check.sh quick
+
       - name: Downloads cache (game interface, cloudflared, Prism; all checksum-checked)
         uses: actions/cache@v4
         with:

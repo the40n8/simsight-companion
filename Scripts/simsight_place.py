@@ -35,6 +35,7 @@ from typing import TYPE_CHECKING, Any, Callable, NamedTuple, TypeVar
 
 import sims4.commands
 import simsight_lang as lang
+from simsight_commands import real_annotations
 import simsight_log
 import simsight_speech as speech
 
@@ -132,18 +133,6 @@ _pending = _Request()
 _last: dict[str, Any] = {'obj_id': None, 'position': None, 'household': None, 'zone': None}
 
 _F = TypeVar('_F', bound=Callable[..., Any])
-_ARG_TYPES = {'str': str, 'int': int, 'float': float, 'bool': bool}
-
-
-def _command_arg_types(func: _F) -> _F:
-    """The game converts console arguments by their annotations, which the
-    __future__ import keeps as strings: give it the real types back."""
-    func.__annotations__ = {
-        name: _ARG_TYPES[hint]
-        for name, hint in func.__annotations__.items()
-        if name != 'return' and hint in _ARG_TYPES
-    }
-    return func
 
 
 def _text(en: str, pl: str) -> str:
@@ -1663,7 +1652,7 @@ def sell(obj: Any) -> bool:
 @sims4.commands.Command(
     'simsight.buildproduct', 'a11y.buildproduct', command_type=sims4.commands.CommandType.Live
 )
-@_command_arg_types
+@real_annotations
 def buildproduct(encoded: str = '', _connection: Any = None) -> bool:
     """Client: the Build catalog selected a product ('<instance>|<name>') or
     dropped it ('0|'). Names arrive percent-encoded."""
@@ -1720,7 +1709,7 @@ def _catalog_left() -> bool:
 @sims4.commands.Command(
     'simsight.catalogleft', 'a11y.catalogleft', command_type=sims4.commands.CommandType.Live
 )
-@_command_arg_types
+@real_annotations
 def catalogleft(_state: str = '', _connection: Any = None) -> bool:
     """Client: Escape released the Build catalog's keys (TooltipManager
     A11yReleaseBuildCatalog). The chosen product is unchanged."""
@@ -1734,7 +1723,7 @@ def catalogleft(_state: str = '', _connection: Any = None) -> bool:
 @sims4.commands.Command(
     'simsight.buildhand', 'a11y.buildhand', command_type=sims4.commands.CommandType.Live
 )
-@_command_arg_types
+@real_annotations
 def buildhand(encoded: str = '', _connection: Any = None) -> bool:
     """Client: '<serial>|ok' once EA's placement tool holds nothing (it put
     the product down, or held none), '<serial>|denied' when it could not."""

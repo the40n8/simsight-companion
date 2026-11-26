@@ -38,6 +38,8 @@ def _clearance(box: Box) -> list[str]:
     import simsight_tiles as tiles
 
     frame = tiles.frame()
+    if frame is None:  # no lot loaded: fails at the caller's boundary, as before
+        raise RuntimeError('no lot frame')
     problems = []
     x1, n1, x2, n2 = box
     for i in range(x1 - 1, x2 + 1):
