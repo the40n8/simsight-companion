@@ -454,6 +454,9 @@ def _ask_position(width: float, depth: float) -> None:
 
 
 def _ask_room() -> None:
+    if _state.build.no_mouse():
+        return
+
     def size(text: str) -> None:
         values = _state.build.whole_numbers(text)
         if len(values) != 2 or any(v < 1 or v > 30 for v in values):

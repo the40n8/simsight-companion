@@ -500,6 +500,8 @@ def open_builder() -> None:
     if not _state.build.in_build_mode():
         _state.core.speak('Enter Build mode first.')
         return
+    if _state.build.no_mouse():
+        return
     rows: list[tuple[str, str, Callable[[], object]]] = [
         (
             'Start with a ready-made layout',

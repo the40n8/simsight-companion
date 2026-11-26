@@ -354,6 +354,8 @@ def open_builder() -> None:
     if not build.in_build_mode():
         core.speak('Enter Build mode first.')
         return
+    if build.no_mouse():
+        return
     if not grid.build_cursor():
         core.speak('Turn on the Build grid and move to the intended north-west corner first.')
         return

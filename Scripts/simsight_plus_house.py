@@ -857,6 +857,8 @@ def door_between_rooms() -> None:
     if not build.in_build_mode():
         core.speak('Go to Build mode first. Press F2, on a laptop Fn+F2.')
         return
+    if build.no_mouse():
+        return
     import simsight_plus_rooms as rooms
 
     all_rooms = list(rooms.scan_rooms())
@@ -1040,6 +1042,8 @@ def _remove_worker(value: tuple[Any, ...]) -> None:
 def remove_door_or_window() -> None:
     if not build.in_build_mode():
         core.speak('Go to Build mode first. Press F2, on a laptop Fn+F2.')
+        return
+    if build.no_mouse():
         return
     rows = [(label, None, value) for (label, value) in _thing_rows()]
     if not rows:

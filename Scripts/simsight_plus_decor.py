@@ -46,6 +46,8 @@ def decorate_room() -> None:
     if not build.in_build_mode():
         core.speak('Go to Build mode first. Press F2, on a laptop Fn+F2.')
         return
+    if build.no_mouse():
+        return
     rows = build.room_rows()
     if not rows:
         core.speak('There are no rooms yet.')

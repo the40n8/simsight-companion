@@ -587,6 +587,8 @@ def build_room() -> None:
     if not in_build_mode():
         core.speak('Go to Build mode first with F2.')
         return
+    if no_mouse():
+        return
     if not _tool_is('room tool'):
         core.speak(
             'First choose the Room Tool in the Build catalog. Tab to the catalog, open Walls and Empty Rooms, '
@@ -783,6 +785,8 @@ def room_worker_base(
 def build_wall() -> None:
     if not in_build_mode():
         core.speak('Go to Build mode first with F2.')
+        return
+    if no_mouse():
         return
     # The Wall Tool has its own game key, B; press it for the player.
     u = user32()
@@ -1004,6 +1008,8 @@ def place_on_wall() -> None:
     if not in_build_mode():
         core.speak('Go to Build mode first with F2.')
         return
+    if no_mouse():
+        return
     if not tool_name():
         core.speak('First choose a door or window with Alt+B, Catalog.')
         return
@@ -1084,6 +1090,8 @@ def place_on_wall() -> None:
 def paint_room(part: str) -> None:
     if not in_build_mode():
         core.speak('Go to Build mode first with F2.')
+        return
+    if no_mouse():
         return
     if not tool_name():
         core.speak(
@@ -1411,6 +1419,8 @@ def place_object_in_room() -> Any:
 def place_styled_room() -> None:
     if not in_build_mode():
         core.speak('Go to Build mode first with F2.')
+        return
+    if no_mouse():
         return
     if catalog_state.get('next') != 'room' or catalog_state.get('chosen') is None:
         core.speak('First choose a furnished room with Alt+B, Catalog, Furnished rooms.')
