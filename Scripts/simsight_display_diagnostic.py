@@ -1,14 +1,32 @@
 """Read-only Windows/build coordinate diagnostics; never inject input or set DPI."""
 
-import simsight_log
+from __future__ import annotations
+
 import ctypes
 import json
 import math
 import os
 import threading
 import time
+from typing import Any, Callable, TypeVar
+
 import sims4.commands
-import simsight_speech as speech
+import simsight_log
+
+_F = TypeVar('_F', bound=Callable[..., Any])
+_ARG_TYPES = {'str': str, 'int': int, 'float': float, 'bool': bool}
+
+
+def command_arg_types(func: _F) -> _F:
+    """The game converts console arguments by their annotations, which the
+    __future__ import keeps as strings: give it the real types back
+    (the parameters typed str, int, float or bool; nothing else)."""
+    func.__annotations__ = {
+        name: _ARG_TYPES[hint]
+        for name, hint in func.__annotations__.items()
+        if name != 'return' and hint in _ARG_TYPES
+    }
+    return func
 
 
 class POINT(ctypes.Structure):
@@ -19,16 +37,37 @@ class RECT(ctypes.Structure):
     _fields_ = [(n, ctypes.c_int32) for n in ('left', 'top', 'right', 'bottom')]
 
 
-_timer = None
-_window_start = 0.0
-_count = 0
+class _State:
+    def __init__(self) -> None:
+        self.active = False  # projections are logged once simsight.inspect_display ran
+        self.timer: threading.Timer | None = None
+        self.window_start = 0.0  # rate limit: at most 30 records a minute
+        self.count = 0
+
+
+_state = _State()
 _lock = threading.Lock()
+_OPTIONS_KEYS = frozenset(
+    (
+        'resolutionwidth',
+        'resolutionheight',
+        'resolutionrefresh',
+        'fullscreen',
+        'windowedfullscreen',
+        'uiscale',
+        'sceneresolution',
+    )
+)
 
 
-def _api():
+def _win_dll(name: str) -> Any:
+    return ctypes.WinDLL(name, use_last_error=True)  # type: ignore[attr-defined]  # Windows only; mypy checks as macOS
+
+
+def _api() -> Any:
     # Private function objects: do not overwrite prototypes cached by the
     # existing mouse worker. HWND/context return values must be pointer-wide.
-    u = ctypes.WinDLL('user32', use_last_error=True)
+    u = _win_dll('user32')
     ptr, integer = ctypes.c_void_p, ctypes.c_int32
     signatures = {
         'GetForegroundWindow': (ptr, []),
@@ -57,12 +96,11 @@ def _api():
     return u
 
 
-def _monitor_scale(u, hwnd):
+def _monitor_scale(u: Any, hwnd: Any) -> int:
     monitor = u.MonitorFromWindow(hwnd, 2)
     if not monitor:
         raise RuntimeError('monitor unavailable')
-    lib = ctypes.WinDLL('shcore', use_last_error=True)
-    fn = lib.GetScaleFactorForMonitor
+    fn = _win_dll('shcore').GetScaleFactorForMonitor
     fn.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_int32)]
     fn.restype = ctypes.c_int32
     scale = ctypes.c_int32()
@@ -71,7 +109,92 @@ def _monitor_scale(u, hwnd):
     return int(scale.value)
 
 
-def windows_snapshot(u=None):
+class _Snapshot:
+    """Win32 readings of one game window, each recorded or its failure named."""
+
+    def __init__(self, u: Any, hwnd: Any) -> None:
+        self.u, self.hwnd = u, hwnd
+        self.errors: dict[str, str] = {}
+        self.result: dict[str, Any] = {
+            'hwnd': int(hwnd),
+            'thread': threading.current_thread().name,
+            'game_ui_stage_size': None,
+            'errors': self.errors,
+        }
+
+    def field(self, name: str, fn: Callable[[], Any]) -> None:
+        try:
+            self.result[name] = fn()
+        except Exception as exc:  # a diagnostic: name whatever failed, keep reading
+            self.errors[name] = type(exc).__name__
+
+    def rect(self, fn: Any) -> list[int]:
+        r = RECT()
+        if not fn(self.hwnd, ctypes.byref(r)):
+            raise RuntimeError('rectangle query failed')
+        return [r.left, r.top, r.right, r.bottom]
+
+    def point(self, fn: Any, initial: Any = (0, 0), window: bool = True) -> list[int]:
+        p = POINT(*initial)
+        args = (self.hwnd, ctypes.byref(p)) if window else (ctypes.byref(p),)
+        if not fn(*args):
+            raise RuntimeError('point query failed')
+        return [p.x, p.y]
+
+    def read_fields(self) -> None:
+        u, hwnd = self.u, self.hwnd
+        self.field('client_rect_reported', lambda: self.rect(u.GetClientRect))
+        self.field('window_rect_reported', lambda: self.rect(u.GetWindowRect))
+        self.field('client_origin_reported', lambda: self.point(u.ClientToScreen))
+        self.field('cursor_reported', lambda: self.point(u.GetCursorPos, window=False))
+        self.field('cursor_physical', lambda: self.point(u.GetPhysicalCursorPos, window=False))
+        self.field('window_dpi', lambda: int(u.GetDpiForWindow(hwnd)))
+        self.field('monitor_scale_percent', lambda: _monitor_scale(u, hwnd))
+        self.field('window_style_hex', lambda: hex(u.GetWindowLongPtrW(hwnd, -16) & 0xFFFFFFFF))
+        self.field('maximized', lambda: bool(u.IsZoomed(hwnd)))
+        self.field('minimized', lambda: bool(u.IsIconic(hwnd)))
+        self.field(
+            'thread_awareness',
+            lambda: int(u.GetAwarenessFromDpiAwarenessContext(u.GetThreadDpiAwarenessContext())),
+        )
+        self.field(
+            'window_awareness',
+            lambda: int(
+                u.GetAwarenessFromDpiAwarenessContext(u.GetWindowDpiAwarenessContext(hwnd))
+            ),
+        )
+        self.field('primary_size_reported', lambda: [u.GetSystemMetrics(0), u.GetSystemMetrics(1)])
+        self.field(
+            'virtual_desktop_reported', lambda: [u.GetSystemMetrics(i) for i in (76, 77, 78, 79)]
+        )
+
+    def sample(self, initial: tuple[int, int]) -> dict[str, Any]:
+        """One client point converted to the screen and back."""
+        u = self.u
+        sample: dict[str, Any] = {'client': list(initial)}
+        try:
+            screen = self.point(u.ClientToScreen, initial)
+            sample.update(
+                screen_reported=screen, client_roundtrip=self.point(u.ScreenToClient, screen)
+            )
+            sample['screen_physical_for_window'] = self.point(
+                u.LogicalToPhysicalPointForPerMonitorDPI, screen
+            )
+        except Exception as exc:  # a diagnostic: name whatever failed
+            sample['error'] = type(exc).__name__
+        return sample
+
+    def read_samples(self) -> None:
+        r = self.result.get('client_rect_reported')
+        if not r:
+            return
+        w, h = r[2] - r[0], r[3] - r[1]
+        self.result['client_size_reported'] = [w, h]
+        corners = ((0, 0), (w // 2, h // 2), (max(0, w - 1), max(0, h - 1)))
+        self.result['samples'] = [self.sample(initial) for initial in corners]
+
+
+def windows_snapshot(u: Any = None) -> dict[str, Any]:
     u = _api() if u is None else u
     hwnd = u.GetForegroundWindow()
     owner = ctypes.c_uint32()
@@ -81,162 +204,105 @@ def windows_snapshot(u=None):
         or owner.value != os.getpid()
     ):
         return {'refused': 'foreground window is not owned by this game process'}
-    result = {
-        'hwnd': int(hwnd),
-        'thread': threading.current_thread().name,
-        'game_ui_stage_size': None,
-        'errors': {},
-    }
-
-    def field(name, fn):
-        try:
-            result[name] = fn()
-        except Exception as exc:
-            result['errors'][name] = type(exc).__name__
-
-    def rect(fn):
-        r = RECT()
-        if not fn(hwnd, ctypes.byref(r)):
-            raise RuntimeError('rectangle query failed')
-        return [r.left, r.top, r.right, r.bottom]
-
-    def point(fn, initial=(0, 0), window=True):
-        p = POINT(*initial)
-        args = (hwnd, ctypes.byref(p)) if window else (ctypes.byref(p),)
-        if not fn(*args):
-            raise RuntimeError('point query failed')
-        return [p.x, p.y]
-
-    field('client_rect_reported', lambda: rect(u.GetClientRect))
-    field('window_rect_reported', lambda: rect(u.GetWindowRect))
-    field('client_origin_reported', lambda: point(u.ClientToScreen))
-    field('cursor_reported', lambda: point(u.GetCursorPos, window=False))
-    field('cursor_physical', lambda: point(u.GetPhysicalCursorPos, window=False))
-    field('window_dpi', lambda: int(u.GetDpiForWindow(hwnd)))
-    field('monitor_scale_percent', lambda: _monitor_scale(u, hwnd))
-    field('window_style_hex', lambda: hex(u.GetWindowLongPtrW(hwnd, -16) & 0xFFFFFFFF))
-    field('maximized', lambda: bool(u.IsZoomed(hwnd)))
-    field('minimized', lambda: bool(u.IsIconic(hwnd)))
-    field(
-        'thread_awareness',
-        lambda: int(u.GetAwarenessFromDpiAwarenessContext(u.GetThreadDpiAwarenessContext())),
-    )
-    field(
-        'window_awareness',
-        lambda: int(u.GetAwarenessFromDpiAwarenessContext(u.GetWindowDpiAwarenessContext(hwnd))),
-    )
-    field('primary_size_reported', lambda: [u.GetSystemMetrics(0), u.GetSystemMetrics(1)])
-    field('virtual_desktop_reported', lambda: [u.GetSystemMetrics(i) for i in (76, 77, 78, 79)])
-    r = result.get('client_rect_reported')
-    if r:
-        w, h = r[2] - r[0], r[3] - r[1]
-        result['client_size_reported'] = [w, h]
-        samples = []
-        for initial in ((0, 0), (w // 2, h // 2), (max(0, w - 1), max(0, h - 1))):
-            sample = {'client': list(initial)}
-            try:
-                screen = point(u.ClientToScreen, initial)
-                sample.update(
-                    screen_reported=screen, client_roundtrip=point(u.ScreenToClient, screen)
-                )
-                sample['screen_physical_for_window'] = point(
-                    u.LogicalToPhysicalPointForPerMonitorDPI, screen
-                )
-            except Exception as exc:
-                sample['error'] = type(exc).__name__
-            samples.append(sample)
-        result['samples'] = samples
+    snapshot = _Snapshot(u, hwnd)
+    snapshot.read_fields()
+    snapshot.read_samples()
     if u.GetForegroundWindow() != hwnd:
         return {'refused': 'foreground changed during capture'}
-    return result
+    return snapshot.result
 
 
-def saved_options():
+def _game_root() -> str:
+    """The game's user folder (the one holding Mods), from the log's path."""
+    folder = os.path.dirname(simsight_log.PATH)
+    for _ in range(3):
+        if os.path.basename(folder).lower() == 'mods':
+            return os.path.dirname(folder)
+        folder = os.path.dirname(folder)
+    raise ValueError('Mods root unavailable')
+
+
+def saved_options() -> dict[str, Any]:
     # Read only display fields, with a size cap; never include unrelated
     # preferences, paths or personal data from Options.ini in the log.
-    result = {}
+    result: dict[str, Any] = {}
     try:
-        folder = os.path.dirname(simsight_log.PATH)
-        for _ in range(3):
-            if os.path.basename(folder).lower() == 'mods':
-                root = os.path.dirname(folder)
-                break
-            folder = os.path.dirname(folder)
-        else:
-            raise ValueError('Mods root unavailable')
-        with open(os.path.join(root, 'Options.ini'), encoding='utf-8-sig') as f:
+        with open(os.path.join(_game_root(), 'Options.ini'), encoding='utf-8-sig') as f:
             text = f.read(65536)
-        keys = {
-            'resolutionwidth',
-            'resolutionheight',
-            'resolutionrefresh',
-            'fullscreen',
-            'windowedfullscreen',
-            'uiscale',
-            'sceneresolution',
-        }
         for line in text.splitlines():
             key, sep, value = line.partition('=')
-            if sep and key.strip().lower() in keys:
+            if sep and key.strip().lower() in _OPTIONS_KEYS:
                 result[key.strip().lower()] = int(value.strip())
-    except Exception as exc:
+    except (OSError, ValueError) as exc:
         result['error'] = type(exc).__name__
     return result
 
 
-def record(kind, data=None, build=None):
-    global _window_start, _count
-    if not simsight_log.enabled:
-        return False
+def _allowed() -> bool:
+    """At most 30 records a minute."""
     with _lock:
         now = time.monotonic()
-        if now - _window_start >= 60:
-            _window_start, _count = now, 0
-        if _count >= 30:
+        if now - _state.window_start >= 60:
+            _state.window_start, _state.count = now, 0
+        if _state.count >= 30:
             return False
-        _count += 1
+        _state.count += 1
+        return True
+
+
+def record(kind: str, data: Any = None, build: Any = None) -> bool:
+    if not simsight_log.enabled or not _allowed():
+        return False
     try:
         row = windows_snapshot()
         row.update(kind=kind, data=data, saved_options=saved_options())
         if build is not None and 'refused' not in row:
             try:
                 row['adapter_size_reported'] = list(build._stage_size())
-            except Exception as exc:
+            except Exception as exc:  # a diagnostic: name whatever failed
                 row['errors']['adapter_size_reported'] = type(exc).__name__
-        speech.log_line('display inspect: ' + json.dumps(row, sort_keys=True, default=str))
+        simsight_log.line('display inspect: ' + json.dumps(row, sort_keys=True, default=str))
         return 'refused' not in row
     except Exception as exc:
-        speech.log_line('display inspect: capture failed ' + type(exc).__name__)
+        simsight_log.line('display inspect: capture failed ' + type(exc).__name__)
         return False
 
 
-_active = False
+def _engine() -> Any:
+    """simsight_plus_build, or None when it did not load."""
+    try:
+        import simsight_plus_build as build
+    except ImportError:
+        return None
+    return build
 
 
-def observe(kind, data):
+def observe(kind: str, data: Any) -> None:
     """The build engine reports each projection; logged once simsight.inspect_display ran."""
-    if not _active:
+    if not _state.active:
         return
     try:
-        try:
-            import simsight_plus_build as build
-        except Exception:
-            build = None
-        record(kind, data, build)
-    except Exception:
-        pass  # Optional logging must never break a build.
+        record(kind, data, _engine())
+    except Exception:  # optional logging must never break a build
+        simsight_log.error('display inspect: observe')
 
 
-def install(build=None):
-    global _active
-    _active = True
+def install() -> None:
+    _state.active = True
+
+
+def _capture(build: Any) -> None:
+    try:
+        record('manual', build=build)
+    except Exception as exc:
+        simsight_log.line('display inspect: manual capture failed ' + type(exc).__name__)
 
 
 @sims4.commands.Command(
     'simsight.inspect_display', 'a11y.inspect_display', command_type=sims4.commands.CommandType.Live
 )
-def inspect_display(delay: float = 5, _connection=None):
-    global _timer
+@command_arg_types
+def inspect_display(delay: float = 5, _connection: Any = None) -> bool:
     output = sims4.commands.CheatOutput(_connection)
     if not math.isfinite(delay):
         return False
@@ -246,27 +312,21 @@ def inspect_display(delay: float = 5, _connection=None):
     try:
         import simsight_plus_build as build
 
-        install(build)
+        install()
     except Exception as exc:
-        speech.log_line('display inspect: adapter unavailable ' + type(exc).__name__)
+        simsight_log.line('display inspect: adapter unavailable ' + type(exc).__name__)
         output('Display diagnostic unavailable; see SimSight log.')
         return False
-    if _timer is not None:
-        _timer.cancel()
+    if _state.timer is not None:
+        _state.timer.cancel()
     delay = max(0, min(30, delay))
-
-    def capture():
-        try:
-            record('manual', build=build)
-        except Exception as exc:
-            speech.log_line('display inspect: manual capture failed ' + type(exc).__name__)
-
     # No game APIs on this timer: only Win32/filesystem reads. Actual builder
     # worker DPI/coordinates are captured by the passive wrappers separately.
-    _timer = threading.Timer(delay, capture)
-    _timer.daemon = True
-    _timer.name = 'a11y_display_probe'
-    _timer.start()
+    timer = threading.Timer(delay, _capture, (build,))
+    timer.daemon = True
+    timer.name = 'a11y_display_probe'
+    timer.start()
+    _state.timer = timer
     output(
         f'Read-only display snapshot in {delay} seconds. Close the console and keep the game focused; see SimSight log.'
     )
