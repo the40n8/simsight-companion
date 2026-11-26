@@ -67,7 +67,7 @@ _MAP_ROW = 'map'
 _BACK_ROW = 'back'
 _RESIDENTIAL_BUSINESS_MIN = 1
 _VENUE_BUSINESS_MIN = 2
-_TRAVEL_AFFORDANCE = 423375  # self_SimPicker_TravelWith (Sim menu Travel)
+TRAVEL_AFFORDANCE = 423375  # self_SimPicker_TravelWith (Sim menu Travel)
 _STAY_ROW = 'stay'
 _MAX_STAY_DAYS = 7  # GERentalPanelTunables.MAX_RENTAL_DAYS
 TRAVEL, VACATION = 'travel', 'vacation'
@@ -722,16 +722,16 @@ def _icon() -> Any:
 def _detail(place: _Place) -> Any:
     parts = []
     if place.units:
-        parts.append(menu._raw(lang.t('units count').format(len(place.units))))
+        parts.append(menu.raw_text(lang.t('units count').format(len(place.units))))
     if place.venue is not None:
         parts.append(place.venue)
     if place.household and place.label() == place.name:
-        parts.append(menu._raw(str(place.household)))
+        parts.append(menu.raw_text(str(place.household)))
     if place.residents:
-        parts.append(menu._raw(lang.t('residents').format(', '.join(place.residents))))
+        parts.append(menu.raw_text(lang.t('residents').format(', '.join(place.residents))))
     if place.price is not None:
-        parts.append(menu._raw(lang.t('price per day').format(place.price)))
-    return menu._join(*parts) if parts else None
+        parts.append(menu.raw_text(lang.t('price per day').format(place.price)))
+    return menu.join_localized(*parts) if parts else None
 
 
 def _fence_input() -> None:
@@ -783,9 +783,9 @@ def _open_window(pending: _Pending, title: str, text: str, rows: list[Row], on_p
     if _state.pending is not pending:
         return False
     try:
-        menu._cancel_dialog(_state.window_id)
+        menu.cancel_dialog(_state.window_id)
         _state.window_id = None
-        dialog = menu._picker(lang.t(title), lang.t(text))
+        dialog = menu.picker(lang.t(title), lang.t(text))
         if dialog is None:
             raise ValueError('no active Sim')
         _show_picker(dialog, rows)
@@ -845,14 +845,14 @@ def _later(pending: _Pending, fn: Step, *args: Any) -> None:
 
 
 def _map_row() -> Row:
-    return (menu._raw(lang.t('open the map instead')), None, (_MAP_ROW, 0))
+    return (menu.raw_text(lang.t('open the map instead')), None, (_MAP_ROW, 0))
 
 
 def _show_worlds(pending: _Pending) -> bool:
     rows: list[Row] = [
         (
-            label if label is not None else menu._raw(name),
-            menu._raw(lang.t('places count').format(count)),
+            label if label is not None else menu.raw_text(name),
+            menu.raw_text(lang.t('places count').format(count)),
             (WORLD, key),
         )
         for key, name, count, label in pending.worlds
@@ -879,9 +879,9 @@ def _show_places(pending: _Pending, world_key: int) -> bool:
     if pending.mode == VACATION:
         for place in places:
             place.price = _daily_price(place.zone_id, pending)
-    rows: list[Row] = [(menu._raw(lang.t('back to worlds')), None, (_BACK_ROW, 0))]
+    rows: list[Row] = [(menu.raw_text(lang.t('back to worlds')), None, (_BACK_ROW, 0))]
     rows.extend(
-        (menu._raw(entry.label()), _detail(entry), (PLACE, entry.zone_id))
+        (menu.raw_text(entry.label()), _detail(entry), (PLACE, entry.zone_id))
         for entry in sorted(_buildings(places), key=lambda p: p.label().lower())
     )
     rows.append(_map_row())
@@ -907,9 +907,11 @@ def _show_units(pending: _Pending, master: int) -> bool:
     units = _units_of(pending, master)
     if not units:
         return _show_worlds(pending)
-    rows: list[Row] = [(menu._raw(lang.t('back to places')), None, (_BACK_ROW, units[0].world_key))]
+    rows: list[Row] = [
+        (menu.raw_text(lang.t('back to places')), None, (_BACK_ROW, units[0].world_key))
+    ]
     rows.extend(
-        (menu._raw(place.label()), _detail(place), (UNIT, place.zone_id))
+        (menu.raw_text(place.label()), _detail(place), (UNIT, place.zone_id))
         for place in sorted(units, key=lambda p: p.label().lower())
     )
     return _open_window(pending, 'travel destinations', 'choose a unit', rows, _on_unit)
@@ -953,8 +955,8 @@ def _stay_row(zone_id: int, price: int, days: int, funds: int | None) -> Row:
     label = (
         lang.t('stay one day').format(cost) if days == 1 else lang.t('stay days').format(days, cost)
     )
-    detail = menu._raw(lang.t('cannot afford')) if funds is not None and cost > funds else None
-    return (menu._raw(label), detail, (_STAY_ROW, (zone_id, days, cost)))
+    detail = menu.raw_text(lang.t('cannot afford')) if funds is not None and cost > funds else None
+    return (menu.raw_text(label), detail, (_STAY_ROW, (zone_id, days, cost)))
 
 
 def _show_stay(pending: _Pending, zone_id: int) -> bool:
@@ -965,7 +967,9 @@ def _show_stay(pending: _Pending, zone_id: int) -> bool:
         return _fallback(pending)
     price = place.price
     funds = _funds()
-    rows: list[Row] = [(menu._raw(lang.t('back to places')), None, (_BACK_ROW, place.world_key))]
+    rows: list[Row] = [
+        (menu.raw_text(lang.t('back to places')), None, (_BACK_ROW, place.world_key))
+    ]
     rows.extend(_stay_row(zone_id, price, days, funds) for days in range(1, _MAX_STAY_DAYS + 1))
     return _open_window(pending, 'travel destinations', 'choose a stay', rows, _on_stay)
 
@@ -1235,7 +1239,7 @@ def _cancel(pending: _Pending) -> bool:
         return False
     _state.pending = None
     if _state.window_id is not None:
-        menu._cancel_dialog(_state.window_id)
+        menu.cancel_dialog(_state.window_id)
         _state.window_id = None
     simsight_log.line(f'travel: dialog {pending.dialog.dialog_id} cancelled from the list')
     result = _cancel_dialog(pending.dialog)
@@ -1586,14 +1590,14 @@ def _start_entry(sim: Any, request: int, epoch: int) -> bool:
     if simplified():
         # The request is answered once our window is up; the choice pushes
         # EA's Travel on its own, like a second press of M would.
-        if _show_front(sim):
+        if show_front(sim):
             simsight_log.line(
                 f'travel: keyboard entry for sim {sim.sim_id} offers alone or with others (request {request})'
             )
             return _result(request, 'ok', '', epoch)
         _say('action unavailable')
         return _result(request, 'refused', 'error', epoch)
-    outcome = _push_travel(sim)
+    outcome = push_travel(sim)
     if outcome == 'ok':
         simsight_log.line(f'travel: keyboard entry pushed for sim {sim.sim_id} (request {request})')
         return _result(request, 'ok', '', epoch)
@@ -1644,7 +1648,7 @@ def _note_alone(result: Any) -> None:
         simsight_log.line('travel: no interaction to match; the companion picker will show')
 
 
-def _push_travel(sim: Any, alone: bool = False) -> str:
+def push_travel(sim: Any, alone: bool = False) -> str:
     """EA's own Travel (the companion picker, then the map picker this
     module lists). 'ok', 'refused' or 'error'; a refusal speaks EA's reason
     when its test gives one."""
@@ -1658,7 +1662,7 @@ def _push_travel(sim: Any, alone: bool = False) -> str:
         from interactions.priority import Priority
 
         affordance = services.get_instance_manager(sims4.resources.Types.INTERACTION).get(
-            _TRAVEL_AFFORDANCE
+            TRAVEL_AFFORDANCE
         )
         if affordance is None:
             raise ValueError('travel affordance missing')
@@ -1676,7 +1680,7 @@ def _push_travel(sim: Any, alone: bool = False) -> str:
             _state.alone_push = None
         if not result:
             simsight_log.line(f'travel: keyboard entry refused: {result}')
-            _say_refusal(result, sim)
+            say_refusal(result, sim)
             return 'refused'
         if alone:
             _note_alone(result)
@@ -1687,7 +1691,7 @@ def _push_travel(sim: Any, alone: bool = False) -> str:
         return 'error'
 
 
-def _say_refusal(result: Any, sim: Any) -> Any:
+def say_refusal(result: Any, sim: Any) -> Any:
     """The game's own reason for a refused Travel (for example a social
     event in progress), after the spoken line."""
     import simsight_native as native
@@ -1714,13 +1718,13 @@ def _front_picked(reply: Any, sim_id: int) -> None:
         _say('action unavailable')
 
 
-def _show_front(sim: Any) -> bool:
+def show_front(sim: Any) -> bool:
     """Simplified menus: Go alone or Choose who comes, before EA's own
     companion picker. Escape closes it and nothing is pushed."""
     try:
-        menu._cancel_dialog(_state.front_id)
+        menu.cancel_dialog(_state.front_id)
         _state.front_id = None
-        dialog = menu._picker(lang.t('travel'), lang.t('travel front instructions'))
+        dialog = menu.picker(lang.t('travel'), lang.t('travel front instructions'))
         if dialog is None:
             return False
         rows = (
@@ -1730,7 +1734,7 @@ def _show_front(sim: Any) -> bool:
         _show_picker(
             dialog,
             [
-                (menu._raw(lang.t(name)), menu._raw(lang.t(detail)), tag)
+                (menu.raw_text(lang.t(name)), menu.raw_text(lang.t(detail)), tag)
                 for name, detail, tag in rows
             ],
         )
@@ -1763,7 +1767,7 @@ def _front_chosen(sim_id: int, alone: bool) -> bool:
     if sim is None or sim.sim_id != sim_id or _away(sim):
         _say('sim unavailable')
         return False
-    outcome = _push_travel(sim, alone=alone)
+    outcome = push_travel(sim, alone=alone)
     simsight_log.line(
         'travel: {} chosen, Travel {}'.format('alone' if alone else 'with others', outcome)
     )
@@ -1790,7 +1794,7 @@ def _ours_in_push(dialog: Any, sim_id: int) -> bool:
     Travel (423375) interaction of that same Sim."""
     for listener in _listeners(dialog):
         owner = getattr(listener, '__self__', None)
-        if owner is None or getattr(owner, 'guid64', None) != _TRAVEL_AFFORDANCE:
+        if owner is None or getattr(owner, 'guid64', None) != TRAVEL_AFFORDANCE:
             continue
         if getattr(getattr(owner, 'sim', None), 'sim_id', None) == sim_id:
             return True

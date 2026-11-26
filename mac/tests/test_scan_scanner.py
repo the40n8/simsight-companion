@@ -37,12 +37,12 @@ def entry(distance=0.0, bearing=0, level_delta=0):
 
 class Bearing(unittest.TestCase):
     def test_compass_points(self):
-        self.assertEqual(scanner._bearing(0, 1), 0)  # north
-        self.assertEqual(scanner._bearing(1, 1), 1)  # north east
-        self.assertEqual(scanner._bearing(1, 0), 2)  # east
-        self.assertEqual(scanner._bearing(0, -1), 4)  # south
-        self.assertEqual(scanner._bearing(-1, 0), 6)  # west
-        self.assertEqual(scanner._bearing(-1, 1), 7)  # north west
+        self.assertEqual(scanner.bearing_index(0, 1), 0)  # north
+        self.assertEqual(scanner.bearing_index(1, 1), 1)  # north east
+        self.assertEqual(scanner.bearing_index(1, 0), 2)  # east
+        self.assertEqual(scanner.bearing_index(0, -1), 4)  # south
+        self.assertEqual(scanner.bearing_index(-1, 0), 6)  # west
+        self.assertEqual(scanner.bearing_index(-1, 1), 7)  # north west
 
 
 class Groups(unittest.TestCase):
@@ -92,12 +92,12 @@ class Words(unittest.TestCase):
         self.assertEqual(scanner._clean_text(['Bed ', ', here']), 'Bed, here')
 
     def test_place(self):
-        self.assertEqual(scanner._place_part(entry(0.4)), 'here')
-        self.assertEqual(scanner._place_part(entry(3.2, 2)), '3 meters east')
-        self.assertEqual(scanner._place_part(entry(0, 0, 1)), 'here, one floor up')
-        self.assertEqual(scanner._place_part(entry(0, 0, -1)), 'here, one floor down')
-        self.assertEqual(scanner._place_part(entry(0, 0, 2)), 'here, 2 floors up')
-        self.assertEqual(scanner._place_part(entry(0, 0, -3)), 'here, 3 floors down')
+        self.assertEqual(scanner.place_part(entry(0.4)), 'here')
+        self.assertEqual(scanner.place_part(entry(3.2, 2)), '3 meters east')
+        self.assertEqual(scanner.place_part(entry(0, 0, 1)), 'here, one floor up')
+        self.assertEqual(scanner.place_part(entry(0, 0, -1)), 'here, one floor down')
+        self.assertEqual(scanner.place_part(entry(0, 0, 2)), 'here, 2 floors up')
+        self.assertEqual(scanner.place_part(entry(0, 0, -3)), 'here, 3 floors down')
 
     def test_dirt_terms(self):
         self.assertEqual(cleanliness.terms_for({}), [])
@@ -122,9 +122,9 @@ class Commands(unittest.TestCase):
 
     def test_menu_flag_is_a_module_attribute(self):
         scanner.note_menu_open()
-        self.assertTrue(getattr(scanner, '_menu_open', False))
+        self.assertTrue(scanner.menu_open())
         scanner.a11y_menuclosed()
-        self.assertFalse(getattr(scanner, '_menu_open', True))
+        self.assertFalse(scanner.menu_open())
 
 
 if __name__ == '__main__':

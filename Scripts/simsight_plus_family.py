@@ -86,7 +86,7 @@ def _fam() -> _Family:
 
 
 def _age_label(age: Any) -> str:
-    return sims._age_name(age)
+    return sims.age_name(age)
 
 
 def _gender_word(m: _Member) -> str:
@@ -172,7 +172,7 @@ def _new_member() -> None:
 
 def _got_age(key: str) -> None:
     m = _Member()
-    m.age = sims._age_enum(key)
+    m.age = sims.age_enum(key)
     fam = _fam()
     fam.members.append(m)
     core.choose(
@@ -228,7 +228,7 @@ def _choose_aspiration() -> None:
     if m.age.name == 'TODDLER':
         core.post(_choose_relation)
         return
-    tracks = sims.aspiration_tracks(sims._Fake(m.age, m.gender))
+    tracks = sims.aspiration_tracks(sims.FakeSim(m.age, m.gender))
     if not tracks:
         core.post(_choose_relation)
         return

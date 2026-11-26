@@ -53,7 +53,7 @@ def open_contact(sim_id: int, actor_id: int) -> bool:
     # A world PICK_SIM would wrongly require an instantiated target.
     pos = actor.position
     name = names[sim_id].replace('|', ' ')
-    return scanner._send_ui(
+    return scanner.send_ui(
         f'A11y|pick|{sim_id}|{int(PickType.PICK_PORTRAIT)}|{int(services.active_lot().lot_id)}|{name}|{float(pos.x):.3f}|{float(pos.y):.3f}|{float(pos.z):.3f}|{int(actor.level)}'
     )
 
@@ -68,13 +68,13 @@ def open_contacts() -> bool:
         return False
     actor_id = actor.sim_info.sim_id
     rows: list[Row] = [
-        (menu._raw(name), None, lambda ident=ident: open_contact(ident, actor_id))
+        (menu.raw_text(name), None, lambda ident=ident: open_contact(ident, actor_id))
         for name, ident in _contacts(actor)
     ]
     if not rows:
         speech.speak(lang.t('no contacts'), explicit=True)
         return False
-    return hub._window('known contacts', 'contacts instructions', rows)
+    return hub.show_window('known contacts', 'contacts instructions', rows)
 
 
 @sims4.commands.Command(

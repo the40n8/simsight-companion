@@ -59,7 +59,7 @@ def _request_floor_menu(sim: Any, lot: Any, x: float, z: float) -> bool:
     # A zero target is a native surface pick, not an object pick. The
     # game creates TerrainPoint on this world's routing surface/level.
     # Reuse the client's request counter and normal pie-menu lifecycle.
-    sent = scanner._send_ui(
+    sent = scanner.send_ui(
         f'A11y|pick|0|{int(PickType.PICK_FLOOR)}|{lot_id}||{x:.3f}|{y:.3f}|{z:.3f}|{level}'
     )
     simsight_log.line(

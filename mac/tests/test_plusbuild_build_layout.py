@@ -78,7 +78,7 @@ class RoomWallsTest(unittest.TestCase):
         f = build.Frame(LOT)
         tiles = [f.world(1.5, 1.5), f.world(2.5, 1.5)]
         room = types.SimpleNamespace(tiles=tiles)
-        self.assertEqual(build._room_box(room), (1, 1, 3, 2))
+        self.assertEqual(build.room_box(room), (1, 1, 3, 2))
         walls = {w['side']: w['cells'] for w in build.room_walls(room)}
         self.assertEqual(walls['north'], [(1, 1), (2, 1)])  # left to right from inside
         self.assertEqual(walls['south'], [(2, 1), (1, 1)])
@@ -93,25 +93,25 @@ class FlashReplyTest(unittest.TestCase):
         self.posted = []
         self._post = core.post
         core.post = lambda fn, *args: self.posted.append(fn)
-        build._cat.update(serial=5, items=[], quiet=None)
+        build.catalog_state.update(serial=5, items=[], quiet=None)
 
     def tearDown(self):
         core.post = self._post
 
     def test_catalog_items_then_end(self):
-        build._flash_reply_base('cat|5|0|2|Oak%20door~350~3^Plain~12.0~')
-        self.assertEqual(build._cat['total'], 2)
-        self.assertEqual(build._cat['items'], [('Oak door', 350, 3), ('Plain', 12, 1)])
-        build._flash_reply_base('catend|5')
+        build.flash_reply_base('cat|5|0|2|Oak%20door~350~3^Plain~12.0~')
+        self.assertEqual(build.catalog_state['total'], 2)
+        self.assertEqual(build.catalog_state['items'], [('Oak door', 350, 3), ('Plain', 12, 1)])
+        build.flash_reply_base('catend|5')
         self.assertEqual(self.posted, [build._show_catalog])
 
     def test_old_serial_is_ignored(self):
-        build._flash_reply_base('cat|4|0|1|Old~1~1')
-        self.assertEqual(build._cat['items'], [])
+        build.flash_reply_base('cat|4|0|1|Old~1~1')
+        self.assertEqual(build.catalog_state['items'], [])
 
     def test_build_error_is_kept(self):
-        build._flash_reply_base('builderror|Not%20enough%20room')
-        self.assertEqual(build._last_error['text'], 'Not enough room')
+        build.flash_reply_base('builderror|Not%20enough%20room')
+        self.assertEqual(build.last_error['text'], 'Not enough room')
 
 
 if __name__ == '__main__':

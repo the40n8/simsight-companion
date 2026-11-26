@@ -213,7 +213,7 @@ def _add_sims(rooms: dict[tuple[int, int], Room]) -> None:
             room.sims.append(sim)
 
 
-def _scan_rooms_base() -> list[Room]:
+def scan_rooms_base() -> list[Room]:
     """Return list of Room, indoor rooms only, on every floor of the active lot."""
     import services
 
@@ -480,4 +480,4 @@ def scan_rooms() -> list[Room]:
     import simsight_house_workflow as workflow
 
     workflow.install()
-    return workflow._scan_rooms()
+    return workflow.scan_rooms()

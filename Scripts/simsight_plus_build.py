@@ -159,7 +159,7 @@ def _touch_text(grid: Grid, e: int, n: int, w: int, d: int) -> str:
 # ---------------------------------------------------------------- projection (via SimSight)
 
 
-def _send_ui(msg: str) -> None:
+def send_ui(msg: str) -> None:
     import distributor.ops
     import distributor.system
 
@@ -192,7 +192,7 @@ def floor_height(x: float, z: float, level: int) -> float:
 
 def cursor_off() -> None:
     def go() -> None:
-        _send_ui(f'A11y|build|off|{_new_serial()}')
+        send_ui(f'A11y|build|off|{_new_serial()}')
 
     core.post(go)
     time.sleep(0.4)
@@ -201,7 +201,7 @@ def cursor_off() -> None:
 # ---------------------------------------------------------------- real mouse
 
 
-def _user32() -> Any:
+def user32() -> Any:
     import ctypes
 
     return ctypes.windll.user32  # type: ignore[attr-defined]  # Windows only
@@ -212,8 +212,8 @@ def _user32() -> Any:
 OFFSET = [0.0, 0.0]
 
 
-def _mouse_base(flags: int, data: int = 0) -> None:
-    _user32().mouse_event(flags, 0, 0, data, 0)
+def mouse_base(flags: int, data: int = 0) -> None:
+    user32().mouse_event(flags, 0, 0, data, 0)
 
 
 LEFT_DOWN, LEFT_UP, WHEEL = 0x0002, 0x0004, 0x0800
@@ -239,7 +239,7 @@ def screenshot(path: str, mark: Sequence[float] | None = None) -> bool:
         class POINT(ctypes.Structure):
             _fields_ = [('x', ctypes.c_long), ('y', ctypes.c_long)]
 
-        u, g = _user32(), ctypes.windll.gdi32  # type: ignore[attr-defined]  # Windows only
+        u, g = user32(), ctypes.windll.gdi32  # type: ignore[attr-defined]  # Windows only
         g.CreateCompatibleDC.restype = ctypes.c_void_p
         g.CreateCompatibleBitmap.restype = ctypes.c_void_p
         g.SelectObject.restype = ctypes.c_void_p
@@ -296,13 +296,13 @@ def screenshot(path: str, mark: Sequence[float] | None = None) -> bool:
 
 
 def _drag_base(a: Sequence[float], b: Sequence[float], shift: bool = False) -> None:
-    u = _user32()
-    (ax, ay), (bx, by) = _to_screen(*a), _to_screen(*b)
+    u = user32()
+    (ax, ay), (bx, by) = to_screen(*a), to_screen(*b)
     if shift:
         u.keybd_event(0x10, 0x2A, 0, 0)
     move_to(ax, ay)
     time.sleep(0.3)
-    _mouse(LEFT_DOWN)
+    mouse(LEFT_DOWN)
     time.sleep(0.3)
     steps = 25
     for i in range(1, steps + 1):
@@ -310,23 +310,23 @@ def _drag_base(a: Sequence[float], b: Sequence[float], shift: bool = False) -> N
         time.sleep(0.03)
     move_to(bx, by)
     time.sleep(0.4)
-    _mouse(LEFT_UP)
+    mouse(LEFT_UP)
     if shift:
         u.keybd_event(0x10, 0x2A, 2, 0)
     time.sleep(0.3)
 
 
 def _click_base(a: Sequence[float], shift: bool = False) -> None:
-    u = _user32()
-    (ax, ay) = _to_screen(*a)
+    u = user32()
+    (ax, ay) = to_screen(*a)
     if shift:
         u.keybd_event(0x10, 0x2A, 0, 0)
         time.sleep(0.05)
     move_to(ax, ay)
     time.sleep(0.3)
-    _mouse(LEFT_DOWN)
+    mouse(LEFT_DOWN)
     time.sleep(0.1)
-    _mouse(LEFT_UP)
+    mouse(LEFT_UP)
     if shift:
         time.sleep(0.05)
         u.keybd_event(0x10, 0x2A, 2, 0)
@@ -358,14 +358,14 @@ def tap_scan(scan: int, extended: bool = False) -> None:
         flags = 0x0008 | (0x0001 if extended else 0) | (0x0002 if up else 0)
         inp = INPUT(type=1)
         inp.ki = KEYBDINPUT(0, scan, flags, 0, 0)
-        _user32().SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
+        user32().SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
         time.sleep(0.08)
 
 
 # ---------------------------------------------------------------- doing a pointing job
 
 
-_busy = [False]  # [True] while a pointing job runs (other modules read and set it)
+busy = [False]  # [True] while a pointing job runs (other modules read and set it)
 
 
 VIEW_FROM = {'north': (0.0, -1.0), 'south': (0.0, 1.0), 'east': (-1.0, 0.0), 'west': (1.0, 0.0)}
@@ -400,11 +400,11 @@ def _focus_camera(
 
 
 def _zoom_out(notches: int = 2) -> None:
-    u = _user32()
+    u = user32()
     w, h = u.GetSystemMetrics(0), u.GetSystemMetrics(1)
     u.SetCursorPos(w // 2, h // 2)
     for _ in range(notches):
-        _mouse(WHEEL, -120)
+        mouse(WHEEL, -120)
         time.sleep(0.15)
 
 
@@ -430,7 +430,7 @@ def overview_camera(points_world: Sequence[Point], level: int = 0) -> None:
     )
 
 
-def _point_and_act_base(  # noqa: PLR0913, PLR0917 - signature other modules call
+def point_and_act_base(  # noqa: PLR0913, PLR0917 - signature other modules call
     points_world: list[Point],
     level: int,
     action: Action,
@@ -457,7 +457,7 @@ def _point_and_act_base(  # noqa: PLR0913, PLR0917 - signature other modules cal
             if p is None:
                 break
             pts.append(p)
-        if len(pts) == len(points_world) and all(_clear_of_panels(pt) for pt in pts):
+        if len(pts) == len(points_world) and all(clear_of_panels(pt) for pt in pts):
             screen = pts
             break
         core.log(
@@ -500,7 +500,7 @@ def on_main(fn: Callable[..., Any], *args: Any) -> Any:
 
 
 def undo() -> None:
-    _send_ui(f'A11y|build|undo|{_new_serial()}')
+    send_ui(f'A11y|build|undo|{_new_serial()}')
 
 
 def run_job(  # noqa: PLR0913, PLR0917 - signature other modules call
@@ -514,10 +514,10 @@ def run_job(  # noqa: PLR0913, PLR0917 - signature other modules call
     focus_height: float | None = None,
 ) -> None:
     """Do one pointing job in a background thread so the game keeps drawing frames."""
-    if _busy[0]:
+    if busy[0]:
         core.speak('Still working on the last build step.')
         return
-    _busy[0] = True
+    busy[0] = True
 
     def work() -> None:
         try:
@@ -532,7 +532,7 @@ def run_job(  # noqa: PLR0913, PLR0917 - signature other modules call
             core.log_exc('build job')
             core.post(core.speak, 'Sorry, the build step failed.')
         finally:
-            _busy[0] = False
+            busy[0] = False
 
     threading.Thread(target=work, name='simsight_plus_build', daemon=True).start()
 
@@ -574,7 +574,7 @@ def _tool_is(*words: str) -> bool:
 # ---------------------------------------------------------------- user features
 
 
-def _numbers(text: str | None) -> list[int]:
+def whole_numbers(text: str | None) -> list[int]:
     return [int(v) for v in re.findall(r'\d+', text or '')]
 
 
@@ -590,7 +590,7 @@ def build_room() -> None:
         return
 
     def got_size(text: str) -> None:
-        nums = _numbers(text)
+        nums = whole_numbers(text)
         if len(nums) < 2 or not (1 <= nums[0] <= 30 and 1 <= nums[1] <= 30):
             core.speak('Please type two numbers, for example 4 5.')
             return
@@ -621,7 +621,7 @@ def build_room() -> None:
                     'Room position',
                     'Type meters from the west edge, then meters from the north edge, for example 2 3.',
                     '',
-                    lambda t: _do_room(w, d, *(_numbers(t) + [None, None])[:2]),
+                    lambda t: _do_room(w, d, *(whole_numbers(t) + [None, None])[:2]),
                 )
             else:
                 _do_room(w, d, value[0], value[1])
@@ -647,7 +647,7 @@ def _new_room_box(before: set[tuple[Box, int]]) -> Box | None:
     box, because the game may renumber a room when a new one is built next to it."""
     import simsight_plus_rooms as rooms
 
-    new = [_room_box(r) for r in rooms.scan_rooms() if (_room_box(r), r.level) not in before]
+    new = [room_box(r) for r in rooms.scan_rooms() if (room_box(r), r.level) not in before]
     if not new:
         return None
     return (
@@ -658,10 +658,10 @@ def _new_room_box(before: set[tuple[Box, int]]) -> Box | None:
     )
 
 
-def _room_ids() -> set[tuple[Box, int]]:
+def room_ids() -> set[tuple[Box, int]]:
     import simsight_plus_rooms as rooms
 
-    return {(_room_box(r), r.level) for r in rooms.scan_rooms()}
+    return {(room_box(r), r.level) for r in rooms.scan_rooms()}
 
 
 def _do_room(w: int, d: int, e: int | None, n: int | None) -> None:
@@ -674,10 +674,10 @@ def _do_room(w: int, d: int, e: int | None, n: int | None) -> None:
             f'That does not fit. Rooms must stay at least 1 meter inside the lot edge. The lot is {f.width} by {f.depth} meters.'
         )
         return
-    if _busy[0]:
+    if busy[0]:
         core.speak('Still working on the last build step.')
         return
-    _busy[0] = True
+    busy[0] = True
     want = (e, n, e + w, n + d)
     core.speak(f'Building a {w} by {d} meter room. Please wait.')
 
@@ -711,12 +711,12 @@ def _do_room(w: int, d: int, e: int | None, n: int | None) -> None:
             core.log_exc('room job')
             core.post(core.speak, 'Sorry, building the room failed.')
         finally:
-            _busy[0] = False
+            busy[0] = False
 
     threading.Thread(target=work, name='a11yplus_room', daemon=True).start()
 
 
-def _room_worker_base(
+def room_worker_base(
     want: Sequence[int], overview: bool = False, tries: int = 4, level: int = 0
 ) -> Any:
     """Worker thread only. Draw a room with the Room Tool (already chosen) from corner (want[0], want[1])
@@ -729,7 +729,7 @@ def _room_worker_base(
     if not set_floor(level):
         return 'nofloor'
     for attempt in range(tries):
-        before = on_main(_room_ids) or set()
+        before = on_main(room_ids) or set()
         money = on_main(funds)
         a = f.world(want[0] - fix[0], want[1] - fix[1])
         b = f.world(want[2] - fix[2], want[3] - fix[3])
@@ -778,13 +778,13 @@ def build_wall() -> None:
         core.speak('Go to Build mode first with F2.')
         return
     # The Wall Tool has its own game key, B; press it for the player.
-    u = _user32()
+    u = user32()
     u.keybd_event(0x42, 0x30, 0, 0)
     u.keybd_event(0x42, 0x30, 2, 0)
     _product.update(id=None, name='Wall Tool')
 
     def got(text: str) -> None:
-        nums = _numbers(text)
+        nums = whole_numbers(text)
         if len(nums) < 3:
             core.speak('Please type three numbers: from west, from north, and length.')
             return
@@ -860,13 +860,13 @@ def cost_check(done_text: str, fail_text: str) -> Callable[[], None]:
                 f'{done_text}. You got {after - before:,} simoleons back for what it replaced.'
             )
         else:
-            reason = _last_error['text'] if _last_error['at'] > started else ''
+            reason = last_error['text'] if last_error['at'] > started else ''
             core.speak(f'Not done. The game says: {reason}' if reason else fail_text)
 
     return verify
 
 
-def _room_rows() -> list[Row]:
+def room_rows() -> list[Row]:
     import simsight_plus_rooms as rooms
 
     return [
@@ -874,7 +874,7 @@ def _room_rows() -> list[Row]:
     ]
 
 
-def _room_box(room: Any) -> Box:
+def room_box(room: Any) -> Box:
     f = frame()
     es = [f.local(t[0], t[1])[0] for t in room.tiles]
     ns = [f.local(t[0], t[1])[1] for t in room.tiles]
@@ -889,7 +889,7 @@ def _room_box(room: Any) -> Box:
 def wall_point(room: Any, side: str, where: float = 0.5) -> tuple[float, float]:
     """World (x, z) on the middle of a room wall, a little inside the room so the click hits it."""
     f = frame()
-    (e0, n0, e1, n1) = _room_box(room)
+    (e0, n0, e1, n1) = room_box(room)
     inset = 0.0
     if side == 'north':
         return f.world(e0 + (e1 - e0) * where, n0 + inset)
@@ -900,7 +900,7 @@ def wall_point(room: Any, side: str, where: float = 0.5) -> tuple[float, float]:
     return f.world(e1 - inset, n0 + (n1 - n0) * where)
 
 
-def _room_tiles(room: Any) -> set[tuple[int, int]]:
+def room_tiles(room: Any) -> set[tuple[int, int]]:
     f = frame()
     return {
         (int(math.floor(f.local(t[0], t[1])[0])), int(math.floor(f.local(t[0], t[1])[1])))
@@ -920,7 +920,7 @@ _SIDES: dict[str, tuple[tuple[int, int], Callable[[int, int], int]]] = {
 def room_walls(room: Any) -> list[dict[str, Any]]:
     """List of walls: dict(side, cells=[(e, n), ...] left to right). Each cell is the 1 m wall piece
     on that side of the room tile (e, n)."""
-    tiles = _room_tiles(room)
+    tiles = room_tiles(room)
     walls: list[dict[str, Any]] = []
     for side, ((de, dn), order) in _SIDES.items():
         cells = sorted(
@@ -945,7 +945,7 @@ def wall_cell_point(side: str, cell: tuple[int, int]) -> tuple[float, float]:
     return f.world(e + 1, n + 0.5)
 
 
-def _wall_things() -> list[tuple[float, float, str]]:
+def wall_things() -> list[tuple[float, float, str]]:
     """Doors and windows on the lot: list of (e, n, kind)."""
     import services
     import simsight_plus_rooms as rooms
@@ -985,11 +985,11 @@ def _cell_status(
     return None
 
 
-def _reselect() -> None:
+def reselect() -> None:
     """Choose the catalog item again right before using it (the game sometimes drops it)."""
-    index = _cat.get('chosen')
+    index = catalog_state.get('chosen')
     if index is not None:
-        on_main(_send_ui, f'A11y|plus|select|{index}')
+        on_main(send_ui, f'A11y|plus|select|{index}')
         time.sleep(0.7)
 
 
@@ -1000,14 +1000,14 @@ def place_on_wall() -> None:
     if not tool_name():
         core.speak('First choose a door or window with Alt+B, Catalog.')
         return
-    rows = _room_rows()
+    rows = room_rows()
     if not rows:
         core.speak('There are no rooms yet.')
         return
 
     def got_room(room: Any) -> None:
         walls = room_walls(room)
-        things = _wall_things()
+        things = wall_things()
         wrows = []
         for w in walls:
             used = [_cell_status(w['side'], c, things) for c in w['cells']]
@@ -1045,7 +1045,7 @@ def place_on_wall() -> None:
                 )
 
                 def act(s: list[Any]) -> None:
-                    _reselect()
+                    reselect()
                     click(s[0])
 
                 run_job(
@@ -1083,7 +1083,7 @@ def paint_room(part: str) -> None:
             'First choose a wall pattern or a floor pattern in the Build catalog, press Escape, then Alt+B again.'
         )
         return
-    rows = _room_rows()
+    rows = room_rows()
 
     def got_room(room: Any) -> None:
         target = wall_point(room, 'north') if part == 'walls' else room.center
@@ -1179,12 +1179,19 @@ BUY_CATALOG: tuple[tuple[str, str], ...] = (
 )
 
 # The last listed catalog category; other modules read 'chosen' and 'items'.
-_cat: dict[str, Any] = {'serial': 0, 'items': [], 'total': 0, 'name': '', 'next': '', 'event': None}
+catalog_state: dict[str, Any] = {
+    'serial': 0,
+    'items': [],
+    'total': 0,
+    'name': '',
+    'next': '',
+    'event': None,
+}
 _bridge = {'pong': 0.0}
-_last_error: dict[str, Any] = {'text': '', 'at': 0.0}  # the game's last build error
+last_error: dict[str, Any] = {'text': '', 'at': 0.0}  # the game's last build error
 
 
-def _flash_reply_base(encoded: str = '') -> bool:
+def flash_reply_base(encoded: str = '') -> bool:
     from urllib.parse import unquote
 
     text = unquote(str(encoded or ''))
@@ -1193,21 +1200,21 @@ def _flash_reply_base(encoded: str = '') -> bool:
     if kind == 'pong':
         _bridge['pong'] = time.monotonic()
         core.log('bridge: pong')
-    elif kind == 'cat' and len(parts) >= 5 and parts[1] == str(_cat['serial']):
-        _cat['total'] = int(parts[3])
+    elif kind == 'cat' and len(parts) >= 5 and parts[1] == str(catalog_state['serial']):
+        catalog_state['total'] = int(parts[3])
         for item in parts[4].split('^'):
             bits = item.split('~')
             if len(bits) >= 2:
-                _cat['items'].append(
+                catalog_state['items'].append(
                     (
                         unquote(bits[0]),
                         int(float(bits[1] or 0)),
                         int(bits[2] or 1) if len(bits) > 2 else 1,
                     )
                 )
-    elif kind == 'catend' and len(parts) >= 2 and parts[1] == str(_cat['serial']):
-        if _cat.get('quiet') is not None:
-            _cat['quiet'].set()
+    elif kind == 'catend' and len(parts) >= 2 and parts[1] == str(catalog_state['serial']):
+        if catalog_state.get('quiet') is not None:
+            catalog_state['quiet'].set()
         else:
             core.post(_show_catalog)
     elif kind in ('wallsup', 'wallsrestored'):
@@ -1216,12 +1223,12 @@ def _flash_reply_base(encoded: str = '') -> bool:
         name = unquote(parts[2]) if len(parts) > 2 else 'item'
         _product['name'] = name
         if (
-            not _cat.get('silent_select') and not _busy[0]
+            not catalog_state.get('silent_select') and not busy[0]
         ):  # quiet while a build job picks things itself
-            core.speak('Chosen: {}. {}'.format(name, _NEXT_HINT.get(_cat['next'], '')))
+            core.speak('Chosen: {}. {}'.format(name, NEXT_HINT.get(catalog_state['next'], '')))
     elif kind == 'builderror':
         reason = unquote(parts[1]) if len(parts) > 1 else ''
-        _last_error.update(text=reason, at=time.monotonic())
+        last_error.update(text=reason, at=time.monotonic())
         core.log('game build error: ' + reason)
     elif kind == 'error':
         core.log('bridge error: ' + text)
@@ -1229,7 +1236,7 @@ def _flash_reply_base(encoded: str = '') -> bool:
     return True
 
 
-_NEXT_HINT = {
+NEXT_HINT = {
     'wall': 'Now use Alt+B, Put the chosen door or window on a wall.',
     'paintwalls': 'Now use Alt+B, Paint the walls of a room.',
     'paintfloor': 'Now use Alt+B, Paint the floor of a room.',
@@ -1267,13 +1274,13 @@ def request_catalog(name: str, product_type: int, tags: str, nxt: str) -> None:
     if not in_build_mode():
         core.speak('Go to Build mode first with F2.')
         return
-    _cat['serial'] += 1
-    _cat.update(items=[], total=0, name=name, next=nxt, quiet=None)
+    catalog_state['serial'] += 1
+    catalog_state.update(items=[], total=0, name=name, next=nxt, quiet=None)
     core.speak(f'Opening {name}.')
-    _send_ui('A11y|plus|catalog|{}|{}|{}'.format(product_type, tags, _cat['serial']))
+    send_ui('A11y|plus|catalog|{}|{}|{}'.format(product_type, tags, catalog_state['serial']))
 
-    def timeout(serial: int = _cat['serial']) -> None:
-        if _cat['serial'] == serial and not _cat['items'] and not bridge_ok():
+    def timeout(serial: int = catalog_state['serial']) -> None:
+        if catalog_state['serial'] == serial and not catalog_state['items'] and not bridge_ok():
             core.speak(
                 'The catalog did not answer. The SimSight Plus part of the SimSight interface file may be missing.'
             )
@@ -1288,28 +1295,28 @@ def fetch_catalog(
     ev = threading.Event()
 
     def start() -> None:
-        _cat['serial'] += 1
-        _cat.update(items=[], total=0, name='', next=nxt, quiet=ev)
-        _send_ui('A11y|plus|catalog|{}|{}|{}'.format(product_type, tags, _cat['serial']))
+        catalog_state['serial'] += 1
+        catalog_state.update(items=[], total=0, name='', next=nxt, quiet=ev)
+        send_ui('A11y|plus|catalog|{}|{}|{}'.format(product_type, tags, catalog_state['serial']))
 
     core.post(start)
     ev.wait(timeout)
-    _cat['quiet'] = None
-    return list(_cat['items'])
+    catalog_state['quiet'] = None
+    return list(catalog_state['items'])
 
 
 def select_item(index: int, name: str) -> None:
     """Worker thread only: choose catalog item `index` of the last fetched list, as clicking it would."""
-    _cat['chosen'] = index
+    catalog_state['chosen'] = index
     _product['name'] = name
-    on_main(_send_ui, f'A11y|plus|select|{index}')
+    on_main(send_ui, f'A11y|plus|select|{index}')
     time.sleep(0.8)
 
 
 def _show_catalog() -> None:
-    items = _cat['items']
+    items = catalog_state['items']
     if not items:
-        core.speak('{} is empty.'.format(_cat['name']))
+        core.speak('{} is empty.'.format(catalog_state['name']))
         return
     rows = []
     for i, (name, price, variations) in enumerate(items):
@@ -1318,7 +1325,7 @@ def _show_catalog() -> None:
             desc += f', {variations} colors'
         rows.append((name, desc, i))
     core.choose(
-        _cat['name'],
+        catalog_state['name'],
         f'{len(items)} items. Enter chooses one.',
         rows,
         _choose_item,
@@ -1327,8 +1334,8 @@ def _show_catalog() -> None:
 
 
 def _choose_item(i: int) -> None:
-    _cat['chosen'] = i
-    _send_ui(f'A11y|plus|select|{i}')
+    catalog_state['chosen'] = i
+    send_ui(f'A11y|plus|select|{i}')
 
 
 def open_catalog() -> None:
@@ -1386,7 +1393,7 @@ def place_styled_room() -> None:
     if not in_build_mode():
         core.speak('Go to Build mode first with F2.')
         return
-    if _cat.get('next') != 'room' or _cat.get('chosen') is None:
+    if catalog_state.get('next') != 'room' or catalog_state.get('chosen') is None:
         core.speak('First choose a furnished room with Alt+B, Catalog, Furnished rooms.')
         return
     f, grid = tile_map()
@@ -1410,7 +1417,7 @@ def place_styled_room() -> None:
     def go(center: Sequence[int]) -> None:
         (ce, cn) = center
         name = tool_name()
-        before = _room_ids()
+        before = room_ids()
         money = cost_check('Placed ' + name, 'The room was not placed. It may not fit there.')
 
         def verify_and_describe() -> None:
@@ -1429,7 +1436,7 @@ def place_styled_room() -> None:
         core.speak(f'Placing {name}. Please wait.')
 
         def act(s: list[Any]) -> None:
-            _reselect()
+            reselect()
             click(s[0])
 
         run_job([(x, z)], 0, act, 'styled room', verify_and_describe)
@@ -1440,7 +1447,7 @@ def place_styled_room() -> None:
                 'Room position',
                 'Type meters from the west edge, then from the north edge, for example 3 6.',
                 '',
-                lambda t: go(tuple((_numbers(t) + [0, 0])[:2])),
+                lambda t: go(tuple((whole_numbers(t) + [0, 0])[:2])),
             )
         else:
             go(value)
@@ -1490,7 +1497,7 @@ def project(x: float, z: float, level: int, timeout: float = 2.5, height: float 
     return result
 
 
-def _to_screen(sx: float, sy: float) -> Any:
+def to_screen(sx: float, sy: float) -> Any:
     import simsight_build_coordinates as coordinates
 
     result = coordinates.to_screen(sx, sy)
@@ -1498,7 +1505,7 @@ def _to_screen(sx: float, sy: float) -> Any:
     return result
 
 
-def _stage_size() -> Any:
+def stage_size() -> Any:
     import simsight_build_coordinates as coordinates
 
     return coordinates.stage_size()
@@ -1510,9 +1517,9 @@ def move_to(x: float, y: float) -> Any:
     return coordinates.move_to(x, y)
 
 
-def _mouse(flags: int, data: int = 0) -> Any:
+def mouse(flags: int, data: int = 0) -> Any:
     """Button presses are checked (focus, Build state, pointer arrival); other
-    events go straight to _mouse_base."""
+    events go straight to mouse_base."""
     import simsight_build_coordinates as coordinates
 
     return coordinates.mouse(flags, data)
@@ -1521,16 +1528,16 @@ def _mouse(flags: int, data: int = 0) -> Any:
 def click(a: Sequence[float], shift: bool = False) -> Any:
     import simsight_build_coordinates as coordinates
 
-    return coordinates._guarded_action(_click_base, (a,), shift)
+    return coordinates.guarded_action(_click_base, (a,), shift)
 
 
 def drag(a: Sequence[float], b: Sequence[float], shift: bool = False) -> Any:
     import simsight_build_coordinates as coordinates
 
-    return coordinates._guarded_action(_drag_base, (a, b), shift)
+    return coordinates.guarded_action(_drag_base, (a, b), shift)
 
 
-def _clear_of_panels(pt: Sequence[float]) -> Any:
+def clear_of_panels(pt: Sequence[float]) -> Any:
     import simsight_build_coordinates as coordinates
 
     return coordinates.clear_of_panels(pt)
@@ -1567,7 +1574,7 @@ def point_and_act(  # noqa: PLR0913, PLR0917 - signature other modules call
         return planner.overview_point_and_act(
             points_world, level, action, describe, height=height, overview=True
         )
-    return _point_and_act_base(
+    return point_and_act_base(
         points_world,
         level,
         action,

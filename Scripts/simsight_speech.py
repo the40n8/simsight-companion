@@ -45,7 +45,7 @@ MODS_FOLDER = simsight_log.MODS_FOLDER
 LOG_PATH = simsight_log.PATH
 
 
-def _mods_root() -> str:
+def mods_root() -> str:
     """The game's Mods folder itself. The speech pack is a SEPARATE download
     (CurseForge forbids DLL files), so users may extract it anywhere under
     Mods, not just into our folder. Walk up from our own load path to the
@@ -71,7 +71,7 @@ def _prism_path() -> str:
     candidates = [
         os.path.join(MODS_FOLDER, pack, 'prism.dll'),
         os.path.join(MODS_FOLDER, 'prism.dll'),
-        os.path.join(_mods_root(), pack, 'prism.dll'),
+        os.path.join(mods_root(), pack, 'prism.dll'),
     ]
     return _first_file(candidates) or candidates[0]
 
@@ -81,7 +81,7 @@ PRISM_DLL_PATH = _prism_path()
 # NVDA-style speech modes: hover speaks everything as you point, manual
 # captures silently for the read-current key, beeps replaces speech with a
 # short tone, off is silent. All four persist via the settings file.
-_VALID_MODES = ('hover', 'manual', 'beeps', 'off')
+VALID_MODES = ('hover', 'manual', 'beeps', 'off')
 _MODE_ANNOUNCEMENTS = {
     'hover': 'Speech on.',
     'manual': 'Speech manual.',
@@ -102,7 +102,7 @@ class Modes:
     menu) read and set as speech.modes.speech and speech.modes.braille."""
 
     def __init__(self) -> None:
-        self.speech = 'hover'  # one of _VALID_MODES
+        self.speech = 'hover'  # one of VALID_MODES
         self.braille = 'concise'  # one of _BRAILLE_MODES
 
 
@@ -118,7 +118,7 @@ try:
     if _stored_braille in _BRAILLE_MODES:
         modes.braille = _stored_braille
     _stored_mode = str(_settings.get('speech_mode', 'hover'))
-    if _stored_mode in _VALID_MODES:
+    if _stored_mode in VALID_MODES:
         modes.speech = _stored_mode
 except Exception:
     simsight_log.error('speech: reading the settings')
@@ -266,7 +266,7 @@ def _mac_say_path() -> str | None:
         [
             os.path.join(MODS_FOLDER, 'simsight-say'),
             os.path.join(MODS_FOLDER, 'SimSight_Mac', 'simsight-say'),
-            os.path.join(_mods_root(), 'SimSight_Mac', 'simsight-say'),
+            os.path.join(mods_root(), 'SimSight_Mac', 'simsight-say'),
         ]
     )
 
@@ -526,7 +526,7 @@ def _beep() -> None:
 def set_mode(mode: str) -> bool:
     """Switch the speech mode, save it and say the new mode. False for an
     unknown mode."""
-    if mode not in _VALID_MODES:
+    if mode not in VALID_MODES:
         return False
     modes.speech = mode
     try:
@@ -541,7 +541,7 @@ def set_mode(mode: str) -> bool:
 
 
 def cycle_mode() -> None:
-    set_mode(_VALID_MODES[(_VALID_MODES.index(modes.speech) + 1) % len(_VALID_MODES)])
+    set_mode(VALID_MODES[(VALID_MODES.index(modes.speech) + 1) % len(VALID_MODES)])
 
 
 def _cancel_deferred() -> None:

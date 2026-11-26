@@ -91,7 +91,7 @@ def _span_text(span: Any) -> str:
     return span_words(int(round(span.in_minutes())))
 
 
-def _career_word(career: Any) -> str:
+def career_word(career: Any) -> str:
     """'school' or 'work' (read by simsight_bridge too)."""
     try:
         from careers.career_enums import CareerCategory
@@ -103,7 +103,7 @@ def _career_word(career: Any) -> str:
 
 
 def _work_line(sim_info: Any, career: Any) -> str | None:
-    word = _career_word(career)
+    word = career_word(career)
     if career.currently_at_work:
         return f'{sim_info.first_name} is at {word} now'
     if career.is_work_time:
@@ -173,7 +173,9 @@ def _work_reminder(info: Any, uid: Any, career: Any) -> str | None:
     if not (0 < mins <= 60) or _state.reminded.get(key) == stamp:
         return None
     _state.reminded[key] = stamp
-    return f'{info.first_name} has {_career_word(career)} in {_span_text(span)}, at {clock_text(start)}'
+    return (
+        f'{info.first_name} has {career_word(career)} in {_span_text(span)}, at {clock_text(start)}'
+    )
 
 
 def _work_reminders() -> list[str]:

@@ -43,7 +43,7 @@ def decorate_room() -> None:
     if not build.in_build_mode():
         core.speak('Go to Build mode first. Press F2, on a laptop Fn+F2.')
         return
-    rows = build._room_rows()
+    rows = build.room_rows()
     if not rows:
         core.speak('There are no rooms yet.')
         return
@@ -65,7 +65,7 @@ def decorate_room() -> None:
 
 
 def _list_patterns(room: Any, part: str) -> None:
-    if build._busy[0]:
+    if build.busy[0]:
         core.speak('Still working on the last build step.')
         return
     (ptype, label) = PARTS[part]
@@ -82,7 +82,7 @@ def _list_patterns(room: Any, part: str) -> None:
 
 
 def _show_patterns(room: Any, part: str, items: Sequence[Any]) -> None:
-    tiles = len(build._room_tiles(room))
+    tiles = len(build.room_tiles(room))
     rows = []
     for i, (name, price, colors) in enumerate(items):
         desc = f'{price:,} simoleons a tile' if price else 'Free'
@@ -103,19 +103,19 @@ def _show_patterns(room: Any, part: str, items: Sequence[Any]) -> None:
 
 
 def _paint(room: Any, part: str, index: int, name: str) -> None:
-    if build._busy[0]:
+    if build.busy[0]:
         core.speak('Still working on the last build step.')
         return
-    build._busy[0] = True
+    build.busy[0] = True
     core.speak(f'Painting the {part} of the {room.name} with {name}. Please wait.')
 
     def work() -> None:
         try:
-            build._cat['silent_select'] = True
+            build.catalog_state['silent_select'] = True
             try:
                 build.select_item(index, name)
             finally:
-                build._cat['silent_select'] = False
+                build.catalog_state['silent_select'] = False
             verify = build.on_main(
                 _paint_check, f'Painted the {part} of the {room.name} with {name}'
             )
@@ -144,7 +144,7 @@ def _paint(room: Any, part: str, index: int, name: str) -> None:
             core.log_exc('decorate')
             _say('Sorry, painting failed.')
         finally:
-            build._busy[0] = False
+            build.busy[0] = False
 
     threading.Thread(target=work, name='simsight_plus_decor', daemon=True).start()
 
@@ -162,7 +162,7 @@ def _paint_check(done_text: str) -> Callable[[], None]:
 
     def verify() -> None:
         after = build.funds()
-        reason = build._last_error['text'] if build._last_error['at'] > started else ''
+        reason = build.last_error['text'] if build.last_error['at'] > started else ''
         if reason:
             core.speak(f'Not done. The game says: {reason}')
         elif before is None or after is None or after == before:
@@ -212,7 +212,7 @@ def _pick_things(room: Any) -> None:
         if refusal:
             desc = 'Cannot sell: {}.'.format(_REFUSAL_TEXT.get(refusal, 'not allowed'))
         else:
-            desc = f'Sells for {place._value(obj):,} simoleons.'
+            desc = f'Sells for {place.object_value(obj):,} simoleons.'
         rows.append((_row_name(obj), desc, obj.id, False, obj))
     if not rows:
         core.speak(f'There is nothing to sell in the {room.name}.')
@@ -236,7 +236,7 @@ def _confirm(room: Any, ids: Sequence[int]) -> None:
     if not objs:
         core.speak('Nothing chosen that can be sold.')
         return
-    total = sum(place._value(o) for o in objs)
+    total = sum(place.object_value(o) for o in objs)
     what = '1 thing' if len(objs) == 1 else f'{len(objs)} things'
     rows = [
         (f'Yes, sell {what} for {total:,} simoleons', None, True),
@@ -266,13 +266,13 @@ def _sell(room: Any, ids: Sequence[int]) -> None:
         if place.sell_refusal(obj):
             failed.append(oid)
             continue
-        value = place._value(obj)
-        if not place._destroy(obj):
+        value = place.object_value(obj)
+        if not place.destroy_object(obj):
             failed.append(oid)
             continue
-        place._refund(value)
-        if place._last.get('obj_id') == oid:
-            place._last['obj_id'] = None
+        place.refund(value)
+        if place.last_placement.get('obj_id') == oid:
+            place.last_placement['obj_id'] = None
         sold += 1
         money += value
     got = (build.funds() or 0) - before

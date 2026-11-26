@@ -175,13 +175,13 @@ def _distance(a: Any, b: Any) -> int:
 
 def _item_json(bridge: Any, obj: Any, room: _Room, half: float, sim: Any) -> dict[str, Any] | None:
     try:
-        group, kind, keywords = bridge._classify(obj)
+        group, kind, keywords = bridge.classify(obj)
         cx, cz = room.center
         dx, dz = obj.position.x - cx, obj.position.z - cz
         side = 'C' if math.hypot(dx, dz) < max(1.0, half * 0.4) else compass(dx, dz)
         target = {
             'id': str(obj.id),
-            'name': bridge._object_name(obj),
+            'name': bridge.object_name(obj),
             'group': group,
             'kind': kind,
             'keywords': keywords,

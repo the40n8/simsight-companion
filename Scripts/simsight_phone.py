@@ -336,9 +336,9 @@ def _open(phone_list: _PhoneList, title: Any, text: str, rows: list[Any]) -> boo
     for the phone itself, or a category's game string."""
     import simsight_menu as menu
 
-    menu._cancel_dialog(_state.list_id)
+    menu.cancel_dialog(_state.list_id)
     _state.list_id = None
-    dialog = menu._picker(lang.t('phone'), lang.t(text), localized_title=title)
+    dialog = menu.picker(lang.t('phone'), lang.t(text), localized_title=title)
     if dialog is None:
         _say('load a household first')
         return False
@@ -372,7 +372,7 @@ def _show_top(phone_list: _PhoneList) -> bool:
     rows = []
     for index, (label, entries) in enumerate(phone_list.groups):
         term = 'phone group count one' if len(entries) == 1 else 'phone group count'
-        count = menu._raw(lang.t(term).format(len(entries)))
+        count = menu.raw_text(lang.t(term).format(len(entries)))
         rows.append(_row(index, label, count, ('group', index)))
     rows.extend(_entry_rows(phone_list.direct, len(rows)))
     return _open(phone_list, None, 'phone list instructions', rows)
@@ -382,7 +382,7 @@ def _show_group(phone_list: _PhoneList, index: int) -> bool:
     import simsight_menu as menu
 
     label, entries = phone_list.groups[index]
-    rows = [_row(0, menu._raw(lang.t('back to phone')), None, ('back',))]
+    rows = [_row(0, menu.raw_text(lang.t('back to phone')), None, ('back',))]
     rows.extend(_entry_rows(entries, 1))
     return _open(phone_list, label, 'phone group instructions', rows)
 
@@ -433,10 +433,10 @@ def _travel_window(sim: Any, entry: _Entry) -> bool:
         import simsight_travel as travel
 
         return bool(
-            entry.affordance_id == travel._TRAVEL_AFFORDANCE
+            entry.affordance_id == travel.TRAVEL_AFFORDANCE
             and travel.enabled()
             and travel.simplified()
-            and travel._show_front(sim)
+            and travel.show_front(sim)
         )
     except Exception:
         simsight_log.error('phone: travel window unavailable')

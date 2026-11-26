@@ -197,7 +197,7 @@ _POLL_SECONDS = 0.01
 # Holding a navigation key auto-repeats it (OS-style: initial delay, then a
 # steady rate). Only movement actions repeat; activate/clear/speech keys fire
 # once per press. Flash preserves input order while a list realizes a row.
-_REPEATABLE = {
+REPEATABLE = {
     'A11yNavNext',
     'A11yNavPrev',
     'A11yArrowUp',
@@ -249,8 +249,8 @@ BUILD_GRID_KEYS = {
     0x36: 'info6',
     0x4D: 'moveobject',
 }  # M: pick up an object, M again puts it down here
-_REPEAT_DELAY = 0.45
-_REPEAT_INTERVAL = 0.065
+REPEAT_DELAY = 0.45
+REPEAT_INTERVAL = 0.065
 
 
 class Status:
@@ -491,7 +491,7 @@ def _ui_notice(module_name: str, function: str, what: str) -> None:
         simsight_log.error(f'keys: {what}')
 
 
-def _announce_ui_settings() -> None:
+def announce_ui_settings() -> None:
     """Simulation thread, with every keyboard lease: a UI copy created since
     the last change (Build and Live swap TooltipManager copies) starts with
     each switch off until it hears it."""
@@ -505,12 +505,12 @@ def _announce_ui_settings() -> None:
 def _announce_scanner_mode() -> None:
     """Simulation thread: A11y|scannermode|on or off to every UI copy."""
     try:
-        _deliver('A11y|scannermode|' + ('on' if _scanner_effective() else 'off'))
+        _deliver('A11y|scannermode|' + ('on' if scanner_effective() else 'off'))
     except Exception:
         simsight_log.error('keys: scanner mode notice')
 
 
-def _scanner_effective() -> bool:
+def scanner_effective() -> bool:
     """The scanner mode setting counts only while keyboard mode and the
     scanner are on."""
     return (
@@ -527,7 +527,7 @@ def _build_grid_routing() -> bool:
 
 def _scanner_routing() -> bool:
     return (
-        _scanner_effective()
+        scanner_effective()
         and _state.scanner_owner
         and not status.modal_active
         and not status.editing_active
@@ -574,7 +574,7 @@ def apply_scanner_setting(announce_change: bool = False) -> None:
     it owns the keys (Live), or a spoken note outside Live. Off: release."""
     _announce_scanner_mode()
     _state.input_epoch += 1  # nothing queued under the old setting may act
-    if not _scanner_effective():
+    if not scanner_effective():
         _scanner_mode_off(announce_change)
         return
     try:
@@ -596,7 +596,7 @@ def apply_scanner_setting(announce_change: bool = False) -> None:
 def scanner_zone_started() -> None:
     """Zone load (pump start): say where the scanner is once Live input is
     confirmed again."""
-    if _scanner_effective():
+    if scanner_effective():
         _state.scanner_pending_announce = True
     _announce_scanner_mode()
 
@@ -676,7 +676,7 @@ def _resume_after_hold(epoch: int) -> None:
         and _state.scanner_suspended
         and not status.modal_active
         and not status.editing_active
-        and _scanner_effective()
+        and scanner_effective()
     ):
         import simsight_scanner as scanner
 
@@ -725,7 +725,7 @@ def _scanner_owner_report(state: object) -> bool:
         # A scanner key queued under the old owner must not act under the
         # next one (a menu can open and close before the pump turn).
         _state.input_epoch += 1
-    if not _scanner_effective():
+    if not scanner_effective():
         return True
     if owner:
         _scanner_owner_now(changed)
@@ -775,7 +775,7 @@ def a11y_scannerlive(state: str = '0', _connection: Any = None) -> bool:
             f'keys: scanner live rejected {type(report).__name__} {repr(report)[:24]}'
         )
         return False
-    live = report == '1' and _scanner_effective()
+    live = report == '1' and scanner_effective()
     if live != _state.scanner_live:
         simsight_log.line(f'keys: scanner live {int(_state.scanner_live)}->{int(live)}')
     _state.scanner_live = live
@@ -821,7 +821,7 @@ def _send_owned(message_name: str) -> None:
     opening fence). A swap between two owners with no fence in between is
     left to the client's own no-owner guard."""
     if message_name == 'A11yRepeat':
-        _send(message_name)
+        send_action(message_name)
         return
     epoch = _state.input_epoch
     try:
@@ -865,7 +865,7 @@ def _send_to_client(message_name: str) -> None:
         simsight_log.error(f'keys: send {message_name}')
 
 
-def _send(message_name: str) -> None:
+def send_action(message_name: str) -> None:
     # Speech-control actions are handled in Python; only focus navigation
     # goes to the Flash layer.
     if message_name == 'A11yRepeat':
@@ -1287,7 +1287,7 @@ def _chord_before_owner(intent: str) -> bool:
             _post(_toggle_scanner_mode, _state.input_epoch)
         return True
     if intent == 'repeat' and (status.modal_active or status.editing_active):
-        _send('A11yRepeat')
+        send_action('A11yRepeat')
         return True
     if intent == 'logging':
         # Like the settings row; only a text field owns the key.
@@ -1339,7 +1339,7 @@ def _window_chord(intent: str) -> bool:
     message = _INFO_CHORD_MESSAGES.get(intent)
     if message is not None:
         if not status.modal_active:
-            _send(message)
+            send_action(message)
         return True
     return False
 
@@ -1381,7 +1381,7 @@ def _route_chord(intent: str) -> None:
         _log_route('lost: simulation pump inactive', intent)
 
 
-def _chord(intent: str) -> None:
+def run_chord(intent: str) -> None:
     """An active modal owns navigation before the world scanner."""
     try:
         _route_chord(intent)
@@ -1390,10 +1390,10 @@ def _chord(intent: str) -> None:
 
 
 def repeat_chord(intent: str) -> None:
-    """A chord's auto-repeat: _chord sees _state.chord_repeating while it runs."""
+    """A chord's auto-repeat: run_chord sees _state.chord_repeating while it runs."""
     _state.chord_repeating = True
     try:
-        _chord(intent)
+        run_chord(intent)
     finally:
         _state.chord_repeating = False
 
@@ -1405,7 +1405,7 @@ def _toggle_logging() -> bool:
 
     try:
         row = next(item for item in menu.ROWS if item.key == 'logging')
-        menu._change(row, 1)
+        menu.step_value(row, 1)
     except Exception:
         simsight_log.error('keys: logging toggle')
         return False
@@ -1511,7 +1511,7 @@ def request_clock() -> bool:
     simsight.clock_enc: the localized day and time (with Paused), or empty when
     the widget is not live, which is spoken as unavailable. A dedicated
     reply, so a pointer hover over the clock is never taken for it."""
-    _send('A11yClock')
+    send_action('A11yClock')
     return True
 
 
@@ -1563,12 +1563,12 @@ def _mode_chord(intent: str, build: Any, grid: Any) -> bool:
 def _live_chord(intent: str, build: Any, repeat: bool) -> None:
     """No Build or grid mode is on: repeat, or the scanner."""
     if intent == 'repeat':
-        _send('A11yRepeat')
+        send_action('A11yRepeat')
         return
     # Native transaction commands have no scanner meaning when the cursor
     # is off. They must never become unrelated actions in Live mode.
     if intent in ('rotateleft', 'rotateright', 'undo', 'redo', 'sell'):
-        if not build.controls_enabled() and build._zone() is not None:
+        if not build.controls_enabled() and build.build_zone() is not None:
             build.refuse_disabled()  # in Build mode, say why nothing happened
         return
     if repeat and intent in ('prevcat', 'nextcat'):
@@ -1642,7 +1642,7 @@ def _modal_key_message(vk: int, shift: bool) -> str | None:
     )
 
 
-def _plain_message(
+def plain_message(
     vk: int, ctrl: bool = False, alt: bool = False, shift: bool = False
 ) -> str | None:
     """One policy for native context, editing and optional numpad navigation."""
@@ -1808,7 +1808,7 @@ class _Poller:
             )
         for vk in self.plain:
             if self.was_down.get(('plain', vk), False):
-                _send(f'A11y|keyup|{vk}')
+                send_action(f'A11y|keyup|{vk}')
         self.was_down.clear()
         self.pressed_at.clear()
         self.last_fire.clear()
@@ -1820,9 +1820,9 @@ class _Poller:
     def _lease(self, now: float) -> None:
         if now - self.last_lease < 0.5:
             return
-        _send('A11y|lease')
+        send_action('A11y|lease')
         try:
-            _post(_announce_ui_settings)
+            _post(announce_ui_settings)
         except Exception:
             simsight_log.error('keys: settings heartbeat')
         self.last_lease = now
@@ -1922,7 +1922,7 @@ class _Poller:
                 and (not self.was_down.get(key, False) or key not in self.pressed_at)
             ):
                 _log_fire(CHORDS[vk][0], 'edge')
-                _chord(CHORDS[vk][0])
+                run_chord(CHORDS[vk][0])
                 self.pressed_at[key] = edge_time
                 self.last_fire[key] = now
             self.was_down[key] = down
@@ -1939,8 +1939,8 @@ class _Poller:
 
     def _repeat_due(self, key: KeyId, now: float) -> bool:
         return (
-            now - self.pressed_at.get(key, now) >= _REPEAT_DELAY
-            and now - self.last_fire.get(key, 0) >= _REPEAT_INTERVAL
+            now - self.pressed_at.get(key, now) >= REPEAT_DELAY
+            and now - self.last_fire.get(key, 0) >= REPEAT_INTERVAL
         )
 
     def _trace_late_tap(self, sample: _Sample, vk: int, raw_tap: bool) -> None:
@@ -1986,7 +1986,7 @@ class _Poller:
             and (not self.was_down.get(key, False) or (fresh_tap and key not in self.pressed_at))
         ):
             _log_fire(intent, ('hook' if hook_knows_key else 'held') if down else 'tap')
-            _chord(intent)
+            run_chord(intent)
             self.pressed_at[key] = now
             self.last_fire[key] = now
         elif down and repeatable and self._repeat_due(key, now):
@@ -2008,7 +2008,7 @@ class _Poller:
         tapped = bool(sample.sampled[vk] & 1)
         chord_held = bool(_hook_state[vk]) if sample.hook_alive and vk in _hook_state else held
         if not chord_held and (self.was_down.get(key, False) or tapped):
-            _send(f'A11y|keyup|{vk}')
+            send_action(f'A11y|keyup|{vk}')
         self.was_down[key] = chord_held
 
     def _plain_key(self, sample: _Sample, vk: int, editing_ended: bool) -> None:
@@ -2028,7 +2028,7 @@ class _Poller:
             self.was_down[key] = False
             return
         down = held or tapped
-        message = _plain_message(
+        message = plain_message(
             vk, sample.ctrl, sample.alt, sample.shift if held else sample.shift_tapped
         )
         if vk in _opening_keys:
@@ -2036,7 +2036,7 @@ class _Poller:
             # a new physical press. Never synthesize another click.
             if not held:
                 _opening_keys.discard(vk)
-                _send(f'A11y|keyup|{vk}')
+                send_action(f'A11y|keyup|{vk}')
             self.was_down[key] = held
             return
         if sample.chord:
@@ -2044,14 +2044,14 @@ class _Poller:
             return
         if down and not self.was_down.get(key, False):
             if message:
-                _send(message)
+                send_action(message)
             self.pressed_at[key] = now
             self.last_fire[key] = now
-        elif held and message is not None and message in _REPEATABLE and self._repeat_due(key, now):
-            _send(message)
+        elif held and message is not None and message in REPEATABLE and self._repeat_due(key, now):
+            send_action(message)
             self.last_fire[key] = now
         if not held and (self.was_down.get(key, False) or tapped):
-            _send(f'A11y|keyup|{vk}')
+            send_action(f'A11y|keyup|{vk}')
         self.was_down[key] = held
 
 
@@ -2087,7 +2087,9 @@ def stop() -> None:
 
 def _keys_listing(output: Callable[[str], object]) -> None:
     for label, combos in BINDINGS.values():
-        output('   {}: {}'.format(label, ' or '.join(_describe(vk, alt) for (vk, alt) in combos)))
+        output(
+            '   {}: {}'.format(label, ' or '.join(describe_key(vk, alt) for (vk, alt) in combos))
+        )
     for vk, (intent, _rep) in CHORDS.items():
         output(f'   {intent}: Ctrl+Alt+{CHORD_NAMES.get(vk, hex(vk))}')
     output('   needs: Ctrl+Shift+N; accessibility menu: Ctrl+Alt+H')
@@ -2101,13 +2103,13 @@ def a11y_keys(mode: str = 'on', _connection: Any = None) -> bool:
         if mode.lower() in ('off', 'false', '0'):
             status.enabled = False
             settings.set('keyboard', False)
-            _send('A11yKeyboardOff')
+            send_action('A11yKeyboardOff')
             output('simsight: keyboard navigation OFF')
             speech.speak('Keyboard navigation off.', explicit=True)
             return True
         status.enabled = True
         settings.set('keyboard', True)
-        _send('A11yKeyboardOn')
+        send_action('A11yKeyboardOn')
         started = start()
         output('simsight: keyboard navigation {}'.format('ON' if started else 'UNAVAILABLE'))
         _keys_listing(output)
@@ -2118,7 +2120,7 @@ def a11y_keys(mode: str = 'on', _connection: Any = None) -> bool:
         return False
 
 
-def _describe(vk: int, needs_alt: bool) -> str:
+def describe_key(vk: int, needs_alt: bool) -> str:
     for name, code in _KEY_NAMES.items():
         if code == vk:
             return ('Alt+' if needs_alt else '') + name
@@ -2135,7 +2137,7 @@ def a11y_keyprobe(mode: str = 'off', _connection: Any = None) -> bool:
     if value not in ('on', 'off'):
         return False
     try:
-        _send('A11yKeyProbeOn' if value == 'on' else 'A11yKeyProbeOff')
+        send_action('A11yKeyProbeOn' if value == 'on' else 'A11yKeyProbeOff')
         sims4.commands.CheatOutput(_connection)(
             'simsight: key probe {} requested{}'.format(
                 value, ' for 60 seconds (key/modifier metadata only)' if value == 'on' else ''

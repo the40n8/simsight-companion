@@ -19,14 +19,14 @@ module(
     speak=lambda text, **kw: SPOKEN.append((text, kw)),
     log_line=lambda *a: None,
     MODS_FOLDER='/nonexistent',
-    _mods_root=lambda: '/nonexistent',
+    mods_root=lambda: '/nonexistent',
 )
 module('sims4')
 module(
     'sims4.commands', Command=lambda *a, **k: lambda f: f, CommandType=types.SimpleNamespace(Live=1)
 )
 module('sims4.core_services', on_tick=lambda *a, **k: None)
-module('simsight_scanner', _loc_cache={5: 'Fridge'})
+module('simsight_scanner', loc_cache={5: 'Fridge'})
 GAME = {'zone': None}
 module(
     'services',
@@ -64,9 +64,9 @@ class Tokens(unittest.TestCase):
             definition=token(name='fridge_Cheap'),
             catalog_name=5,
         )
-        self.assertEqual(bridge._object_name(obj), 'Fridge')
+        self.assertEqual(bridge.object_name(obj), 'Fridge')
         obj.catalog_name = 6  # not known yet: the tuning name, and asked of the UI
-        self.assertEqual(bridge._object_name(obj), 'Fridge Cheap')
+        self.assertEqual(bridge.object_name(obj), 'Fridge Cheap')
         self.assertIn(6, bridge._state.loc_wanted)
 
 

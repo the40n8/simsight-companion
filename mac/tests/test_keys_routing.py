@@ -128,38 +128,38 @@ class PlainMessageTest(unittest.TestCase):
         reset()
 
     def test_world_keys_stay_with_the_game(self):
-        self.assertIsNone(keys._plain_message(0x28))
-        self.assertIsNone(keys._plain_message(0x09, shift=True))  # first-person camera
-        self.assertEqual(keys._plain_message(0x09), 'A11yTabNext')
-        self.assertEqual(keys._plain_message(0x4E, ctrl=True, shift=True), 'A11yNeeds')
+        self.assertIsNone(keys.plain_message(0x28))
+        self.assertIsNone(keys.plain_message(0x09, shift=True))  # first-person camera
+        self.assertEqual(keys.plain_message(0x09), 'A11yTabNext')
+        self.assertEqual(keys.plain_message(0x4E, ctrl=True, shift=True), 'A11yNeeds')
 
     def test_modal_owner(self):
         keys.status.modal_active = True
-        self.assertEqual(keys._plain_message(0x28), 'A11yArrowDown')
-        self.assertEqual(keys._plain_message(0x09, shift=True), 'A11yTabPrev')
-        self.assertEqual(keys._plain_message(0x1B), 'A11yEscape')
-        self.assertIsNone(keys._plain_message(0x28, shift=True))
-        self.assertIsNone(keys._plain_message(0x28, ctrl=True))
-        self.assertIsNone(keys._plain_message(0x64))
+        self.assertEqual(keys.plain_message(0x28), 'A11yArrowDown')
+        self.assertEqual(keys.plain_message(0x09, shift=True), 'A11yTabPrev')
+        self.assertEqual(keys.plain_message(0x1B), 'A11yEscape')
+        self.assertIsNone(keys.plain_message(0x28, shift=True))
+        self.assertIsNone(keys.plain_message(0x28, ctrl=True))
+        self.assertIsNone(keys.plain_message(0x64))
         SETTINGS['numpad_navigation'] = True
-        self.assertEqual(keys._plain_message(0x64), 'A11yArrowUp')
+        self.assertEqual(keys.plain_message(0x64), 'A11yArrowUp')
 
     def test_editing_keeps_arrows(self):
         keys.status.modal_active = True
         keys.status.editing_active = True
-        self.assertIsNone(keys._plain_message(0x28))
-        self.assertEqual(keys._plain_message(0x1B), 'A11yEscape')
+        self.assertIsNone(keys.plain_message(0x28))
+        self.assertEqual(keys.plain_message(0x1B), 'A11yEscape')
 
     def test_build_cursor_and_scanner(self):
         keys.status.build_grid_owner = True
-        self.assertEqual(keys._plain_message(0x52), 'A11yBuildGrid:turn')
-        self.assertEqual(keys._plain_message(0x52, shift=True), 'A11yBuildGrid:turnback')
+        self.assertEqual(keys.plain_message(0x52), 'A11yBuildGrid:turn')
+        self.assertEqual(keys.plain_message(0x52, shift=True), 'A11yBuildGrid:turnback')
         keys.status.build_grid_owner = False
         keys._state.scanner_owner = True
         SETTINGS['scanner_mode'] = True
-        self.assertEqual(keys._plain_message(0x28), 'A11yScanner:next')
+        self.assertEqual(keys.plain_message(0x28), 'A11yScanner:next')
         keys.status.enabled = False
-        self.assertIsNone(keys._plain_message(0x28))
+        self.assertIsNone(keys.plain_message(0x28))
 
 
 class ChordTest(unittest.TestCase):
@@ -167,7 +167,7 @@ class ChordTest(unittest.TestCase):
         reset()
 
     def test_world_chord_is_queued(self):
-        keys._chord('next')
+        keys.run_chord('next')
         self.assertEqual(POSTED, [('_world_chord', 'next', keys._state.input_epoch)])
         del POSTED[:]
         keys.repeat_chord('next')
@@ -176,17 +176,17 @@ class ChordTest(unittest.TestCase):
 
     def test_modal_owner_gets_navigation(self):
         keys.status.modal_active = True
-        keys._chord('next')
+        keys.run_chord('next')
         self.assertEqual(POSTED, [('_deliver_activation', 'A11yNavNext', keys._state.input_epoch)])
-        keys._chord('rescan')
+        keys.run_chord('rescan')
         self.assertEqual(len(POSTED), 1)  # nothing reaches the world behind a dialog
-        keys._chord('help')
+        keys.run_chord('help')
         self.assertTrue(SPOKEN[-1].startswith('Dialog.'))
 
     def test_pickers_and_phone_wait_for_the_dialog(self):
         keys.status.modal_active = True
-        keys._chord('queue')
-        keys._chord('phone')
+        keys.run_chord('queue')
+        keys.run_chord('phone')
         self.assertEqual(
             SPOKEN,
             [
@@ -196,19 +196,19 @@ class ChordTest(unittest.TestCase):
         )
         self.assertEqual(POSTED, [])
         keys.status.modal_active = False
-        keys._chord('catalog')
-        keys._chord('sim2')
+        keys.run_chord('catalog')
+        keys.run_chord('sim2')
         self.assertEqual(
             [p[:2] for p in POSTED], [('_open_catalog', 'catalog'), ('_switch_household_sim', 2)]
         )
 
     def test_text_field_owns_most_chords(self):
         keys.status.editing_active = True
-        keys._chord('next')
-        keys._chord('scannermode')
-        keys._chord('clock')
+        keys.run_chord('next')
+        keys.run_chord('scannermode')
+        keys.run_chord('clock')
         self.assertEqual(POSTED, [])
-        keys._chord('repeat')
+        keys.run_chord('repeat')
         self.assertEqual(SPOKEN, ['repeat'])
 
     def test_stale_pump_turn_is_dropped(self):
@@ -233,16 +233,24 @@ class PollerTest(unittest.TestCase):
         reset()
         self.sent = []
         self.chords = []
-        self._send, self._chord, self._fg = keys._send, keys._chord, keys._game_is_foreground
-        keys._send = self.sent.append
-        keys._chord = self.chords.append
+        self._send, self._chord, self._fg = (
+            keys.send_action,
+            keys.run_chord,
+            keys._game_is_foreground,
+        )
+        keys.send_action = self.sent.append
+        keys.run_chord = self.chords.append
         keys._game_is_foreground = lambda user32, kernel32: True
         self.user32 = FakeUser32()
         self.poller = keys._Poller(self.user32, None)
         self.poller.last_lease = time.monotonic() + 3600  # no lease in these tests
 
     def tearDown(self):
-        keys._send, keys._chord, keys._game_is_foreground = self._send, self._chord, self._fg
+        keys.send_action, keys.run_chord, keys._game_is_foreground = (
+            self._send,
+            self._chord,
+            self._fg,
+        )
 
     def test_press_repeat_release(self):
         keys.status.modal_active = True

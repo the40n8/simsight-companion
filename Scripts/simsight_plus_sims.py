@@ -44,7 +44,7 @@ class _Draft:
         self.traits: list[Any] = []
 
 
-class _Fake:
+class FakeSim:
     """Stands in for a Sim when checking which traits fit an age and gender."""
 
     def __init__(self, age: Any, gender: Any) -> None:
@@ -63,15 +63,15 @@ class _State:
 _state = _State()
 
 
-def _age_enum(name: str) -> Any:
+def age_enum(name: str) -> Any:
     from sims.sim_info_types import Age
 
     return getattr(Age, name)
 
 
-def _age_name(age: Any) -> str:
+def age_name(age: Any) -> str:
     for label, key, _ in AGE_CHOICES:
-        if _age_enum(key) == age:
+        if age_enum(key) == age:
             return label
     return str(age)
 
@@ -87,7 +87,7 @@ def age_rows(keys: tuple[str, ...] | None = None) -> list[Row]:
     return [(label, desc, key) for (label, key, desc) in AGE_CHOICES if keys is None or key in keys]
 
 
-def _is_personality_trait(trait: Any, fake: _Fake) -> bool:
+def _is_personality_trait(trait: Any, fake: FakeSim) -> bool:
     try:
         if not trait.is_personality_trait:
             return False
@@ -108,7 +108,7 @@ def personality_traits(age: Any, gender: Any) -> list[Any]:
     import services
     import sims4.resources
 
-    fake = _Fake(age, gender)
+    fake = FakeSim(age, gender)
     manager = services.get_instance_manager(sims4.resources.Types.TRAIT)
     out = [trait for trait in manager.types.values() if _is_personality_trait(trait, fake)]
     out.sort(key=lambda t: t.__name__.lower().replace('trait_', ''))
@@ -329,7 +329,7 @@ def _about_rows(info: Any) -> list[Row]:
 
 
 def describe(info: Any) -> None:
-    parts = [core.sim_name(info), _age_name(info.age)]
+    parts = [core.sim_name(info), age_name(info.age)]
     try:
         parts.append(_gender_word(info.gender))
     except Exception:  # said without the gender
@@ -339,7 +339,7 @@ def describe(info: Any) -> None:
     if rows:
         core.choose(
             f'About {info.first_name}',
-            f'{core.sim_name(info)}. {_age_name(info.age)}.',
+            f'{core.sim_name(info)}. {age_name(info.age)}.',
             rows,
             lambda v: None,
             tag='sims',
@@ -442,7 +442,7 @@ def _is_offered(track: Any, info: Any) -> bool:
 
 
 def aspiration_tracks(info: Any) -> list[Any]:
-    """The aspirations a Sim (or a _Fake) can choose, sorted as the game sorts them."""
+    """The aspirations a Sim (or a FakeSim) can choose, sorted as the game sorts them."""
     import services
     import sims4.resources
 
@@ -519,7 +519,7 @@ def start_new() -> None:
 
 
 def _got_age(key: str) -> None:
-    _state.draft.age = _age_enum(key)
+    _state.draft.age = age_enum(key)
     core.choose(
         'New Sim: gender',
         'Step 2 of 5. Choose a gender.',

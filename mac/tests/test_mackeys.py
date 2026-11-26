@@ -15,11 +15,11 @@ module('simsight_pump', alive=lambda: True, post=lambda fn, *a: LOG.append(('pos
 KEYS = module(
     'simsight_keys',
     status=types.SimpleNamespace(enabled=True),
-    _REPEAT_DELAY=0.03,
-    _REPEAT_INTERVAL=0.0,
+    REPEAT_DELAY=0.03,
+    REPEAT_INTERVAL=0.0,
     CHORDS={0x28: ('next', True), 0x48: ('help', False)},
-    _REPEATABLE={'A11yArrowDown'},
-    _announce_ui_settings=lambda: None,
+    REPEATABLE={'A11yArrowDown'},
+    announce_ui_settings=lambda: None,
 )
 KEYS.modal = True
 
@@ -32,9 +32,9 @@ def plain(vk, ctrl, alt, shift):
     return None if shift else {0x28: 'A11yArrowDown', 0x0D: 'A11yActivate'}.get(vk)
 
 
-KEYS._plain_message = plain
-KEYS._send = lambda m: LOG.append(('send', m))
-KEYS._chord = lambda i: LOG.append(('chord', i, False))
+KEYS.plain_message = plain
+KEYS.send_action = lambda m: LOG.append(('send', m))
+KEYS.run_chord = lambda i: LOG.append(('chord', i, False))
 KEYS.repeat_chord = lambda i: LOG.append(('chord', i, True))
 
 
@@ -42,7 +42,7 @@ def read_time():
     LOG.append(('plus', 'time'))
 
 
-module('simsight_plus_core', HOTKEYS={0x54: (read_time, 'time')}, _wants_shift=lambda fn: False)
+module('simsight_plus_core', HOTKEYS={0x54: (read_time, 'time')}, wants_shift=lambda fn: False)
 
 import simsight_mackeys as mackeys  # noqa: E402
 

@@ -132,7 +132,7 @@ def _safe_target(obj: Any, level: int) -> bool:
             and int(obj.level) == int(level)
             and not obj.is_in_inventory()
             and not obj.is_hidden()
-            and obj.get_household_owner_id() in (None, 0, place._household_id())
+            and obj.get_household_owner_id() in (None, 0, place.household_id())
             and services.active_lot().is_position_on_lot(obj.position)
         )
     except (AttributeError, TypeError, ValueError):
@@ -304,7 +304,9 @@ def try_place(item: dict[str, Any], frame: Any) -> bool | None:
         target = grid.cursor()
         if target is None:
             return False
-        return place.place(target[0], grid.location.level, grid._surface(), chair_request=request)
+        return place.place(
+            target[0], grid.location.level, grid.world_surface(), chair_request=request
+        )
     except Exception:
         simsight_log.error('chair snap: request refused')
         speech.speak('The chair seat could not be checked. Nothing was bought.', explicit=True)
@@ -392,7 +394,7 @@ def fit_parts(item: dict[str, Any], frame: Any) -> list[str] | None:
             )
             return [
                 'Chair will snap at ',
-                grid._name(table),
+                grid.object_name_part(table),
                 '. Seat ',
                 tiles.relative(di, dj),
                 '. Enter places it using the game’s validation. ',
@@ -414,12 +416,12 @@ def announce(obj: Any, item: dict[str, Any], price: int, table: Any) -> None:
     import simsight_grid as grid
     import simsight_scanner as scanner
 
-    scanner._speak_parts(
+    scanner.speak_parts(
         [
             'Placed ',
             item.get('name') or 'chair',
             ' at ',
-            grid._name(table),
+            grid.object_name_part(table),
             f' using the game’s chair slot, for {price} simoleons.',
         ]
     )

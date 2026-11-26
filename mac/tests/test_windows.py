@@ -22,7 +22,7 @@ module(
     speak=lambda text, **kw: SPOKEN.append((text, kw)),
     log_line=LOGGED.append,
     MODS_FOLDER='/nonexistent',
-    _mods_root=lambda: '/nonexistent',
+    mods_root=lambda: '/nonexistent',
 )
 module('sims4')
 module(

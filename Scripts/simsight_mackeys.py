@@ -6,11 +6,11 @@ captures the keys with system hot keys while The Sims 4 is the front app and
 the bridge passes them here. This module feeds them into the same entry
 points the Windows reader uses, on the game's tick (no threads):
 
-- "chord": the Windows Ctrl+Alt+key (Mac: Control+Shift+key) -> keys._chord
+- "chord": the Windows Ctrl+Alt+key (Mac: Control+Shift+key) -> keys.run_chord
 - "needs": Ctrl+Shift+N (Mac: Control+Shift+N) -> A11yNeeds
 - "plus":  the Windows Alt+key (Mac: Option+Shift+key) -> plus_core.HOTKEYS
 - "plain": bare keys (arrows, Tab, Enter...) the mod owns right now
-  (keys._plain_message decides, like the Windows reader) -> keys._send
+  (keys.plain_message decides, like the Windows reader) -> keys.send_action
 
 The helper only takes bare keys the mod owns: grab_set() lists them and the
 bridge forwards the list to the helper whenever it changes. Held keys repeat
@@ -105,7 +105,7 @@ def _pump_alive() -> bool:
 
 
 def _needs(keys: Any, key: HeldKey, now: float) -> bool:
-    keys._send('A11yNeeds')
+    keys.send_action('A11yNeeds')
     return True
 
 
@@ -114,7 +114,7 @@ def _chord_key(keys: Any, key: HeldKey, now: float) -> bool:
     if entry is None:
         return False
     intent, repeats = entry
-    keys._chord(intent)
+    keys.run_chord(intent)
     if repeats:
         _held[key] = _Held(intent, now, now)
     return True
@@ -128,7 +128,7 @@ def _plus_key(keys: Any, key: HeldKey, now: float) -> bool:
         return False
     fn = entry[0]
     try:
-        if core._wants_shift(fn):
+        if core.wants_shift(fn):
             fn(key[2])
         else:
             fn()
@@ -138,11 +138,11 @@ def _plus_key(keys: Any, key: HeldKey, now: float) -> bool:
 
 
 def _plain_key(keys: Any, key: HeldKey, now: float) -> bool:
-    message = keys._plain_message(key[1], False, False, key[2])
+    message = keys.plain_message(key[1], False, False, key[2])
     if message is None:
         return False
-    keys._send(message)
-    if message in keys._REPEATABLE:
+    keys.send_action(message)
+    if message in keys.REPEATABLE:
         _held[key] = _Held(message, now, now)
     return True
 
@@ -162,7 +162,7 @@ def handle(family: str, vk: int, down: bool, shift: bool) -> bool:
     if not down:
         _held.pop(key, None)
         if family == 'plain':
-            keys._send(f'A11y|keyup|{vk}')
+            keys.send_action(f'A11y|keyup|{vk}')
         return True
     handler = _FAMILIES.get(family)
     if handler is None:
@@ -174,15 +174,15 @@ def _repeat(now: float) -> None:
     keys = _keys()
     for (family, _vk, _shift), entry in list(_held.items()):
         if (
-            now - entry.pressed_at < keys._REPEAT_DELAY
-            or now - entry.last_fire < keys._REPEAT_INTERVAL
+            now - entry.pressed_at < keys.REPEAT_DELAY
+            or now - entry.last_fire < keys.REPEAT_INTERVAL
         ):
             continue
         entry.last_fire = now
         if family == 'chord':
             keys.repeat_chord(entry.what)
         else:
-            keys._send(entry.what)
+            keys.send_action(entry.what)
 
 
 def grab_set() -> list[str]:
@@ -190,11 +190,9 @@ def grab_set() -> list[str]:
     if not _pump_alive():
         return []
     keys = _keys()
-    out = [
-        str(vk) for vk in _CANDIDATES if keys._plain_message(vk, False, False, False) is not None
-    ]
+    out = [str(vk) for vk in _CANDIDATES if keys.plain_message(vk, False, False, False) is not None]
     out.extend(
-        f'{vk}+shift' for vk in _SHIFTED if keys._plain_message(vk, False, False, True) is not None
+        f'{vk}+shift' for vk in _SHIFTED if keys.plain_message(vk, False, False, True) is not None
     )
     return out
 
@@ -203,11 +201,11 @@ def _lease() -> None:
     """Keep Flash's keyboard guards on, and the UI copies' settings current."""
     keys = _keys()
     if keys.status.enabled and _pump_alive():
-        keys._send('A11y|lease')
+        keys.send_action('A11y|lease')
         try:
             import simsight_pump as pump
 
-            pump.post(keys._announce_ui_settings)
+            pump.post(keys.announce_ui_settings)
         except Exception:
             simsight_log.error('mackeys: settings heartbeat')
 
@@ -233,5 +231,5 @@ def focus_lost() -> None:
     keys = _keys()
     for family, vk, _shift in list(_held):
         if family == 'plain':
-            keys._send(f'A11y|keyup|{vk}')
+            keys.send_action(f'A11y|keyup|{vk}')
     _held.clear()

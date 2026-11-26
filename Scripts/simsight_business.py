@@ -106,7 +106,7 @@ def business_lines(manager: Any) -> list[str]:
 def _open_panel() -> bool:
     import simsight_hub as hub
 
-    hub._ui('OpenHouseholdInfoVenuePanel')
+    hub.send_ui('OpenHouseholdInfoVenuePanel')
     return True
 
 
@@ -129,8 +129,8 @@ def businesses_window() -> bool:
         except Exception:  # noqa: PERF203 - one unreadable business must not hide the others
             simsight_log.error(f'business: {type(manager).__name__} unreadable')
             continue
-        rows.append((menu._raw(business_name(manager)), menu._raw(text), _open_panel))
+        rows.append((menu.raw_text(business_name(manager)), menu.raw_text(text), _open_panel))
     if not rows:
         _say('no businesses')
         return False
-    return hub._window('businesses', 'businesses instructions', rows)
+    return hub.show_window('businesses', 'businesses instructions', rows)

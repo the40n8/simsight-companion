@@ -118,12 +118,12 @@ def _fence_point() -> tuple[Frame, int, Any, float] | None:
     import simsight_tiles as tiles
     import simsight_wall as wall
 
-    state = wall._wall_state()
+    state = wall.wall_state()
     if state is None:
         return None
     frame, sides, doors = state
     side = int(grid.location.facing) % 4
-    if side in doors or not wall._blocked(sides.get(side)):
+    if side in doors or not wall.blocked_side(sides.get(side)):
         return None
     i, j = grid.location.tile
     di, dj = tiles.STEPS[side]
@@ -219,7 +219,7 @@ def _placement(
     angle, point = frame.yaw(int(grid.location.facing) % 4), position
     if need == 'terrain':
         if _natural_ground(position, grid.location.level) is not True:
-            place_mod._say_text(
+            place_mod.say_text(
                 'This object needs natural ground with no floor tiles.',
                 'Ten obiekt wymaga naturalnego terenu bez podłogi.',
             )
@@ -227,7 +227,7 @@ def _placement(
     elif need == 'water':
         point, depth, kind = _water_point(position, grid.location.level)
         if point is None:
-            place_mod._say_text(
+            place_mod.say_text(
                 'This object needs water, and no water surface was detected here.',
                 'Ten obiekt wymaga wody, a tutaj jej nie wykryto.',
             )
@@ -236,7 +236,7 @@ def _placement(
     elif need == 'ceiling':
         point = _ceiling_point(position, grid.location.level)
         if point is None:
-            place_mod._say_text(
+            place_mod.say_text(
                 'No ceiling anchor could be sampled here.',
                 'Nie znaleziono punktu sufitu w tym miejscu.',
             )
@@ -244,7 +244,7 @@ def _placement(
     else:
         selected = _fence_point()
         if selected is None:
-            place_mod._say_text(
+            place_mod.say_text(
                 'No fence-like edge is selected. Turn with R or move beside a fence.',
                 'Nie wybrano krawędzi płotu. Obróć R albo przejdź obok płotu.',
             )
@@ -261,7 +261,7 @@ def place(item: dict[str, Any], need: str) -> bool:
 
     frame, position = tiles.frame(), _cursor_position()
     if frame is None or position is None:
-        place_mod._say_text(
+        place_mod.say_text(
             'Experimental placement could not check this tile. Nothing was bought.',
             'Nie można sprawdzić tego pola. Nic nie kupiono.',
         )
@@ -271,4 +271,6 @@ def place(item: dict[str, Any], need: str) -> bool:
         return False
     point, angle = chosen
     _log('product {} requirement {} sent to exact validation'.format(item['id'], need))
-    return place_mod.place(point, grid.location.level, grid._surface(), angle=angle, exact=True)
+    return place_mod.place(
+        point, grid.location.level, grid.world_surface(), angle=angle, exact=True
+    )

@@ -71,7 +71,7 @@ def _lines(*parts: Any) -> Any:
     """One localized description from EA strings and narration text."""
     from sims4.localization import LocalizationHelperTuning
 
-    strings = [menu._raw(p) if isinstance(p, str) else p for p in parts if p]
+    strings = [menu.raw_text(p) if isinstance(p, str) else p for p in parts if p]
     if not strings:
         return None
     if len(strings) == 1:
@@ -207,11 +207,11 @@ def milestones_window() -> Any:
         reached = sum(1 for m, d in items if _reached_count(m, d))
         detail = lang.t('milestone category detail').format(reached, len(items))
         rows.append(
-            (name, menu._raw(detail), functools.partial(milestone_category, sim_id, category))
+            (name, menu.raw_text(detail), functools.partial(milestone_category, sim_id, category))
         )
     if not rows:
         return _no_rows('no milestones', info)
-    return hub._window(
+    return hub.show_window(
         'milestones', lang.t('milestones instructions').format(names.full_name(info)), rows
     )
 
@@ -240,7 +240,7 @@ def milestone_category(sim_id: Any, category: Any) -> Any:
         rows.append((name, detail, lambda: milestone_category(sim_id, category)))
     if not rows:
         return _no_rows('no milestones', info)
-    return hub._window(
+    return hub.show_window(
         'milestones',
         lang.t('milestone list instructions'),
         rows,
@@ -336,7 +336,7 @@ def values_window() -> Any:
         rows.append((name, detail, values_window))
     if not rows:
         return _no_rows('no character values', info)
-    return hub._window(
+    return hub.show_window(
         'character values',
         lang.t('character values instructions').format(names.full_name(info)),
         rows,

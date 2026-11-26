@@ -114,7 +114,7 @@ def _on_active_lot(obj: Any, default: bool) -> bool:
 
 
 def _find(name: str) -> str | None:
-    for folder in (speech.MODS_FOLDER, os.path.join(speech._mods_root(), 'SimSight')):
+    for folder in (speech.MODS_FOLDER, os.path.join(speech.mods_root(), 'SimSight')):
         path = os.path.join(folder, name)
         if os.path.isfile(path):
             return path
@@ -563,20 +563,20 @@ def _set_speed(name: str) -> bool:
 
 def _loc_cache() -> dict[int, str]:
     scanner = sys.modules.get('simsight_scanner')
-    return getattr(scanner, '_loc_cache', {}) if scanner else {}
+    return getattr(scanner, 'loc_cache', {}) if scanner else {}
 
 
 def _request_localization() -> None:
     scanner = sys.modules.get('simsight_scanner')
     if scanner is None or not _state.loc_wanted:
         return
-    cache = scanner._loc_cache
+    cache = scanner.loc_cache
     for key in list(_state.loc_wanted)[:LOC_PER_TICK]:
         _state.loc_wanted.discard(key)
         if key in cache or key in _state.loc_requested:
             continue
         _state.loc_requested.add(key)
-        scanner._send_ui(f'A11y|loc|{key}|{key}')
+        scanner.send_ui(f'A11y|loc|{key}|{key}')
 
 
 def _cached_text(key: int) -> str | None:
@@ -788,7 +788,7 @@ def _actions(sim: Any) -> list[Json]:
     import simsight_hub as hub
 
     out = []
-    for info, interaction, state in hub._queue_entries(sim):
+    for info, interaction, state in hub.queue_entries(sim):
         fallback = ''
         if interaction is not None and hasattr(interaction, 'affordance'):
             fallback = _pretty(
@@ -856,7 +856,7 @@ def _career(info: Any, entry: Json) -> None:
     if not careers:
         return
     career = careers[0]
-    word = t._career_word(career)
+    word = t.career_word(career)
     entry['career'] = _career_title(career, info)
     performance = _performance(career)
     if performance is not None:
@@ -1318,10 +1318,10 @@ def _destination(holder: Any, item: Any, d: float) -> Json | None:
     row = None
     with _logged('destination'):
         if holder.inventory_component.can_add(item):
-            group, kind, _keywords = _classify(holder)
+            group, kind, _keywords = classify(holder)
             row = {
                 'id': str(holder.id),
-                'name': _object_name(holder),
+                'name': object_name(holder),
                 'group': group,
                 'kind': kind,
                 'distance': int(round(d)),
@@ -1356,11 +1356,11 @@ def _holder_distance(obj: Any, sim: Any) -> float | None:
 
 def _inventory_row(sim: Any, item: Any, holders: list[tuple[float, Any]]) -> Json | None:
     try:
-        group, kind, _keywords = _classify(item)
+        group, kind, _keywords = classify(item)
         return {
             'item': {
                 'id': str(item.id),
-                'name': _object_name(item),
+                'name': object_name(item),
                 'group': group,
                 'kind': kind,
             },
@@ -1475,7 +1475,7 @@ def _failure_object_name(failure_object_id: Any) -> str:
     if obj is None:
         return ''
     if not getattr(obj, 'is_sim', False):
-        return _object_name(obj)
+        return object_name(obj)
     return names.full_name(obj.sim_info).strip()
 
 
@@ -1610,7 +1610,7 @@ def _problem(obj: Any, sim: Any, types: _ProblemTypes) -> Json | None:
     with _logged('problem object'):
         kind = _problem_kind(obj, types) if _problem_listable(obj) else None
         if kind is not None:
-            entry = {'kind': kind, 'targetId': str(obj.id), 'name': _object_name(obj)}
+            entry = {'kind': kind, 'targetId': str(obj.id), 'name': object_name(obj)}
             if sim is not None:
                 entry['distance'] = int(round(_distance(obj.position, sim.position)))
     return entry
@@ -1687,7 +1687,7 @@ def _custom_name(obj: Any) -> str:
     return ''
 
 
-def _object_name(obj: Any) -> str:
+def object_name(obj: Any) -> str:
     custom = _custom_name(obj)
     if custom:
         return custom
@@ -1713,7 +1713,7 @@ def _loc_key_text(key: int) -> str:
     return '' if cached is None else _fill_tokens(cached, [])
 
 
-def _classify(obj: Any) -> tuple[str, str, str]:
+def classify(obj: Any) -> tuple[str, str, str]:
     """(group, kind, keywords) from the scanner's catalog classification."""
     scanner = sys.modules.get('simsight_scanner')
     buycat = sys.modules.get('simsight_buycat')
@@ -1785,10 +1785,10 @@ def _target_distance(obj: Any, sim: Any) -> float | None:
 
 def _object_target(obj: Any, d: float) -> Json | None:
     try:
-        group, kind, keywords = _classify(obj)
+        group, kind, keywords = classify(obj)
         return {
             'id': str(obj.id),
-            'name': _object_name(obj),
+            'name': object_name(obj),
             'group': group,
             'kind': kind,
             'keywords': keywords,

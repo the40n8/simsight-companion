@@ -51,8 +51,8 @@ _lock = threading.Lock()
 _local = threading.local()
 
 
-def _api() -> Any:
-    u = display._api()
+def user32_api() -> Any:
+    u = display.user32_api()
     signatures = {
         'SetThreadDpiAwarenessContext': (ctypes.c_void_p, [ctypes.c_void_p]),
         'SetCursorPos': (ctypes.c_int32, [ctypes.c_int32, ctypes.c_int32]),
@@ -121,7 +121,7 @@ def window(u: Any) -> Geometry:
 
 
 def capture_window() -> Geometry:
-    u = _api()
+    u = user32_api()
     with physical_context(u):
         return window(u)
 
@@ -271,7 +271,7 @@ def _new_job() -> tuple[int, dict[str, Any]]:
     return ident, job
 
 
-def _measure(
+def measure(
     x: float, z: float, level: int, height: float = 0.0, timeout: float = 3.0
 ) -> tuple[dict[str, Any], Frame]:
     """Ask the UI to project the world point; (its reply, the measured frame)."""
@@ -285,7 +285,7 @@ def _measure(
 
             job['zone'] = int(services.current_zone_id())
             y = build.floor_height(x, z, level) + height
-            build._send_ui(
+            build.send_ui(
                 'A11y|coords|{}|{:.6f}|{:.6f}|{:.6f}|{}|{}'.format(
                     ident, x, y, z, level, job['zone']
                 )
@@ -318,7 +318,7 @@ def _measure(
 def project(x: float, z: float, level: int, timeout: float = 2.5, height: float = 0.0) -> Any:
     """The UI point of the world point, or None."""
     try:
-        result, _frame = _measure(x, z, level, height, timeout=max(2.5, timeout))
+        result, _frame = measure(x, z, level, height, timeout=max(2.5, timeout))
         return result['point'] if result['status'] == 'point' else None
     except (RuntimeError, ValueError) as exc:  # refused, timed out or moved: logged, no point
         simsight_log.json_line(_LOG, 'project-refused', error=str(exc))
@@ -344,7 +344,7 @@ def _current(u: Any) -> Frame:
 
 
 def stage_size() -> tuple[float, float]:
-    u = _api()
+    u = user32_api()
     with physical_context(u):
         f = _current(u)
         return f.width, f.height
@@ -352,7 +352,7 @@ def stage_size() -> tuple[float, float]:
 
 def to_screen(x: float, y: float) -> tuple[int, int]:
     """Screen pixel of the UI point (x, y)."""
-    u = _api()
+    u = user32_api()
     with physical_context(u):
         f = _current(u)
         cx, cy = f.client(x, y, _state.build.OFFSET)
@@ -401,7 +401,7 @@ def _move(u: Any, x: float, y: float) -> None:
 
 def move_to(x: float, y: float) -> None:
     """Put the real pointer on the screen pixel; raises (button released) when refused."""
-    u = _api()
+    u = user32_api()
     try:
         with physical_context(u):
             _move(u, x, y)
@@ -442,7 +442,7 @@ def _press_left(u: Any, flags: int, data: int) -> None:
 
 def mouse(flags: int, data: int = 0) -> Any:
     """A mouse button event; the left button goes down only where move_to put it."""
-    u = _api()
+    u = user32_api()
     build = _state.build
     if flags == build.LEFT_UP:
         u.mouse_event(flags, 0, 0, data, 0)
@@ -461,7 +461,7 @@ def mouse(flags: int, data: int = 0) -> Any:
 
 def clear_of_panels(point: Any) -> bool:
     try:
-        u = _api()
+        u = user32_api()
         with physical_context(u):
             return _current(u).clear(point)
     except RuntimeError:  # not measured, or the window changed: not known to be clear
@@ -471,10 +471,10 @@ def clear_of_panels(point: Any) -> bool:
         return False
 
 
-def _guarded_action(original: Any, args: tuple[Any, ...], shift: bool) -> Any:
+def guarded_action(original: Any, args: tuple[Any, ...], shift: bool) -> Any:
     """Run a click or drag helper in the measured frame, releasing the
     button (and Shift) whatever happens."""
-    u = _api()
+    u = user32_api()
     with physical_context(u):
         f = _current(u)
         if shift and u.GetAsyncKeyState(_SHIFT[0]) & 0x8000:
@@ -492,7 +492,7 @@ def _guarded_action(original: Any, args: tuple[Any, ...], shift: bool) -> Any:
 def park_mouse() -> None:
     """Move the pointer out of the way, in the upper middle of the game window."""
     try:
-        u = _api()
+        u = user32_api()
         with physical_context(u):
             g = window(u)
             u.SetCursorPos(g[1] + g[3] // 2, g[2] + g[4] // 3)
@@ -515,7 +515,7 @@ def install() -> None:
 def _original_mouse(flags: int, data: int = 0) -> Any:
     import simsight_plus_build as build
 
-    return build._mouse_base(flags, data)
+    return build.mouse_base(flags, data)
 
 
 def _sim_point() -> tuple[float, float, int]:
@@ -534,7 +534,7 @@ def _preflight_work() -> None:
         point = build.on_main(_sim_point)
         if point is None:
             raise RuntimeError('Game target unavailable')
-        result, frame = _measure(*point)
+        result, frame = measure(*point)
         # Mapping only: never call move_to, mouse, click, drag or park.
         mapped = (
             to_screen(*result['point'])

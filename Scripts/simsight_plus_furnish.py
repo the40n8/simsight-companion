@@ -162,11 +162,11 @@ def _choose_item(key: str) -> tuple[str, int] | None:
         if not ok:
             return None
         index = min(ok)[1]
-    build._cat['silent_select'] = True
+    build.catalog_state['silent_select'] = True
     try:
         build.select_item(index, names[index])
     finally:
-        build._cat['silent_select'] = False
+        build.catalog_state['silent_select'] = False
     return (names[index], items[index][1])
 
 
@@ -200,9 +200,9 @@ def _spots(room: Any) -> tuple[list[Spot], Spot]:
     """Places to put things: (x, z, angle) in the corners and along the walls, away from doors, each
     turned to face into the room; the middle of the room comes last (beds go there first)."""
     f = build.frame()
-    tiles = sorted(build._room_tiles(room))
-    (e0, n0, e1, n1) = build._room_box(room)
-    door_tiles = _door_tiles(build._wall_things())
+    tiles = sorted(build.room_tiles(room))
+    (e0, n0, e1, n1) = build.room_box(room)
+    door_tiles = _door_tiles(build.wall_things())
     out = []
     for t in tiles:
         if t in door_tiles:
@@ -227,18 +227,18 @@ def _face_into_room(place: Any, room: Any) -> None:
     import sims4.math
 
     try:
-        obj = services.object_manager().get(place._last.get('obj_id'))
+        obj = services.object_manager().get(place.last_placement.get('obj_id'))
         if obj is None:
             return
         f = build.frame()
-        tiles = build._room_tiles(room)
+        tiles = build.room_tiles(room)
         fw = obj.orientation.transform_vector(sims4.math.Vector3.Z_AXIS())
         (e, n) = f.local(obj.position.x, obj.position.z)
         (fe, fn) = (fw.x, -fw.z)
         front = (int(math.floor(e + fe * 0.9)), int(math.floor(n + fn * 0.9)))
         if front in tiles:
             return
-        (e0, n0, e1, n1) = build._room_box(room)
+        (e0, n0, e1, n1) = build.room_box(room)
         (de, dn) = ((e0 + e1) / 2.0 - e, (n0 + n1) / 2.0 - n)
         (de, dn) = ((1 if de > 0 else -1), 0) if abs(de) > abs(dn) else (0, (1 if dn > 0 else -1))
         q = sims4.math.angle_to_yaw_quaternion(math.atan2(de, -dn))
@@ -320,10 +320,10 @@ def _furnish_text(room: Any, bought: list[str], missed: list[str], spent: int) -
 
 def _furnish(room: Any, item_set: tuple[str, Sequence[str]]) -> None:
     (label, keys) = item_set
-    if build._busy[0]:
+    if build.busy[0]:
         core.speak('Still working on the last build step.')
         return
-    build._busy[0] = True
+    build.busy[0] = True
     core.speak(f'Furnishing the {room.name} as a {label.lower()}. Please wait.')
 
     def work() -> None:
@@ -349,6 +349,6 @@ def _furnish(room: Any, item_set: tuple[str, Sequence[str]]) -> None:
             core.log_exc('furnish')
             _say('Sorry, furnishing failed.')
         finally:
-            build._busy[0] = False
+            build.busy[0] = False
 
     threading.Thread(target=work, name='simsight_plus_furnish', daemon=True).start()

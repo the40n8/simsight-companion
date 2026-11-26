@@ -77,7 +77,7 @@ def _portrait_request(sim_id: int, actor_id: int, zone_id: int, household_id: in
     if lot_id > 0xFFFFFFFF:
         lot_id = 0  # Native current-lot sentinel; never truncate an ID.
     name = names.full_name(info).replace('|', ' ')
-    sent = scanner._send_ui(
+    sent = scanner.send_ui(
         'A11y|pick|{}|{}|{}|{}|{:.3f}|{:.3f}|{:.3f}|{}'.format(
             sim_id, int(PickType.PICK_SKEWER), lot_id, name, *point, int(actor.level)
         )
@@ -116,7 +116,7 @@ def _rows(state: tuple[Any, Any, Any, int]) -> list[Row]:
     ):
         rows.append(
             (
-                menu._raw(names.full_name(info) or str(ident)),
+                menu.raw_text(names.full_name(info) or str(ident)),
                 None,
                 lambda ident=ident: open_sim(ident, actor_id, zone_id, household_id),
             )
@@ -139,7 +139,7 @@ def open_away_actions() -> bool:
         if not rows:
             _say('no away household sims')
             return False
-        return hub._window('away actions', 'away actions instructions', rows)
+        return hub.show_window('away actions', 'away actions instructions', rows)
     except Exception:
         simsight_log.error('away: picker')
         _say('action unavailable')

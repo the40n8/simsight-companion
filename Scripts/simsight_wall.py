@@ -49,7 +49,7 @@ def _log(message: str) -> None:
     simsight_log.line('wall: ' + message)
 
 
-def _blocked(state: str | None) -> bool:
+def blocked_side(state: str | None) -> bool:
     """A side the ray test found impassable with no object in the way.
     tiles.walls says 'wall'; tyjokr's October 1 build said 'blocked'."""
     return state in ('blocked', 'wall')
@@ -61,7 +61,7 @@ def selected_height() -> tuple[str, float]:
     return layers.wall_height()
 
 
-def _wall_state() -> tuple[Frame, dict[int, str], dict[int, Any]] | None:
+def wall_state() -> tuple[Frame, dict[int, str], dict[int, Any]] | None:
     import simsight_grid as grid
     import simsight_tiles as tiles
 
@@ -79,12 +79,12 @@ def selected_wall() -> tuple[Frame, int] | None:
     """(frame, side) when the cursor faces a real wall, else None."""
     import simsight_grid as grid
 
-    state = _wall_state()
+    state = wall_state()
     if state is None:
         return None
     frame, sides, doors = state
     side = int(grid.location.facing) % 4
-    if side in doors or not _blocked(sides.get(side)) or not separates_rooms(frame, side):
+    if side in doors or not blocked_side(sides.get(side)) or not separates_rooms(frame, side):
         return None
     return frame, side
 
@@ -128,7 +128,7 @@ def _side_state(frame: Frame, index: int, sides: dict[int, str], doors: dict[int
     """What number 3 says about one side of the cursor tile."""
     if index in doors:
         return lang.text('door', 'drzwi')
-    if _blocked(sides.get(index)) and separates_rooms(frame, index):
+    if blocked_side(sides.get(index)) and separates_rooms(frame, index):
         return lang.text('wall', 'ściana')
     maybe_fence = lang.text('wall, or possibly a fence', 'ściana lub prawdopodobnie płot')
     return {
@@ -156,7 +156,7 @@ def wall_parts(frame: Frame, all_sides: bool = False, objects: Any = None) -> li
     walls: list[str] = []
     maybe: list[str] = []
     for index in range(4):
-        if _blocked(sides.get(index)) and index not in doors:
+        if blocked_side(sides.get(index)) and index not in doors:
             (walls if separates_rooms(frame, index) else maybe).append(tiles.direction_name(index))
     door_dirs = [tiles.direction_name(index) for index in sorted(doors)]
     joiner = lang.text(' and ', ' i ')
@@ -177,7 +177,7 @@ def _spot_key(side: int) -> SpotKey:
     import simsight_place as place_mod
 
     return (
-        place_mod._zone_id(),
+        place_mod.lot_zone_id(),
         grid.location.level,
         tuple(grid.location.tile),
         side,
@@ -217,12 +217,12 @@ def _wall_kind(obj: Any, floor_y: float, height: float) -> str | None:
     import simsight_place as place_mod
     import simsight_scanner as scanner
 
-    tags = ' '.join(scanner._tag_names(obj)).lower()
+    tags = ' '.join(scanner.tag_names(obj)).lower()
     if 'window' in tags:
         return 'window'
     if 'door' in tags or 'arch' in tags:
         return 'door'
-    if place_mod.requirement(layers._definition_id(obj)) != 'wall' or _off_height(
+    if place_mod.requirement(layers.definition_id(obj)) != 'wall' or _off_height(
         obj, floor_y, height
     ):
         return None
@@ -258,7 +258,7 @@ def _on_this_wall(frame: Frame, side: int) -> list[tuple[Any, str]]:
                 continue
             kind = _wall_kind(obj, floor_y, height)
             if kind is not None:
-                found.append((grid._name(obj), kind))
+                found.append((grid.object_name_part(obj), kind))
     return found
 
 
@@ -304,7 +304,7 @@ def _stretch_end(frame: Frame, i: int, j: int, side: int) -> str | None:
     try:
         if side in tiles.doors(frame, i, j, grid.location.level):
             return 'door'
-        if not _blocked(tiles.walls(frame, i, j, grid.location.level).get(side)):
+        if not blocked_side(tiles.walls(frame, i, j, grid.location.level).get(side)):
             return 'open'
     except Exception as ex:
         _log(f'wall continuation check failed: {ex!r}')
@@ -416,7 +416,7 @@ def place(item: dict[str, Any]) -> bool:
     selected = selected_wall()
     if selected is None:
         direction = tiles.direction_name(int(grid.location.facing) % 4)
-        place_mod._say_text(
+        place_mod.say_text(
             f'There is no wall {direction}. Turn with R or move beside a wall.',
             f'Brak ściany w kierunku {direction}. Obracaj R albo przejdź obok ściany.',
         )
@@ -426,7 +426,7 @@ def place(item: dict[str, Any]) -> bool:
         point, height = _wall_anchor(frame, side)
     except Exception as ex:
         _log(f'could not calculate wall anchor: {ex!r}')
-        place_mod._say_text(
+        place_mod.say_text(
             'The wall anchor could not be calculated, so nothing was bought.',
             'Nie udało się obliczyć punktu na ścianie, więc nic nie kupiono.',
         )
@@ -445,7 +445,7 @@ def column_here(frame: Frame) -> bool:
         for obj in tiles.objects_on(
             frame, grid.location.tile[0], grid.location.tile[1], grid.location.level
         ):
-            if any('column' in name.lower() for name in scanner._tag_names(obj)):
+            if any('column' in name.lower() for name in scanner.tag_names(obj)):
                 return True
     except Exception as ex:
         _log(f'column check failed: {ex!r}')
@@ -469,7 +469,7 @@ class _Hang:
         )
 
     def restore(self) -> None:
-        self.plus._send_ui('A11y|plus|wallsrestore')
+        self.plus.send_ui('A11y|plus|wallsrestore')
 
     def act(self, screen: list[Any]) -> None:
         """The job's click, on its worker; the player's view comes back after.
@@ -483,14 +483,14 @@ class _Hang:
         import simsight_place as place_mod
 
         plus = self.plus
-        plus._reselect()
+        plus.reselect()
         # _reselect picks by list position; a list browsed since then could
         # hold another item there. Click only when the game holds this one.
         held = str(plus._product.get('name') or '').strip().lower()
         if held != str(self.name).strip().lower():
             _log(f'game tool: holding {held!r}, not {self.name!r}; no click')
             plus.core.post(
-                place_mod._say_text,
+                place_mod.say_text,
                 f'The game is holding something else. Choose {self.name} again with Control Alt O.',
                 f'Gra trzyma coś innego. Wybierz {self.name} ponownie przez Control Alt O.',
             )
@@ -505,7 +505,7 @@ class _Hang:
             base = os.path.join(
                 os.path.dirname(simsight_log.PATH), f'SimSight_wallshot_{_state.attempt}'
             )
-            spot = plus._to_screen(*screen[0])
+            spot = plus.to_screen(*screen[0])
             plus.move_to(*spot)
             time.sleep(0.6)
             plus.screenshot(base + '_before.bmp', mark=spot)
@@ -522,7 +522,7 @@ class _Hang:
         if self.before is not None and after is not None and after != self.before:
             remember(self.key, True)
         else:
-            error = plus._last_error['text'] if plus._last_error['at'] > self.started else ''
+            error = plus.last_error['text'] if plus.last_error['at'] > self.started else ''
             remember(self.key, False, error)
         self.speak_result()
 
@@ -542,8 +542,8 @@ def hang_with_game_tool(
     import simsight_plus_build as plus
     import simsight_tiles as tiles
 
-    if plus._cat.get('chosen') is None:
-        place_mod._say_text(
+    if plus.catalog_state.get('chosen') is None:
+        place_mod.say_text(
             "Choose it with Control Alt O first, so the game's tool can hold it. Nothing was bought.",
             'Najpierw wybierz to przez Control Alt O, aby narzędzie gry mogło to trzymać. Nic nie kupiono.',
         )
@@ -551,7 +551,7 @@ def hang_with_game_tool(
     # Live 2026-10-17: every refused try was on or beside a column tile; the
     # click then lands on the column or a wall end. Say so instead of trying.
     if column_here(frame):
-        place_mod._say_text(
+        place_mod.say_text(
             'A column stands here, in front of the wall or at its end. Move along the wall to a plain stretch, then press Enter.',
             'Stoi tu kolumna, przed ścianą lub na jej końcu. Przejdź wzdłuż ściany na wolny odcinek i naciśnij Enter.',
         )
@@ -566,7 +566,7 @@ def hang_with_game_tool(
     target = (float(point.x) + dx * 0.05, float(point.z) + dz * 0.05)
     name = item.get('name') or 'it'
     direction = tiles.direction_name(side)
-    place_mod._say_text(
+    place_mod.say_text(
         f'Hanging {name} on the {direction} wall. Please wait.',
         f'Wieszanie {name} na ścianie {direction}. Proszę czekać.',
     )
@@ -578,7 +578,7 @@ def hang_with_game_tool(
     # Live 2026-10-16: with walls down or cut away the click passed over the
     # drawn wall ("Must be placed on a wall"). Walls up first; the player's
     # view comes back after the click, or after 15 seconds if none happens.
-    plus._send_ui('A11y|plus|wallsup')
+    plus.send_ui('A11y|plus|wallsup')
     fallback = threading.Timer(15.0, lambda: plus.core.post(_restore_walls))
     fallback.daemon = True
     fallback.start()
@@ -602,4 +602,4 @@ def hang_with_game_tool(
 def _restore_walls() -> None:
     import simsight_plus_build as plus
 
-    plus._send_ui('A11y|plus|wallsrestore')
+    plus.send_ui('A11y|plus|wallsrestore')

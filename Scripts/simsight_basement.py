@@ -70,7 +70,7 @@ def _enabled() -> bool:
 def _context() -> dict[str, Any]:
     import services
 
-    state = _state.helpers._state()
+    state = _state.helpers.floor_state()
     state['household'] = int(services.active_household_id())
     return state
 
@@ -80,13 +80,13 @@ def _same_context(state: dict[str, Any]) -> bool:
 
     return (
         _enabled()
-        and _state.helpers._same_world(state)
+        and _state.helpers.same_world(state)
         and int(services.active_household_id()) == state['household']
     )
 
 
 def _rooms() -> _Rooms:
-    result = _state.build._room_ids()
+    result = _state.build.room_ids()
     if result is None:
         raise RuntimeError('The game did not supply its room geometry')
     return {(tuple(box), int(level)) for box, level in result}
@@ -121,7 +121,7 @@ def _is_selection_reply(job: _Selection, encoded: str) -> bool:
         and parts[0] == 'selected'
         and parts[1] == str(job.row)
         and unquote(parts[2]) == job.name
-        and _state.build._cat['serial'] == job.serial
+        and _state.build.catalog_state['serial'] == job.serial
     )
 
 
@@ -146,25 +146,25 @@ def _tool(name: str, state: dict[str, Any]) -> bool:
         return False
     # The native bridge replaces its catalog array. An old index must never
     # reselect an unrelated tool if this query or selection is interrupted.
-    build.on_main(build._cat.pop, 'chosen', None)
+    build.on_main(build.catalog_state.pop, 'chosen', None)
     items = build.fetch_catalog(16, '', 'tool') or []
     names = [item[0] for item in items]
     simsight_log.json_line(_LOG, 'catalog', wanted=name, tools=names)
     if name not in names or not build.on_main(_same_context, state):
         return False
     index = names.index(name)
-    job = _Selection(index, name, build._cat['serial'], threading.Event())
+    job = _Selection(index, name, build.catalog_state['serial'], threading.Event())
     _state.selection = job
-    silent = build._cat.get('silent_select', False)
+    silent = build.catalog_state.get('silent_select', False)
     try:
-        build._cat['silent_select'] = True
+        build.catalog_state['silent_select'] = True
         build.select_item(index, name)
         acknowledged = job.done.wait(2.0)
         simsight_log.json_line(_LOG, 'tool-selection', name=name, acknowledged=acknowledged)
         return acknowledged and bool(build.on_main(_same_context, state))
     finally:
         _state.selection = None
-        build._cat['silent_select'] = silent
+        build.catalog_state['silent_select'] = silent
 
 
 def _check_result(before: _Rooms, after: _Rooms, wanted: _Box) -> bool:
@@ -179,7 +179,7 @@ def _rectangle(wanted: _Box) -> bool:
 
     build = _state.build
     frame = build.frame()
-    matches = [r for r in rooms.scan_rooms() if int(r.level) == -1 and build._room_box(r) == wanted]
+    matches = [r for r in rooms.scan_rooms() if int(r.level) == -1 and build.room_box(r) == wanted]
     if len(matches) != 1:
         return False
     actual = {
@@ -213,7 +213,7 @@ def _drag(state: dict[str, Any], wanted: _Box, screen: Sequence[Any]) -> None:
         raise RuntimeError('Build context changed before the basement drag')
     if not _tool(TOOL, state):
         raise RuntimeError('The Basement Tool could not be confirmed after camera preparation')
-    info = _state.helpers._native_floor(state)
+    info = _state.helpers.native_floor(state)
     if info['floor'] != 0:
         raise RuntimeError('The game is no longer showing the ground floor')
     simsight_log.json_line(
@@ -262,13 +262,13 @@ def _drag_and_verify(
     simsight_log.json_line(
         _LOG,
         'after-drag',
-        native_floor=_state.helpers._native_floor(state),
+        native_floor=_state.helpers.native_floor(state),
         funds_before=funds_before,
         funds_after=build.on_main(build.funds),
     )
     after = _rooms_after(state, before)
     okay = _check_result(before, after, wanted) and bool(build.on_main(_rectangle, wanted))
-    error = build._last_error
+    error = build.last_error
     reason = error.get('text', '') if error.get('at', 0) >= started else ''
     simsight_log.json_line(
         _LOG,
@@ -348,7 +348,7 @@ def room_worker(want: Sequence[Any], overview: bool = False, tries: int = 4, lev
 
 def _run_busy(name: str, work: Callable[[], None]) -> None:
     """Run work on its own thread, holding the build engine's busy flag."""
-    busy = _state.build._busy
+    busy = _state.build.busy
 
     def run() -> None:
         try:
@@ -387,7 +387,7 @@ def _build_room(wanted: _Wanted) -> None:
 
 def _start_room(wanted: _Wanted) -> None:
     core = _state.core
-    if _state.build._busy[0]:
+    if _state.build.busy[0]:
         core.speak('Still working on the last build step.')
         return
     if not _enabled():
@@ -426,7 +426,7 @@ def _confirm_room(width: float, depth: float, coords: Sequence[float]) -> None:
 
 def _ask_position(width: float, depth: float) -> None:
     def position(text: str) -> None:
-        coords = _state.build._numbers(text)
+        coords = _state.build.whole_numbers(text)
         if len(coords) != 2:
             _state.core.speak('Type meters from west and north, for example 2 3.')
             return
@@ -442,7 +442,7 @@ def _ask_position(width: float, depth: float) -> None:
 
 def _ask_room() -> None:
     def size(text: str) -> None:
-        values = _state.build._numbers(text)
+        values = _state.build.whole_numbers(text)
         if len(values) != 2 or any(v < 1 or v > 30 for v in values):
             _state.core.speak('Type a width and depth between 1 and 30 metres.')
             return
@@ -461,7 +461,7 @@ def _inspect_work() -> None:
     build = _state.build
     try:
         state = build.on_main(_context)
-        info = _state.helpers._native_floor(state)
+        info = _state.helpers.native_floor(state)
         geometry = build.on_main(_rooms)
         if geometry is None:
             raise RuntimeError('Room inspection timed out')
@@ -476,7 +476,7 @@ def _inspect_work() -> None:
 
 
 def _inspect() -> None:
-    if _state.build._busy[0]:
+    if _state.build.busy[0]:
         _state.core.speak('Still working on the last build step.')
         return
     _run_busy('a11y_basement_inspect', _inspect_work)
@@ -525,10 +525,10 @@ def _original_room(
 ) -> Any:
     import simsight_plus_build as build
 
-    return build._room_worker_base(want, overview=overview, tries=tries, level=level)
+    return build.room_worker_base(want, overview=overview, tries=tries, level=level)
 
 
 def _original_reply(encoded: str = '') -> Any:
     import simsight_plus_build as build
 
-    return build._flash_reply_base(encoded)
+    return build.flash_reply_base(encoded)

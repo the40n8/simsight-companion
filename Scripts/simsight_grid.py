@@ -115,7 +115,7 @@ def _sample_key(x: float, z: float) -> Tile:
     return int(math.floor(x + 0.5)), int(math.floor(z + 0.5))
 
 
-def _surface() -> Any:
+def world_surface() -> Any:
     import routing
 
     return routing.SurfaceIdentifier(
@@ -129,7 +129,7 @@ def _position(x: float | None = None, z: float | None = None) -> Any:
 
     x = _state.x if x is None else x
     z = _state.z if z is None else z
-    y = terrain.get_terrain_height(x, z, routing_surface=_surface())
+    y = terrain.get_terrain_height(x, z, routing_surface=world_surface())
     if y is None or not math.isfinite(float(y)):
         raise ValueError('Grid height unavailable')
     return Vector3(x, float(y), z)
@@ -158,7 +158,7 @@ def enter() -> bool:
     import simsight_place as place
 
     building = place.in_build_mode()
-    if keys._scanner_effective() and not building:
+    if keys.scanner_effective() and not building:
         _say(
             'Turn scanner mode off to use the lot grid.',
             'Wyłącz tryb skanera, aby użyć siatki parceli.',
@@ -229,7 +229,7 @@ def announce_placement(note: str = '') -> bool:
             'Wybierz obiekt w katalogu, zamknij katalog i wróć tutaj. ',
         )
     ]
-    scanner._speak_parts(parts)
+    scanner.speak_parts(parts)
     return True
 
 
@@ -415,7 +415,7 @@ def _place_here() -> bool:
         )
         return False
     position, level, _ident = target
-    return place.place(position, level, _surface())
+    return place.place(position, level, world_surface())
 
 
 def _enter_key() -> bool:
@@ -513,7 +513,7 @@ def _navmesh(position: Any) -> bool | None:
 
     try:
         # Verified in EA objects/pools/pond.py; this takes surface, position.
-        value = routing.test_point_placement_in_navmesh(_surface(), position)
+        value = routing.test_point_placement_in_navmesh(world_surface(), position)
     except Exception:  # the game will not say
         return None
     return bool(value) if value is not None else None
@@ -550,10 +550,10 @@ def _add_origin_parts(parts: Parts) -> None:
     for index, obj in enumerate(objects[:5]):
         if index:
             parts.append(', ')
-        entry = scanner._entry_for(
+        entry = scanner.entry_for(
             obj, obj.position, location.level, bool(getattr(obj, 'is_sim', False)), '', ''
         )
-        parts.append(scanner._name_part(entry))
+        parts.append(scanner.name_part(entry))
     if len(objects) > 5:
         parts.append(lang.text(' and {} more', ' i {} więcej').format(len(objects) - 5))
 
@@ -585,7 +585,7 @@ def describe() -> bool:
         parts.append(
             lang.text('Object information unavailable.', 'Informacje o obiektach niedostępne.')
         )
-    scanner._speak_parts(parts)
+    scanner.speak_parts(parts)
     return True
 
 
@@ -675,7 +675,7 @@ def on_key(intent: str) -> Any:
 # frame, so nothing is placed on a guessed grid.
 
 
-def _flash(message: str) -> None:
+def flash(message: str) -> None:
     try:
         import distributor.ops
         import distributor.system
@@ -716,7 +716,7 @@ def _start_build(note: str) -> bool:
     _state.offer = None
     _state.last_room = (None, None)
     _state.build = True
-    _flash('A11yBuildGridOn')
+    flash('A11yBuildGridOn')
     import simsight_scanner as scanner
 
     parts: Parts = [
@@ -735,13 +735,13 @@ def _start_build(note: str) -> bool:
         )
     ]
     parts += _street_parts(f)
-    scanner._speak_parts(parts)
+    scanner.speak_parts(parts)
     return True
 
 
 def _stop_build() -> None:
     if _state.build:
-        _flash('A11yBuildGridOff')
+        flash('A11yBuildGridOff')
     _state.build, _state.offer = False, None
     _clear_move()
 
@@ -780,14 +780,14 @@ def _build_move(dx: int, dz: int) -> bool:
     return describe()
 
 
-def _name(obj: Any) -> Part:
+def object_name_part(obj: Any) -> Part:
     import simsight_scanner as scanner
 
     try:
-        entry = scanner._entry_for(
+        entry = scanner.entry_for(
             obj, obj.position, location.level, bool(getattr(obj, 'is_sim', False)), '', ''
         )
-        return scanner._name_part(entry)
+        return scanner.name_part(entry)
     except Exception:  # an object the scanner cannot name
         return lang.text('an object', 'obiekt')
 
@@ -797,19 +797,19 @@ def _children_parts(children: list[Any]) -> Parts:
     for number, child in enumerate(children[:3]):
         if number:
             parts.append(lang.text(' and ', ' i '))
-        parts.append(_name(child))
+        parts.append(object_name_part(child))
     parts.append(lang.text(' on it', ' na nim'))
     return parts
 
 
-def _object_parts(f: Frame, objects: list[Any], spots: bool = True) -> Parts:
+def object_parts(f: Frame, objects: list[Any], spots: bool = True) -> Parts:
     import simsight_tiles as tiles
 
     parts: Parts = []
     for index, obj in enumerate(objects[:4]):
         if index:
             parts.append(', ')
-        parts.append(_name(obj))
+        parts.append(object_name_part(obj))
         children = tiles.children_on(obj)
         if children:
             parts += _children_parts(children)
@@ -856,7 +856,7 @@ def _room_change(label: str | None, room: int | None, outside: bool | None) -> P
     return []
 
 
-def _room_parts_base(f: Frame) -> tuple[Parts, dict[str, bool]]:
+def room_parts_base(f: Frame) -> tuple[Parts, dict[str, bool]]:
     import simsight_rooms as rooms
     import simsight_tiles as tiles
 
@@ -899,8 +899,8 @@ def _special_fit(f: Frame, item: dict[str, Any], need: Any) -> Parts | None:
                 'It needs a surface with a free spot. ', 'Wymaga powierzchni z wolnym miejscem. '
             )
         ]
-    if need in place._NEEDS:
-        return [lang.text(*place._NEEDS[need]), ' ']
+    if need in place.NEEDS:
+        return [lang.text(*place.NEEDS[need]), ' ']
     return None
 
 
@@ -926,7 +926,7 @@ def _fit_verdict(point: Any, why: str | None, facing: str | None) -> Parts:
     ]
 
 
-def _fit_parts_base(f: Frame, with_facing: bool = True, objects: Any = None) -> Parts:
+def fit_parts_base(f: Frame, with_facing: bool = True, objects: Any = None) -> Parts:
     """What the chosen object would do on this tile at the current facing.
     objects is accepted for simsight_chair_alignment and not used."""
     import simsight_place as place
@@ -948,7 +948,7 @@ def _fit_parts_base(f: Frame, with_facing: bool = True, objects: Any = None) -> 
 def _ground_part(objects: list[Any], ground: dict[str, bool], f: Frame) -> Parts:
     """What stands on the tile, or what kind of empty tile it is."""
     if objects:
-        return _object_parts(f, objects)
+        return object_parts(f, objects)
     if ground.get('pool'):
         return [lang.text('Pool. ', 'Basen. ')]
     if ground.get('floor') is False and ground.get('outside'):
@@ -973,7 +973,7 @@ def describe_build() -> bool:
     parts += _ground_part(objects, ground, f)
     parts += _wall_parts(f)
     parts += _fit_parts(f)
-    scanner._speak_parts(parts)
+    scanner.speak_parts(parts)
     return True
 
 
@@ -986,7 +986,7 @@ def _objects_detail(f: Frame) -> Parts:
 
     i, j = location.tile
     objects = tiles.objects_on(f, i, j, location.level)
-    return _object_parts(f, objects) if objects else [lang.text('Nothing here.', 'Nic tu nie ma.')]
+    return object_parts(f, objects) if objects else [lang.text('Nothing here.', 'Nic tu nie ma.')]
 
 
 def _ground_detail(f: Frame) -> Parts:
@@ -1042,7 +1042,7 @@ def _nearby_detail(f: Frame) -> Parts:
         if obj.id in seen:
             continue
         seen.add(obj.id)
-        parts += [_name(obj), ', ', tiles.relative(di, dj), '. ']
+        parts += [object_name_part(obj), ', ', tiles.relative(di, dj), '. ']
         if len(seen) >= 8:
             break
     if not seen:
@@ -1127,7 +1127,7 @@ def _detail(topic: int) -> bool:
     if topic == 4 and layers.enabled():
         return layers.nearby_detail(f)
     read = _DETAILS.get(topic)
-    scanner._speak_parts(read(f) if read is not None else [])
+    scanner.speak_parts(read(f) if read is not None else [])
     return True
 
 
@@ -1147,7 +1147,7 @@ def _turn(step: int) -> bool:
     if place.product() is None:
         _say('Choose an object in the Build catalog first.', 'Najpierw wybierz obiekt w katalogu.')
         return False
-    scanner._speak_parts(
+    scanner.speak_parts(
         [
             lang.text('Facing {}. ', 'Skierowany na {}. ').format(
                 tiles.direction_name(location.facing)
@@ -1184,7 +1184,7 @@ def _place_special(item: dict[str, Any], need: Any) -> Any:
         target = cursor()
         if target is None:
             return False
-        return place.place(target[0], location.level, _surface(), surface_id=focused.id)
+        return place.place(target[0], location.level, world_surface(), surface_id=focused.id)
     return None
 
 
@@ -1226,21 +1226,21 @@ def _place_on_tile(item: dict[str, Any], need: Any) -> Any:
         and now - offer.at < OFFER_SECONDS
     ):
         return place.place(
-            offer.point, location.level, _surface(), angle=f.yaw(offer.facing), exact=True
+            offer.point, location.level, world_surface(), angle=f.yaw(offer.facing), exact=True
         )
     if need == 'slot':
         target = cursor()
         if target is None:
             _say('This tile cannot take an object.', 'To pole nie może przyjąć obiektu.')
             return False
-        return place.place(target[0], location.level, _surface())
-    if need in place._NEEDS:
-        place._say_text(*place._NEEDS[need])
+        return place.place(target[0], location.level, world_surface())
+    if need in place.NEEDS:
+        place.say_text(*place.NEEDS[need])
         return False
     point, why = tiles.fit_at(f, item['id'], i, j, location.level, location.facing)
     if point is not None:
         return place.place(
-            point, location.level, _surface(), angle=f.yaw(location.facing), exact=True
+            point, location.level, world_surface(), angle=f.yaw(location.facing), exact=True
         )
     if why is None:
         _say(
@@ -1261,7 +1261,7 @@ def _offer_nearest(f: Frame, item: dict[str, Any], why: str, now: float) -> None
     name = item['name'] or lang.text('It', 'Obiekt')
     found = tiles.nearest_fit(f, item['id'], i, j, location.level, location.facing)
     if found is None:
-        scanner._speak_parts(
+        scanner.speak_parts(
             [
                 name,
                 lang.text(
@@ -1273,7 +1273,7 @@ def _offer_nearest(f: Frame, item: dict[str, Any], why: str, now: float) -> None
         return
     ni, nj, spot, facing = found
     _state.offer = _Offer((i, j, location.level, location.facing), item['id'], spot, facing, now)
-    scanner._speak_parts(
+    scanner.speak_parts(
         [
             name,
             lang.text(
@@ -1294,7 +1294,7 @@ def _clear_move() -> None:
 
 
 def _object_name(obj: Any) -> str:
-    value = _name(obj)
+    value = object_name_part(obj)
     return ''.join(str(part) for part in value) if isinstance(value, list) else str(value)
 
 
@@ -1308,7 +1308,7 @@ def _pick_up() -> bool:
         return False
     refusal = place.sell_refusal(obj)
     if refusal is not None:
-        place._say_text(*place._CANNOT_SELL[refusal])
+        place.say_text(*place.CANNOT_SELL[refusal])
         return False
     if getattr(obj, 'parent', None) is not None:
         _say(
@@ -1331,11 +1331,13 @@ def _put_down(obj: Any, position: Any, level: int) -> bool:
 
     old_position, old_orientation, old_surface = obj.position, obj.orientation, obj.routing_surface
     try:
-        spot = place._good_location(obj, position, old_orientation, _surface(), ignore=(obj.id,))
+        spot = place.good_location(
+            obj, position, old_orientation, world_surface(), ignore=(obj.id,)
+        )
         if spot is None:
             _say('No valid position was found here.', 'Nie znaleziono tutaj prawidłowej pozycji.')
             return False
-        obj.move_to(translation=spot[0], orientation=spot[1], routing_surface=_surface())
+        obj.move_to(translation=spot[0], orientation=spot[1], routing_surface=world_surface())
         if int(getattr(obj, 'level', level)) != int(level):
             raise RuntimeError('object stayed on another floor')
     except Exception as ex:

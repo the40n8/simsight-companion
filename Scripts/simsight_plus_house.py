@@ -281,11 +281,11 @@ def make_plan(kinds: Sequence[str]) -> Plan:
     p.width, p.depth = width, depth
     p.rooms = _plan_rooms(front, back, fw, bw, width)
     p.doors = _plan_doors(p.rooms, len(front), bool(back))
-    _map_plan(p, f, along)
+    map_plan(p, f, along)
     return p
 
 
-def _map_plan(p: Plan, f: Any, along: int) -> None:
+def map_plan(p: Plan, f: Any, along: int) -> None:
     """House coordinates to lot meters, for rooms, doors and stairs."""
     u_off = (along - p.width) // 2
     for r in p.rooms:
@@ -294,11 +294,11 @@ def _map_plan(p: Plan, f: Any, along: int) -> None:
         (e1, n1) = _to_lot(p, f, u_off, u1, v1)
         r['box'] = (min(e0, e1), min(n0, n1), max(e0, e1), max(n0, n1))
     for d in p.doors:
-        d['tile_a'] = _tile_to_lot(p, f, u_off, d['a'])
-        d['tile_b'] = _tile_to_lot(p, f, u_off, d['b'])
+        d['tile_a'] = tile_to_lot(p, f, u_off, d['a'])
+        d['tile_b'] = tile_to_lot(p, f, u_off, d['b'])
     if p.stairs:
-        p.stairs['top_lot'] = _tile_to_lot(p, f, u_off, p.stairs['top'])
-        p.stairs['climb_lot'] = _dir_to_lot(p, p.stairs['climb'])
+        p.stairs['top_lot'] = tile_to_lot(p, f, u_off, p.stairs['top'])
+        p.stairs['climb_lot'] = dir_to_lot(p, p.stairs['climb'])
 
 
 def _the(name: str) -> str:
@@ -306,7 +306,7 @@ def _the(name: str) -> str:
     return name.lower() if name[-1].isdigit() else 'the ' + name.lower()
 
 
-def _dir_to_lot(p: Plan, d: Sequence[int]) -> tuple[int, int]:
+def dir_to_lot(p: Plan, d: Sequence[int]) -> tuple[int, int]:
     """A direction (du, dv) in house coordinates to (de, dn) on the lot."""
     (du, dv) = d
     return {'north': (du, dv), 'south': (-du, -dv), 'west': (dv, -du), 'east': (-dv, du)}[p.side]
@@ -366,7 +366,7 @@ def make_two_floor_plan(variant: str) -> Plan:
         _door(f'Upstairs, door from the hallway to {_the(up_back[1])}', (3, H), (3, H - 1), 1),
         _door('Upstairs, door from the hallway to the upstairs bathroom', (8, H), (8, H - 1), 1),
     ]
-    _map_plan(p, f, along)
+    map_plan(p, f, along)
     return p
 
 
@@ -383,7 +383,7 @@ def _to_lot(p: Plan, f: Any, u_off: int, u: float, v: float) -> tuple[Any, Any]:
     return (f.width - v, u)
 
 
-def _tile_to_lot(p: Plan, f: Any, u_off: int, tile: Sequence[int]) -> tuple[int, int]:
+def tile_to_lot(p: Plan, f: Any, u_off: int, tile: Sequence[int]) -> tuple[int, int]:
     (e, n) = _to_lot(p, f, u_off, tile[0] + 0.5, tile[1] + 0.5)
     return (int(math.floor(e)), int(math.floor(n)))
 
@@ -422,7 +422,7 @@ def side_between(tile_a: Sequence[int], tile_b: Sequence[int]) -> str:
 # ---------------------------------------------------------------- choosing
 
 
-def _custom(kinds: list[str]) -> None:
+def choose_custom_rooms(kinds: list[str]) -> None:
     names = ', '.join(_names_for(kinds)) if kinds else 'no rooms yet'
     rows: list[tuple[str, str | None, str]] = []
     if kinds:
@@ -444,10 +444,10 @@ def _custom(kinds: list[str]) -> None:
         if value == 'done':
             _show_plan(kinds)
         elif value == 'undo':
-            _custom(kinds[:-1])
+            choose_custom_rooms(kinds[:-1])
         else:
             core.speak(f'{KINDS[value][2]} added.')
-            _custom([*kinds, value])
+            choose_custom_rooms([*kinds, value])
 
     core.choose(
         'Your rooms',
@@ -463,7 +463,7 @@ def _show_plan(kinds: list[str]) -> Any:
     import simsight_house_workflow as workflow
 
     workflow.install()
-    return workflow._legacy_plan(kinds)
+    return workflow.legacy_plan(kinds)
 
 
 # ---------------------------------------------------------------- building
@@ -471,11 +471,11 @@ def _show_plan(kinds: list[str]) -> Any:
 
 def _select_silently(index: int, name: str) -> None:
     """Choose a catalog item without the build helper announcing it."""
-    build._cat['silent_select'] = True
+    build.catalog_state['silent_select'] = True
     try:
         build.select_item(index, name)
     finally:
-        build._cat['silent_select'] = False
+        build.catalog_state['silent_select'] = False
 
 
 def _pick_door(names_wanted: Sequence[str]) -> str | None:
@@ -500,7 +500,7 @@ def _pick_door(names_wanted: Sequence[str]) -> str | None:
     return names[index]
 
 
-def _pick_tool(name: str) -> bool:
+def pick_tool(name: str) -> bool:
     items = build.fetch_catalog(16, 'BUILDTAG_BLOCK_WALLTOOL,BUILDTAG_BLOCK_WITH_WALLS', 'tool')
     names = [it[0] for it in items]
     if name not in names:
@@ -509,7 +509,7 @@ def _pick_tool(name: str) -> bool:
     return True
 
 
-def _stair_ids() -> list[Any]:
+def stair_ids() -> list[Any]:
     import services
     import simsight_plus_rooms as rooms
 
@@ -520,7 +520,7 @@ def _stair_ids() -> list[Any]:
     ]
 
 
-def _stair_info(oid: Any) -> tuple[Any, Any, tuple[int, int]] | None:
+def stair_info(oid: Any) -> tuple[Any, Any, tuple[int, int]] | None:
     """(e, n, climb) of a placed staircase: its position is the middle of the bottom edge of the lowest
     step, and its forward direction points to the side (measured October 2026)."""
     import services
@@ -533,7 +533,7 @@ def _stair_info(oid: Any) -> tuple[Any, Any, tuple[int, int]] | None:
     return (e, n, (int(round(-fz)), int(round(-fx))))
 
 
-def _pick_stairs() -> tuple[int, str] | None:
+def pick_stairs() -> tuple[int, str] | None:
     """Worker thread: the catalog index and name of plain stairs, or None."""
     items = build.fetch_catalog(14, '', 'none')
     if not items:
@@ -548,18 +548,18 @@ def _pick_stairs() -> tuple[int, str] | None:
 
 
 def _click_stairs(s: Sequence[Any]) -> None:
-    build.move_to(*build._to_screen(*s[0]))
+    build.move_to(*build.to_screen(*s[0]))
     time.sleep(0.8)
     build.click(s[0])
 
 
-def _place_stairs_worker_base(top: Sequence[int], climb: Sequence[int]) -> bool | str:
+def place_stairs_worker_base(top: Sequence[int], climb: Sequence[int]) -> bool | str:
     """Worker thread only. Straight stairs on the ground floor going up to the floor above.
     top: lot tile (e, n) of the highest step; climb: direction (de, dn) going up.
     The pointer goes on the highest step. The game keeps the last way stairs were turned, so we
     place, check which way they went, and if wrong take them back, turn them (the . key) and try again.
     Returns True or a reason."""
-    pick = _pick_stairs()
+    pick = pick_stairs()
     if not pick:
         return 'nocatalog'
     if not build.set_floor(0):
@@ -572,7 +572,7 @@ def _place_stairs_worker_base(top: Sequence[int], climb: Sequence[int]) -> bool 
     shift = [0.0, 0.0]
     turn = False
     for attempt in range(10):
-        before = set(build.on_main(_stair_ids) or [])
+        before = set(build.on_main(stair_ids) or [])
         _select_silently(*pick)
         if turn:
             build.tap_scan(0x34)  # the . key turns the stairs a quarter turn
@@ -582,12 +582,12 @@ def _place_stairs_worker_base(top: Sequence[int], climb: Sequence[int]) -> bool 
         if not build.point_and_act([pt], 0, _click_stairs, f'stairs try {attempt + 1}'):
             return 'noscreen'
         time.sleep(0.5)
-        new = [oid for oid in (build.on_main(_stair_ids) or []) if oid not in before]
+        new = [oid for oid in (build.on_main(stair_ids) or []) if oid not in before]
         if not new:
-            core.log('stairs: not placed: {}'.format(build._last_error['text']))
+            core.log('stairs: not placed: {}'.format(build.last_error['text']))
             turn = True
             continue
-        info = build.on_main(_stair_info, new[0])
+        info = build.on_main(stair_info, new[0])
         core.log(f'stairs: placed {info} want pos {want} climb {climb}')
         if info is None:
             continue
@@ -607,11 +607,11 @@ def _place_stairs_worker_base(top: Sequence[int], climb: Sequence[int]) -> bool 
 
 
 def door_count() -> int:
-    return sum(1 for t in build._wall_things() if t[2] == 'door')
+    return sum(1 for t in build.wall_things() if t[2] == 'door')
 
 
 def _click_door(s: Sequence[Any]) -> None:
-    build._reselect()
+    build.reselect()
     build.click(s[0])
 
 
@@ -638,10 +638,10 @@ def place_door_worker(tile_a: Tile, tile_b: Tile, level: int = 0) -> bool:
 
 def _claim_busy() -> bool:
     """Mark the build helper busy; False (and says so) when a step is still running."""
-    if build._busy[0]:
+    if build.busy[0]:
         core.speak(_BUSY_TEXT)
         return False
-    build._busy[0] = True
+    build.busy[0] = True
     return True
 
 
@@ -663,10 +663,10 @@ def _build_worker(p: Plan) -> None:
         core.log_exc('build house')
         core.post(core.speak, f'Sorry, building the house failed. {_LOG_HELP}')
     finally:
-        build._busy[0] = False
+        build.busy[0] = False
 
 
-def _say_base(text: str) -> None:
+def say_base(text: str) -> None:
     core.post(core.speak, text)
 
 
@@ -747,11 +747,11 @@ def _finished_text(p: Plan, spent: int, left: int, stairs_ok: bool, missed: list
     return text
 
 
-def _build_base(p: Plan) -> None:
+def build_base(p: Plan) -> None:
     import simsight_plus_rooms as rooms
 
     start_money = build.on_main(build.funds) or 0
-    if not _pick_tool('Room Tool'):
+    if not pick_tool('Room Tool'):
         _say('I could not choose the Room Tool in the catalog.')
         return
     if not _build_rooms(p, rooms):
@@ -775,7 +775,7 @@ def _build_base(p: Plan) -> None:
 def _name_rooms(p: Plan, rooms: Any) -> None:
     def go() -> None:
         for room in rooms.scan_rooms():
-            box = build._room_box(room)
+            box = build.room_box(room)
             for r in p.rooms:
                 if r['box'] == box and room.level == r.get('level', 0):
                     rooms.set_room_name(room, r['name'])
@@ -791,12 +791,12 @@ def _neighbors(
 ) -> tuple[list[tuple[Any, list[TilePair]]], list[TilePair]]:
     """Rooms that share a wall with `room`, with the wall tiles: ([(other, [(tile_a, tile_b)])],
     [(tile_a, tile_b)] on the outside walls)."""
-    mine = build._room_tiles(room)
+    mine = build.room_tiles(room)
     by_tile = {}
     for other in all_rooms:
         if other is room or other.level != room.level:
             continue
-        for t in build._room_tiles(other):
+        for t in build.room_tiles(other):
             by_tile[t] = other
     found: dict[int, tuple[Any, list[TilePair]]] = {}
     outside: list[TilePair] = []
@@ -887,8 +887,8 @@ def _run_door(a: Tile, b: Tile, level: int, what: str) -> None:
     if not _claim_busy():
         return
     use_chosen = (
-        build._cat.get('next') == 'wall'
-        and build._cat.get('chosen') is not None
+        build.catalog_state.get('next') == 'wall'
+        and build.catalog_state.get('chosen') is not None
         and 'door' in build.tool_name().lower()
     )
     core.speak(f'Putting {what}. Please wait.')
@@ -908,7 +908,7 @@ def _door_worker(a: Tile, b: Tile, level: int, what: str, use_chosen: bool) -> N
         if ok:
             _say(f'Done, {what} is in place. It cost {spent:,} simoleons.')
         else:
-            reason = build._last_error['text']
+            reason = build.last_error['text']
             _say(
                 'The door was not placed. {}'.format(
                     f'The game says: {reason}'
@@ -920,7 +920,7 @@ def _door_worker(a: Tile, b: Tile, level: int, what: str, use_chosen: bool) -> N
         core.log_exc('door job')
         _say('Sorry, placing the door failed.')
     finally:
-        build._busy[0] = False
+        build.busy[0] = False
 
 
 def _wall_tiles(e: float, n: float) -> TilePair:
@@ -984,7 +984,7 @@ def _thing_rows() -> list[tuple[str, tuple[Any, ...]]]:
     f = build.frame()
     named = {}
     for r in rooms.scan_rooms():
-        for t in build._room_tiles(r):
+        for t in build.room_tiles(r):
             named[(t[0], t[1], r.level)] = r.name
     out = []
     for obj in services.object_manager().values():
@@ -1007,7 +1007,7 @@ def _remove_worker(value: tuple[Any, ...]) -> None:
     (x, z, level, side, kind, oid) = value
     try:
         money = build.on_main(build.funds) or 0
-        u = build._user32()
+        u = build.user32()
         _tap_key(u, 0x4B, 0x25)  # the game's Sledgehammer is the K key in Build mode
         time.sleep(0.5)
         build.point_and_act(
@@ -1030,7 +1030,7 @@ def _remove_worker(value: tuple[Any, ...]) -> None:
         core.log_exc('remove door')
         _say('Sorry, removing failed.')
     finally:
-        build._busy[0] = False
+        build.busy[0] = False
 
 
 def remove_door_or_window() -> None:
@@ -1082,12 +1082,12 @@ def name_a_room() -> None:
 
 # DaRainbowGirlXX's house building, merged 2026-11-14. The building step runs
 # build_helpers (stairs scoped to the running plan) -> detached (detached
-# structure follow-up) -> house_planner (stacked-story follow-up) -> _build_base.
+# structure follow-up) -> house_planner (stacked-story follow-up) -> build_base.
 def _build(p: Plan) -> Any:
     import simsight_build_helpers as helpers
 
     helpers.install()
-    return helpers._house_build(p)
+    return helpers.house_build(p)
 
 
 def place_stairs_worker(top: Sequence[int], climb: Sequence[int]) -> Any:
@@ -1095,11 +1095,11 @@ def place_stairs_worker(top: Sequence[int], climb: Sequence[int]) -> Any:
     import simsight_build_helpers as helpers
 
     helpers.install()
-    return helpers._stairs_for_plan(top, climb)
+    return helpers.stairs_for_plan(top, climb)
 
 
 def _say(text: str) -> Any:
     """A stopped basement build says why."""
     import simsight_house_workflow as workflow
 
-    return workflow._say(text)
+    return workflow.say(text)

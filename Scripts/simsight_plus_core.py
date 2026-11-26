@@ -330,7 +330,7 @@ class _KeyPoller:
             if alt and not other and _game_foreground(self.user32):
                 (fn, desc) = HOTKEYS[vk]
                 log(f'key Alt+{_key_name(vk)} ({desc})')
-                if _wants_shift(fn):
+                if wants_shift(fn):
                     post(fn, shift)
                 else:
                     post(fn)
@@ -460,7 +460,7 @@ def _typing_finish(accepted: bool) -> None:
     t.done(text)
 
 
-def _wants_shift(fn: Callable[..., object]) -> bool:
+def wants_shift(fn: Callable[..., object]) -> bool:
     return getattr(fn, '_wants_shift', False)
 
 

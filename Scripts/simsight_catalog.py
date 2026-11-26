@@ -53,7 +53,7 @@ def _build() -> Any:
 def _label(key: int) -> Any:
     import simsight_menu as menu
 
-    return menu._ls_hash(key)
+    return menu.loc_string(key)
 
 
 def _ready() -> bool:
@@ -150,18 +150,18 @@ def _request(
 ) -> None:
     """Ask the bridge for a list; on_done(items) on the game thread."""
     build = _build()
-    build._cat['serial'] += 1
-    serial = build._cat['serial']
-    arrived = _Arrived(lambda: on_done(list(build._cat['items'])))
-    build._cat.update(items=[], total=0, name='', next='tree', quiet=arrived)
-    build._send_ui(
+    build.catalog_state['serial'] += 1
+    serial = build.catalog_state['serial']
+    arrived = _Arrived(lambda: on_done(list(build.catalog_state['items'])))
+    build.catalog_state.update(items=[], total=0, name='', next='tree', quiet=arrived)
+    build.send_ui(
         'A11y|plus|browse|{}|{}|{}|{}|{}'.format(
             product_type, tags, priority, serial, quote(search, safe='')
         )
     )
 
     def timeout() -> None:
-        if not arrived.done and build._cat['serial'] == serial:
+        if not arrived.done and build.catalog_state['serial'] == serial:
             arrived.done = True
             _core().speak('The catalog did not answer. Open Build mode with F2 and try again.')
 
@@ -205,10 +205,10 @@ def _items(title: Any, items: list[Item], back: Callable[[], object]) -> None:
 
 def _pick(index: int) -> None:
     build = _build()
-    build._NEXT_HINT['tree'] = _HINT
-    build._cat['next'] = 'tree'
-    build._cat['chosen'] = index
-    build._send_ui(f'A11y|plus|select|{index}')
+    build.NEXT_HINT['tree'] = _HINT
+    build.catalog_state['next'] = 'tree'
+    build.catalog_state['chosen'] = index
+    build.send_ui(f'A11y|plus|select|{index}')
 
 
 def find() -> bool:

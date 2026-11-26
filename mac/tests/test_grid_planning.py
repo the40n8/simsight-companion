@@ -84,7 +84,7 @@ def room_box(room):
     )
 
 
-module('simsight_plus_build', frame=Frame, _room_box=room_box)
+module('simsight_plus_build', frame=Frame, room_box=room_box)
 module(
     'simsight_plus_rooms',
     scan_rooms=lambda: list(ROOMS),

@@ -74,9 +74,7 @@ module('build_buy', is_location_pool=lambda p, level: p.x < 2 and p.z < 3)
 module('terrain', get_terrain_height=lambda x, z: 0.0)
 math_mod = module('sims4.math', Vector3=V)
 module('sims4', math=math_mod)
-module(
-    'simsight_bridge', _classify=lambda o: ('MISC', 'k', ''), _object_name=lambda o: f'obj{o.id}'
-)
+module('simsight_bridge', classify=lambda o: ('MISC', 'k', ''), object_name=lambda o: f'obj{o.id}')
 
 import simsight_housemap as housemap  # noqa: E402
 import simsight_plus_rooms as rooms  # noqa: E402

@@ -72,7 +72,7 @@ def receive(text: str = '') -> bool:
 
     try:
         job = _state.pending
-        status = parse_reply(narrator._decode_percent(text), job)
+        status = parse_reply(narrator.decode_percent(text), job)
         if status is None or job is None or _current_zone() != job.zone:
             return False
         _state.pending = None
@@ -108,7 +108,7 @@ def open_goals(situation_id: Any) -> bool:
     import simsight_hub as hub
     import simsight_pump as pump
 
-    _manager, situation = hub._event(situation_id)
+    _manager, situation = hub.event_situation(situation_id)
     if situation is None:
         return False
     _register()
@@ -120,7 +120,7 @@ def open_goals(situation_id: Any) -> bool:
         until=time.monotonic() + _REPLY_SECONDS,
     )
     _state.pending = job
-    hub._ui(f'A11y|eventgoals|{job.event}|{job.zone}|{job.serial}')
+    hub.send_ui(f'A11y|eventgoals|{job.event}|{job.zone}|{job.serial}')
     # The timer never touches game data; only the simulation pump may expire it.
     timer = threading.Timer(_TIMEOUT_SECONDS, lambda: pump.post(_expire, job.serial))
     timer.daemon = True

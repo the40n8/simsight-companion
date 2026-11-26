@@ -71,14 +71,14 @@ def wall_refusal() -> bool:
         return False
     import simsight_place as place
 
-    place._say_text(
+    place.say_text(
         'Select a wall-height target with Control Alt U or Control Alt D before placing this wall object.',
         'Przed umieszczeniem obiektu ściennego wybierz wysokość ściany przez Control Alt U lub Control Alt D.',
     )
     return True
 
 
-def _definition_id(obj: Any) -> int | None:
+def definition_id(obj: Any) -> int | None:
     try:
         return int(obj.definition.id)
     except Exception:  # no definition: try the bare id
@@ -93,7 +93,7 @@ def _kind(obj: Any) -> str:
     try:
         import simsight_place as place
 
-        need = place.requirement(_definition_id(obj))
+        need = place.requirement(definition_id(obj))
     except Exception:  # unknown requirement: a ground object
         need = None
     if need == 'ceiling':
@@ -194,7 +194,7 @@ def _focus_objects(objects: list[Any]) -> list[Any]:
 def _name_parts(obj: Any) -> list[Any]:
     import simsight_grid as grid
 
-    value = grid._name(obj)
+    value = grid.object_name_part(obj)
     return list(value) if isinstance(value, list) else [value]
 
 
@@ -217,7 +217,7 @@ def focus_detail(frame: Frame) -> bool:
     matches.sort(key=lambda obj: int(getattr(obj, 'id', 0)))
     if not matches:
         clear_focus()
-        scanner._speak_parts(_no_match_parts(frame, objects))
+        scanner.speak_parts(_no_match_parts(frame, objects))
         return True
     context = (grid.location.tile, grid.location.level, _state.mode)
     same = _state.focus_where == context
@@ -236,8 +236,8 @@ def focus_detail(frame: Frame) -> bool:
         )
     # Number 1 still lists everything on the tile, with contents and free spots.
     parts.append(lang.text('Objects here: ', 'Obiekty tutaj: '))
-    parts.extend(grid._object_parts(frame, objects))
-    scanner._speak_parts(parts)
+    parts.extend(grid.object_parts(frame, objects))
+    scanner.speak_parts(parts)
     return True
 
 
@@ -251,7 +251,7 @@ def _no_match_parts(frame: Frame, objects: list[Any]) -> list[Any]:
     ]
     if objects:
         parts.append(lang.text('Objects here: ', 'Obiekty tutaj: '))
-        parts.extend(grid._object_parts(frame, objects))
+        parts.extend(grid.object_parts(frame, objects))
     else:
         parts.append(lang.text('Nothing here.', 'Nic tu nie ma.'))
     return parts
@@ -319,7 +319,7 @@ def nearby_detail(frame: Frame) -> bool:
                 tiles.NEARBY_RADIUS
             )
         ]
-    scanner._speak_parts(parts)
+    scanner.speak_parts(parts)
     return True
 
 
@@ -354,7 +354,7 @@ def _step_wall_height(step: int) -> bool:
 
     item = place.product()
     if item is None or place.requirement(item['id']) != 'wall':
-        place._say_text(
+        place.say_text(
             'Choose a wall object first; these keys set its height.',
             'Najpierw wybierz obiekt ścienny; te klawisze ustawiają jego wysokość.',
         )
@@ -364,7 +364,7 @@ def _step_wall_height(step: int) -> bool:
     label, height = wall_height()
     direction = tiles.direction_name(int(grid.location.facing) % 4)
     available = wall.selected_wall() is not None
-    place._say_text(
+    place.say_text(
         'Height {}, {:.1f} metres. {} {}.'.format(
             label, height, 'Wall' if available else 'No wall', direction
         ),
@@ -388,12 +388,12 @@ def change_layer(delta: int) -> bool:
         _state.wall_index = _state.mode - 1
     _kind_name, label, height = _mode_info()
     if height is not None:
-        place._say_text(
+        place.say_text(
             f'Target layer: {label}, {height:.1f} metres. Press 1 to focus an object here.',
             f'Warstwa docelowa: {label}, {height:.1f} metra. Naciśnij 1, aby wybrać obiekt.',
         )
     else:
-        place._say_text(
+        place.say_text(
             f'Target layer: {label}. Press 1 to focus an object here.',
             f'Warstwa docelowa: {label}. Naciśnij 1, aby wybrać obiekt.',
         )
@@ -428,7 +428,7 @@ def selected_surface_slot(target_id: Any, candidate: Any, level: Any) -> tuple[A
     if int(target.level) != int(level) or target.is_in_inventory() or target.is_hidden():
         return None
     owner = target.get_household_owner_id()
-    if owner and owner != place._household_id():
+    if owner and owner != place.household_id():
         return None
     if not services.active_lot().is_position_on_lot(target.position):
         return None

@@ -67,7 +67,7 @@ def _scan_main() -> Any:
     return _original_scan()
 
 
-def _scan_rooms() -> Any:
+def scan_rooms() -> Any:
     """Room scan on the simulation thread, from any thread (replaces rooms.scan_rooms)."""
     if _state.main_ident is None:
         raise RuntimeError('The room-scan simulation thread is not ready')
@@ -160,7 +160,7 @@ def _door_names(plan: Any) -> None:
 
 
 def _check_story_count(stories: object, basement: bool) -> None:
-    low, high = _state.planner._limits()
+    low, high = _state.planner.floor_limits()
     if isinstance(stories, bool) or not isinstance(stories, int) or not 1 <= stories <= high + 1:
         raise ValueError('That story count is outside the native game limits')
     if basement and low >= 0:
@@ -223,7 +223,7 @@ def _extend(plan: Any, stories: int, basement: bool) -> Any:
         p.stairs = {'top': top, 'climb': (1, 0)}
     frame = _state.build.frame()
     along = frame.width if p.side in ('north', 'south') else frame.depth
-    _state.house._map_plan(p, frame, along)
+    _state.house.map_plan(p, frame, along)
     p._a11y_transitions = []
     if p.stairs:
         for lower in levels[:-1]:
@@ -316,7 +316,7 @@ def _edit_rooms(plan: Any) -> None:
 
 
 def _stories(plan: Any) -> None:
-    low, high = _state.planner._limits()
+    low, high = _state.planner.floor_limits()
 
     def count_chosen(count: int) -> None:
         options: list[tuple[str, str | None, bool]] = [('No basement', None, False)]
@@ -391,7 +391,7 @@ def _review(plan: Any) -> None:
             if not _valid(plan):
                 _state.core.speak('The lot or household changed. Nothing was built.')
                 return
-            if _state.build._busy[0]:
+            if _state.build.busy[0]:
                 _state.core.speak('Still working on the last build step.')
                 return
             _door_names(plan)
@@ -449,7 +449,7 @@ def _custom() -> None:
                 if layout == 'four'
                 else ['Living room', 'Bedroom']
             )
-            plan = _state.planner._build_plan(size[0], size[1], [0], layout, {0: defaults})
+            plan = _state.planner.build_plan(size[0], size[1], [0], layout, {0: defaults})
             if getattr(plan, 'problem', None):
                 _state.core.speak(plan.problem)
                 return
@@ -492,7 +492,7 @@ def _ready_made() -> None:
     )
 
 
-def _legacy_plan(kinds: Any) -> None:
+def legacy_plan(kinds: Any) -> None:
     _preset(kinds if isinstance(kinds, tuple) else ('one', kinds))
 
 
@@ -514,7 +514,7 @@ def open_builder() -> None:
         (
             'Choose the room list yourself',
             'Original one-floor room-list planner, using the same review.',
-            lambda: _state.house._custom([]),
+            lambda: _state.house.choose_custom_rooms([]),
         ),
     ]
     _state.core.choose(
@@ -526,7 +526,7 @@ def open_builder() -> None:
     )
 
 
-def _say(text: str) -> None:
+def say(text: str) -> None:
     import simsight_basement as basement
 
     reason = basement.failure_reason()
@@ -560,10 +560,10 @@ def install() -> None:
 def _original_scan() -> Any:
     import simsight_plus_rooms as rooms
 
-    return rooms._scan_rooms_base()
+    return rooms.scan_rooms_base()
 
 
 def _original_say(text: str) -> None:
     import simsight_plus_house as house
 
-    house._say_base(text)
+    house.say_base(text)

@@ -202,7 +202,7 @@ def apply_setting() -> bool:
     return announce_controls()
 
 
-def _zone() -> Any:
+def build_zone() -> Any:
     """The current zone while it is in Build/Buy mode, else None."""
     try:
         import services
@@ -216,14 +216,14 @@ def _zone() -> Any:
 
 def active() -> bool:
     """A client acknowledgement is required before rerouting scanner keys."""
-    zone = _zone()
+    zone = build_zone()
     if zone is None or zone.id != _state.zone_id or not controls_enabled():
         _state.active = False
     return _state.active
 
 
 def aiming() -> bool:
-    zone = _zone()
+    zone = build_zone()
     if _state.aim_pending and (
         zone is None
         or zone.id != _state.zone_id
@@ -262,7 +262,7 @@ def aim_grid() -> bool:
         return refuse_disabled()
     import simsight_grid as grid
 
-    zone = _zone()
+    zone = build_zone()
     target = grid.cursor()
     if zone is None or target is None or target[2] != zone.id:
         _say(
@@ -318,7 +318,7 @@ def request(action: str) -> bool:
         return toggle()
     if action == 'grid':
         return aim_grid()
-    zone = _zone()
+    zone = build_zone()
     if not _may_request(action, zone):
         return False
     if action == 'on':
@@ -346,7 +346,7 @@ def request_menu(action: str) -> bool:
         return False
     if not controls_enabled():
         return refuse_disabled()
-    zone = _zone()
+    zone = build_zone()
     if zone is None:
         _state.active = False
         _say('Enter Build mode first.', 'Najpierw włącz tryb budowania.')
@@ -443,7 +443,7 @@ def command(action: str = 'toggle', _connection: Any = None) -> bool:
 
 
 def _info(encoded: str) -> bool:
-    zone = _zone()
+    zone = build_zone()
     if zone is None or zone.id != _state.zone_id or not controls_enabled():
         return False
     try:
@@ -572,7 +572,7 @@ def _client_state(encoded: str) -> bool:
     if parsed is None:
         return False
     serial, flag, result, x, y, step = parsed
-    zone = _zone()
+    zone = build_zone()
     if not _accept_serial(serial, flag, zone):
         return False
     if flag and not controls_enabled():

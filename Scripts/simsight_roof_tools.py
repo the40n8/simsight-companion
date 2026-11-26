@@ -48,7 +48,7 @@ def _rooms() -> list[Any]:
 def _box(room: Any) -> Box:
     import simsight_plus_build as build
 
-    return build._room_box(room)
+    return build.room_box(room)
 
 
 def _room_cells(room: Any) -> set[Cell]:
@@ -520,11 +520,11 @@ def _choose_roof_style(
     import simsight_plus_draw as draw
 
     def chosen(name: str) -> None:
-        if build._busy[0]:
+        if build.busy[0]:
             core.speak('Still working on the last build step.')
             return
-        build._busy[0] = True
-        draw_state: dict[str, Any] = draw._state  # its values vary by key
+        build.busy[0] = True
+        draw_state: dict[str, Any] = draw.draw_state  # its values vary by key
         draw_state['style'] = (4, '', name)
         _plans.append((kind, box, level, tuple(names), name))
         _log(
@@ -534,7 +534,7 @@ def _choose_roof_style(
             'Placing {} over {}. Please wait and let go of Alt.'.format(name, ', '.join(names))
         )
         threading.Thread(
-            target=draw._draw_roof_box, args=(box, level), name='a11y_roof_builder', daemon=True
+            target=draw.draw_roof_box, args=(box, level), name='a11y_roof_builder', daemon=True
         ).start()
 
     def work() -> None:

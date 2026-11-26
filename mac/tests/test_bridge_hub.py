@@ -25,7 +25,7 @@ module(
     ),
 )
 module('simsight_lang', t=lambda term: term)
-module('simsight_menu', _raw=lambda text: text)
+module('simsight_menu', raw_text=lambda text: text)
 module('simsight_pump', post=lambda fn, *args: True)
 module('simsight_settings', get=lambda key, default=None: default)
 module('simsight_speech', speak=lambda text, **kw: SPOKEN.append(text))

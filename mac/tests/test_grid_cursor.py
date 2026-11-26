@@ -112,11 +112,11 @@ dist.system = module(
 module('simsight_settings', get=lambda key, default=None: default)
 module(
     'simsight_scanner',
-    _speak_parts=lambda parts: SAID.append(''.join(str(p) for p in parts)),
-    _entry_for=lambda obj, *a: types.SimpleNamespace(name='Bella'),
-    _name_part=lambda entry: entry.name,
+    speak_parts=lambda parts: SAID.append(''.join(str(p) for p in parts)),
+    entry_for=lambda obj, *a: types.SimpleNamespace(name='Bella'),
+    name_part=lambda entry: entry.name,
 )
-module('simsight_keys', _scanner_effective=lambda: False)
+module('simsight_keys', scanner_effective=lambda: False)
 module(
     'simsight_build',
     controls_enabled=lambda: True,
@@ -137,7 +137,7 @@ module(
     in_build_mode=lambda: True,
     product=lambda: PRODUCT[0],
     requirement=lambda def_id: None,
-    _NEEDS={},
+    NEEDS={},
     place=place,
     cancel_pending=lambda: None,
     undo=lambda: None,
@@ -160,11 +160,11 @@ module(
 
 
 def alignment_fit(frame, with_facing=True, objects=None):
-    return grid._fit_parts_base(frame, with_facing=with_facing, objects=objects)
+    return grid.fit_parts_base(frame, with_facing=with_facing, objects=objects)
 
 
 def room_parts(frame):
-    return grid._room_parts_base(frame)
+    return grid.room_parts_base(frame)
 
 
 module('simsight_chair_alignment', fit_parts=alignment_fit)

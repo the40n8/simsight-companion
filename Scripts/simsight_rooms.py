@@ -195,10 +195,11 @@ def _picker_result(dialog: Any) -> None:
 
 
 def _open_picker(room: RoomKey) -> bool:
+    import simsight_keys as keys
     import simsight_menu as menu
     from ui.ui_dialog_picker import BasePickerRow
 
-    dialog = menu._picker(
+    dialog = menu.picker(
         'Room label',
         'Choose a label for the room at the Build cursor. For a custom name, use simsight.roomlabel followed by the name in the cheat console.',
         text_only=True,
@@ -210,7 +211,7 @@ def _open_picker(room: RoomKey) -> bool:
         dialog.add_row(
             BasePickerRow(
                 option_id=index,
-                name=menu._raw(name),
+                name=menu.raw_text(name),
                 row_description=None,
                 row_tooltip=None,
                 icon=None,
@@ -219,7 +220,7 @@ def _open_picker(room: RoomKey) -> bool:
             )
         )
     dialog.add_listener(_picker_result)
-    menu._keys().fence_opening_input()
+    keys.fence_opening_input()
     dialog.show_dialog()
     _state.picker_id = dialog.dialog_id
     _state.picker_room = room
@@ -251,7 +252,9 @@ def _separated(frame: Any, i: int, j: int, level: Any) -> tuple[list[tuple[int, 
     separated = []
     named = False
     for side, (di, dj) in enumerate(tiles.STEPS):
-        if (side in doors or wall._blocked(sides.get(side))) and wall.separates_rooms(frame, side):
+        if (side in doors or wall.blocked_side(sides.get(side))) and wall.separates_rooms(
+            frame, side
+        ):
             there_id, there_outside = _room_at(i + di, j + dj, level)
             there_name = room_name(there_id, there_outside, level)
             named = named or (there_name is not None and not there_outside)

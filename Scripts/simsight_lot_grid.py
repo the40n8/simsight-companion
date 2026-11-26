@@ -298,7 +298,7 @@ def room_parts(frame: Any) -> tuple[list[Any], dict[str, bool]]:
     of the tile when planning descriptions are on."""
     import simsight_grid as grid
 
-    parts, facts = grid._room_parts_base(frame)
+    parts, facts = grid.room_parts_base(frame)
     if _state.enabled:
         try:
             parts = list(parts) + [

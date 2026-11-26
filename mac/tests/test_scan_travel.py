@@ -21,7 +21,9 @@ sims4.commands = module(
     'sims4.commands', Command=lambda *a, **k: lambda f: f, CommandType=types.SimpleNamespace(Live=1)
 )
 module('simsight_lang', t=lambda term: term)
-module('simsight_menu', _raw=lambda s: s, _join=lambda *s: s, _cancel_dialog=lambda i: None)
+module(
+    'simsight_menu', raw_text=lambda s: s, join_localized=lambda *s: s, cancel_dialog=lambda i: None
+)
 module('simsight_pump', post=lambda fn, *a: True)
 module('simsight_settings', get=lambda name, fallback=None: fallback)
 module('simsight_speech', speak=lambda *a, **k: None)

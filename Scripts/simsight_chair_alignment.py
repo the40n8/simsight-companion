@@ -174,4 +174,4 @@ def fit_parts(frame: Any, with_facing: bool = True, objects: Any = None) -> list
 def _original_fit_parts(frame: Any, with_facing: bool = True, objects: Any = None) -> Any:
     import simsight_grid as grid
 
-    return grid._fit_parts_base(frame, with_facing=with_facing, objects=objects)
+    return grid.fit_parts_base(frame, with_facing=with_facing, objects=objects)

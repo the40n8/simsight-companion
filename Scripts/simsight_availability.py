@@ -179,7 +179,7 @@ def _ui_busy() -> bool:
     if getattr(status, 'modal_active', False) or getattr(status, 'editing_active', False):
         return True
     scanner = sys.modules.get('simsight_scanner')
-    return bool(scanner is not None and getattr(scanner, '_menu_open', False))
+    return bool(scanner is not None and scanner.menu_open())
 
 
 def begin(sim: Any, objects: Iterable[Any]) -> int:

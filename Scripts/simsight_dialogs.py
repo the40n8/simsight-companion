@@ -184,7 +184,7 @@ def _object_label(object_id: Any) -> str:
 
         obj = services.object_manager().get(int(object_id))
         if obj is not None:
-            return _bridge()._object_name(obj)
+            return _bridge().object_name(obj)
     except _LOOKUP_ERRORS:
         pass  # no name: the row keeps its own words
     return ''

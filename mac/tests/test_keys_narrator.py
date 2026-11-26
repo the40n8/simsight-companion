@@ -55,10 +55,10 @@ class CommandTypesTest(unittest.TestCase):
 class DecodeTest(unittest.TestCase):
     def test_utf8_and_stray_latin1(self):
         # Scaleform: e-acute as a bare Latin-1 byte, the euro sign as UTF-8.
-        self.assertEqual(narrator._decode_percent('caf%E9 %E2%82%AC5'), 'café €5')
+        self.assertEqual(narrator.decode_percent('caf%E9 %E2%82%AC5'), 'café €5')
 
     def test_plain_ascii(self):
-        self.assertEqual(narrator._decode_percent('a%20b'), 'a b')
+        self.assertEqual(narrator.decode_percent('a%20b'), 'a b')
 
 
 class SegmentsTest(unittest.TestCase):

@@ -18,7 +18,7 @@ module(
     log=lambda m: None,
     log_exc=lambda where: None,
 )
-module('simsight_plus_build', _busy=[False], _last_error={'text': '', 'at': 0.0})
+module('simsight_plus_build', busy=[False], last_error={'text': '', 'at': 0.0})
 
 import simsight_plus_draw as draw  # noqa: E402
 import simsight_plus_furnish as furnish  # noqa: E402
@@ -31,7 +31,7 @@ for _e in range(6):
 
 class DrawCursorTest(unittest.TestCase):
     def setUp(self):
-        draw._state.update(
+        draw.draw_state.update(
             grid=[row[:] for row in GRID],
             names={1: 'kitchen', 2: 'hall'},
             start=None,
@@ -56,14 +56,14 @@ class DrawCursorTest(unittest.TestCase):
 
     def test_from_start(self):
         self.assertEqual(draw._from_start(2, 2), '')
-        draw._state['start'] = (1, 1)
+        draw.draw_state['start'] = (1, 1)
         self.assertEqual(draw._from_start(1, 1), 'At the start point.')
         self.assertEqual(draw._from_start(3, 0), 'From the start: 2 east and 1 north.')
 
     def test_where(self):
-        draw._state.update(e=2, n=2)
+        draw.draw_state.update(e=2, n=2)
         self.assertEqual(draw._where(), '2 from west, 2 from north. Inside the kitchen.')
-        draw._state.update(e=1, n=1, tool='roof', style=(4, '', 'Gable'))
+        draw.draw_state.update(e=1, n=1, tool='roof', style=(4, '', 'Gable'))
         self.assertEqual(
             draw._where(full=True),
             '1 from west, 1 from north. Between outside and kitchen.'

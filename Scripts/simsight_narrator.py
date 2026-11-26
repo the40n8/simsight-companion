@@ -91,7 +91,7 @@ def _decode_char(raw: bytes, i: int) -> tuple[str, int]:
     return raw[i : i + 1].decode('latin-1'), 1
 
 
-def _decode_percent(token: str) -> str:
+def decode_percent(token: str) -> str:
     """Decode Flash payloads. Scaleform's encodeURIComponent is broken for
     U+0080..U+00FF: those arrive as bare Latin-1 bytes while higher
     codepoints arrive as proper UTF-8, so a strict UTF-8 unquote turns every
@@ -474,7 +474,7 @@ def a11y_rawdiag(mode: str = 'on', _connection: Any = None) -> bool:
 @live_command('simsight.timewidget_enc', 'a11y.timewidget_enc')
 def a11y_timewidget_enc(text: str = '', _connection: Any = None) -> bool:
     with _boundary('narrator: timewidget_enc'):
-        decoded = _decode_percent(text)
+        decoded = decode_percent(text)
         if _state.rawdiag:
             simsight_log.line('RAWDIAG[timewidget]: ' + ascii(decoded))
         final = _clean_glyphs(decoded)
@@ -494,7 +494,7 @@ def a11y_clock_enc(text: str = '', _connection: Any = None) -> bool:
     words rather than invent a day number. Separate from the pointer path
     (simsight.timewidget_enc) so a hover can never pass for the reply."""
     with _boundary('narrator: clock_enc'):
-        decoded = _decode_percent(text)
+        decoded = decode_percent(text)
         if decoded.startswith('clock:'):
             decoded = decoded[len('clock:') :]
         final = _clean_glyphs(decoded).strip() if decoded.strip() else ''
@@ -584,7 +584,7 @@ def _moodlet(fields: list[str]) -> _Moodlet:
 
 
 def _mood_record(text: str) -> None:
-    fields = _decode_percent(text).split(FIELD_SEP) if text else []
+    fields = decode_percent(text).split(FIELD_SEP) if text else []
     kind = fields[0] if fields else ''
     reading = _state.mood_reading
     if kind == 'M' and len(fields) >= 6:
@@ -626,7 +626,7 @@ def a11y_speak_enc(text: str = '', _connection: Any = None) -> bool:
     with _boundary('narrator: speak_enc'):
         # A real tooltip beats any placeholder name we derived from the control.
         _cancel_pending_name()
-        final = _process_or_raw(_decode_percent(text), 'tooltip')
+        final = _process_or_raw(decode_percent(text), 'tooltip')
         head = _take_row_head()
         delay = _tooltip_delay()
         if head is not None and delay > 0:
@@ -647,7 +647,7 @@ def a11y_widget_enc(text: str = '', _connection: Any = None) -> bool:
         # "Increase. <item>. <count>" line; without this, the parked name
         # flushed 0.4 s later and talked over the real announcement).
         _cancel_pending_name()
-        final = _process_or_raw(_decode_percent(text), 'widget')
+        final = _process_or_raw(decode_percent(text), 'widget')
         # This row spoke for itself, so a description arriving behind it can be
         # deferred; it also supersedes any older row still waiting.
         _arm_row_head(final)
@@ -661,7 +661,7 @@ def a11y_focus_enc(text: str = '', _connection: Any = None) -> bool:
     """The settled keyboard target supersedes an older pending row."""
     with _boundary('narrator: focus_enc'):
         _cancel_pending_name()
-        final = _process_or_raw(_decode_percent(text), 'widget')
+        final = _process_or_raw(decode_percent(text), 'widget')
         _arm_row_head(final)
         speech.speak(final, source='widget', explicit=speech.modes.speech == 'hover')
         return True
@@ -676,7 +676,7 @@ def a11y_context_enc(text: str = '', _connection: Any = None) -> bool:
     digit is the owner's blocking bit (phone guard), applied with the
     owner as one report; the direct simsight.modalstate stays two digits."""
     with _boundary('narrator: context_enc'):
-        decoded = _decode_percent(text)
+        decoded = decode_percent(text)
         simsight_log.line('UI owner: ' + decoded[:300])
         suffix = decoded.rsplit(':', 1)[-1] if ':' in decoded else ''
         if suffix[:2] in ('00', '01', '10', '11') and suffix[2:] in ('', '0', '1'):
@@ -745,12 +745,12 @@ def a11y_inspect_ui(delay: float = 0, _connection: Any = None) -> bool:
         delay = max(0.0, min(60.0, delay))
         if delay:
             # _send only queues work; the timer never calls game APIs directly.
-            timer = threading.Timer(delay, keys._send, args=('A11yInspect',))
+            timer = threading.Timer(delay, keys.send_action, args=('A11yInspect',))
             timer.daemon = True
             timer.start()
             _state.inspect_timer = timer
         else:
-            keys._send('A11yInspect')
+            keys.send_action('A11yInspect')
         sims4.commands.CheatOutput(_connection)(
             f'Keyboard focus snapshot in {delay:.0f} seconds; see SimSight log.'
         )
@@ -761,7 +761,7 @@ def a11y_inspect_ui(delay: float = 0, _connection: Any = None) -> bool:
 @live_command('simsight.inspect_enc', 'a11y.inspect_enc')
 def a11y_inspect_enc(text: str = '', _connection: Any = None) -> bool:
     with _boundary('narrator: inspect_enc'):
-        for line in _decode_percent(text)[:16000].splitlines():
+        for line in decode_percent(text)[:16000].splitlines():
             simsight_log.line('UI inspect: ' + line)
         return True
     return False
@@ -775,7 +775,7 @@ def a11y_scope_enc(text: str = '', _connection: Any = None) -> bool:
     """Opening description and first control form one uninterrupted utterance."""
     with _boundary('narrator: scope_enc'):
         _cancel_pending_name()
-        parts = _decode_percent(text).split('\x02', 2)
+        parts = decode_percent(text).split('\x02', 2)
         if len(parts) != 3:
             return False
         kind, intro, focus = parts
@@ -793,7 +793,7 @@ def a11y_scope_enc(text: str = '', _connection: Any = None) -> bool:
 @live_command('simsight.dialog_enc', 'a11y.dialog_enc')
 def a11y_dialog_enc(text: str = '', _connection: Any = None) -> bool:
     with _boundary('narrator: dialog_enc'):
-        body = _process_or_raw(_decode_percent(text), 'dialog')
+        body = _process_or_raw(decode_percent(text), 'dialog')
         # Dialogs demand an answer, so they interrupt and are labelled as such
         # (unless verbosity is brief).
         speech.speak(
@@ -854,7 +854,7 @@ def a11y_widgetname_enc(text: str = '', _connection: Any = None) -> bool:
         # An icon-only control: its tooltip is the only text it has, so it must
         # never be deferred as if it were a data row's description.
         _state.row_head = None
-        decoded = _decode_percent(text).strip()
+        decoded = decode_percent(text).strip()
         if _state.rawdiag:
             simsight_log.line('RAWDIAG[widgetname]: ' + ascii(decoded))
         name = _control_name(decoded)
@@ -878,7 +878,7 @@ def a11y_widgetname_enc(text: str = '', _connection: Any = None) -> bool:
 @live_command('simsight.event_enc', 'a11y.event_enc')
 def a11y_event_enc(text: str = '', _connection: Any = None) -> bool:
     with _boundary('narrator: event_enc'):
-        speech.speak(_process_or_raw(_decode_percent(text), 'event'), source='event')
+        speech.speak(_process_or_raw(decode_percent(text), 'event'), source='event')
         return True
     return False
 
@@ -920,7 +920,7 @@ def a11y_simaction_enc(text: str = '', _connection: Any = None) -> bool:
     with _boundary('narrator: simaction_enc'):
         if not _sim_actions_on():
             return True
-        speech.speak(_process_or_raw(_decode_percent(text), 'simaction'), source='event')
+        speech.speak(_process_or_raw(decode_percent(text), 'simaction'), source='event')
         return True
     return False
 
@@ -996,7 +996,7 @@ def a11y_speechmode(mode: str = '', _connection: Any = None) -> bool:
         output = sims4.commands.CheatOutput(_connection)
         m = mode.lower().replace('-', '_').replace(' ', '_')
         m = _LEGACY_SPEECH_MODES.get(m, m)
-        if m in speech._VALID_MODES:
+        if m in speech.VALID_MODES:
             speech.set_mode(m)
             output(f'simsight: speech mode {m}')
         else:
@@ -1281,7 +1281,7 @@ def _reload_speech(output: Output) -> None:
     if braille in _BRAILLE_MODES:
         speech.modes.braille = braille
     mode = str(settings.get('speech_mode', 'hover'))
-    if mode in speech._VALID_MODES:
+    if mode in speech.VALID_MODES:
         speech.modes.speech = mode
     speech.restart_sapi()
     if speech.retry_screen_reader():
@@ -1400,7 +1400,7 @@ def _settings_lines() -> tuple[list[str], list[str]]:
         for label, combos in keys.BINDINGS.values():
             keybind_lines.append(
                 '   {}: {}'.format(
-                    label, ' or '.join(keys._describe(vk, alt) for (vk, alt) in combos)
+                    label, ' or '.join(keys.describe_key(vk, alt) for (vk, alt) in combos)
                 )
             )
     except ImportError:

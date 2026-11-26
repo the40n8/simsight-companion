@@ -25,7 +25,7 @@ TOOLS = {
 }
 
 # Read and written by simsight_roof_tools too ('style'): keep it a dict with these keys.
-_state: dict[str, Any] = {
+draw_state: dict[str, Any] = {
     'on': False,
     'e': 0,
     'n': 0,
@@ -42,7 +42,7 @@ _BUSY = 'Still working on the last build step.'
 
 
 def is_on() -> bool:
-    return bool(_state['on'] and build.in_build_mode())
+    return bool(draw_state['on'] and build.in_build_mode())
 
 
 # ---------------------------------------------------------------- what is where
@@ -55,22 +55,22 @@ def _refresh_map() -> None:
     f = build.frame()
     real = {}
     for r in rooms.scan_rooms():
-        if r.level == _state['level']:
+        if r.level == draw_state['level']:
             real[r.rid] = r.name
     grid = []
     for n in range(f.depth):
         row = []
         for e in range(f.width):
             (x, z) = f.world(e + 0.5, n + 0.5)
-            rid = rooms.room_id_at(x, z, _state['level'])
+            rid = rooms.room_id_at(x, z, draw_state['level'])
             row.append(rid if rid in real else 0)
         grid.append(row)
-    _state['grid'] = grid
-    _state['names'] = real
+    draw_state['grid'] = grid
+    draw_state['names'] = real
 
 
 def _tile(e: int, n: int) -> Any:
-    g = _state['grid']
+    g = draw_state['grid']
     if g is None or n < 0 or e < 0 or n >= len(g) or e >= len(g[0]):
         return 0
     return g[n][e]
@@ -95,14 +95,14 @@ def _area_text(e: int, n: int) -> str:
     for t in (_tile(e - 1, n - 1), _tile(e, n - 1), _tile(e - 1, n), _tile(e, n)):
         if t not in ids:
             ids.append(t)
-    names = [_state['names'].get(t, 'outside') if t else 'outside' for t in ids]
+    names = [draw_state['names'].get(t, 'outside') if t else 'outside' for t in ids]
     if len(names) == 1:
         return 'inside the ' + names[0] if names[0] != 'outside' else 'outside'
     return 'between ' + ', '.join(names[:-1]) + ' and ' + names[-1]
 
 
 def _from_start(e: int, n: int) -> str:
-    s = _state['start']
+    s = draw_state['start']
     if s is None:
         return ''
     de, dn = e - s[0], n - s[1]
@@ -117,7 +117,7 @@ def _from_start(e: int, n: int) -> str:
 
 
 def _where(full: bool = False) -> str:
-    e, n = _state['e'], _state['n']
+    e, n = draw_state['e'], draw_state['n']
     area = _area_text(e, n)
     text = f'{e} from west, {n} from north. {area[:1].upper() + area[1:]}.'
     dirs = _wall_dirs(e, n)
@@ -127,8 +127,8 @@ def _where(full: bool = False) -> str:
     if s:
         text += ' ' + s
     if full:
-        style = _state['style'] if _state['tool'] in ('roof', 'fence') else None
-        text += ' Tool: {}{}.'.format(TOOLS[_state['tool']], ', ' + style[2] if style else '')
+        style = draw_state['style'] if draw_state['tool'] in ('roof', 'fence') else None
+        text += ' Tool: {}{}.'.format(TOOLS[draw_state['tool']], ', ' + style[2] if style else '')
     return text
 
 
@@ -142,17 +142,17 @@ def start() -> None:
     build.watch_product()
     _refresh_map()
     f = build.frame()
-    if not _state['on']:
+    if not draw_state['on']:
         # Start at the north west corner of the house, or the middle of the lot when it is empty.
-        g = _state['grid']
+        g = draw_state['grid']
         cells = [(e, n) for n in range(f.depth) for e in range(f.width) if g[n][e]]
         if cells:
-            _state['e'] = min(c[0] for c in cells)
-            _state['n'] = min(c[1] for c in cells)
+            draw_state['e'] = min(c[0] for c in cells)
+            draw_state['n'] = min(c[1] for c in cells)
         else:
-            _state['e'], _state['n'] = f.width // 2, f.depth // 2
-        _state['start'] = None
-    _state['on'] = True
+            draw_state['e'], draw_state['n'] = f.width // 2, f.depth // 2
+        draw_state['start'] = None
+    draw_state['on'] = True
     core.speak(
         'Drawing cursor on. Alt plus arrows move it 1 meter, add Shift for 5 meters. '
         'Alt+S marks the start point, Alt+D draws from the start to the cursor, Alt+X says where you are, '
@@ -162,7 +162,7 @@ def start() -> None:
 
 
 def stop() -> None:
-    _state['on'] = False
+    draw_state['on'] = False
     core.speak('Drawing cursor off.')
 
 
@@ -180,16 +180,18 @@ def choose_tool() -> None:
 
     def picked(tool: str) -> None:
         if tool in ('wall', 'room'):
-            _state['tool'], _state['style'] = tool, None
+            draw_state['tool'], draw_state['style'] = tool, None
             core.speak(f'Tool: {TOOLS[tool]}. ' + _hint())
             return
         _pick_style(tool)
 
-    core.choose('Drawing tool', 'Now: {}.'.format(TOOLS[_state['tool']]), rows, picked, tag='build')
+    core.choose(
+        'Drawing tool', 'Now: {}.'.format(TOOLS[draw_state['tool']]), rows, picked, tag='build'
+    )
 
 
 def _hint() -> str:
-    if _state['start'] is None:
+    if draw_state['start'] is None:
         return 'Move to the first corner and press Alt+S.'
     return 'Move to the end and press Alt+D.'
 
@@ -212,8 +214,8 @@ def _pick_style(tool: str) -> None:
             rows.append((name, desc, name))
 
         def chosen(name: str) -> None:
-            _state['tool'] = tool
-            _state['style'] = (ptype, tags, name)
+            draw_state['tool'] = tool
+            draw_state['style'] = (ptype, tags, name)
             core.speak(f'Tool: {TOOLS[tool]}, {name}. ' + _hint())
 
         core.post(
@@ -230,7 +232,7 @@ def _pick_style(tool: str) -> None:
 
 # ---------------------------------------------------------------- keys (only while the cursor is on)
 
-_WANTS_SHIFT = '_wants_shift'  # marker read by simsight_plus_core._wants_shift
+_WANTS_SHIFT = '_wants_shift'  # marker read by simsight_plus_core.wants_shift
 
 
 def _wants_shift(fn: Callable[[bool], None]) -> Callable[[bool], None]:
@@ -244,10 +246,10 @@ def _move(de: int, dn: int, shift: bool = False) -> None:
         return
     step = 5 if shift else 1
     f = build.frame()
-    e = max(0, min(f.width, _state['e'] + de * step))
-    n = max(0, min(f.depth, _state['n'] + dn * step))
-    edge = (e, n) == (_state['e'], _state['n']) or e in (0, f.width) or n in (0, f.depth)
-    _state['e'], _state['n'] = e, n
+    e = max(0, min(f.width, draw_state['e'] + de * step))
+    n = max(0, min(f.depth, draw_state['n'] + dn * step))
+    edge = (e, n) == (draw_state['e'], draw_state['n']) or e in (0, f.width) or n in (0, f.depth)
+    draw_state['e'], draw_state['n'] = e, n
     core.speak(_where() + (' Edge of the lot.' if edge else ''))
 
 
@@ -285,10 +287,10 @@ def _say_where() -> None:
 def _mark_start() -> None:
     if not is_on():
         return
-    _state['start'] = (_state['e'], _state['n'])
+    draw_state['start'] = (draw_state['e'], draw_state['n'])
     core.speak(
         'Start point at {} from west, {} from north. Move to the end and press Alt+D.'.format(
-            *_state['start']
+            *draw_state['start']
         )
     )
 
@@ -316,23 +318,23 @@ def _shape_problem(tool: str, s: Sequence[int], e: int, n: int) -> str | None:
 def _draw() -> None:
     if not is_on():
         return
-    s = _state['start']
+    s = draw_state['start']
     if s is None:
         core.speak('First mark a start point with Alt+S.')
         return
-    e, n = _state['e'], _state['n']
-    tool = _state['tool']
+    e, n = draw_state['e'], draw_state['n']
+    tool = draw_state['tool']
     problem = _shape_problem(tool, s, e, n)
     if problem:
         core.speak(problem)
         return
-    if tool in ('roof', 'fence') and not _state['style']:
+    if tool in ('roof', 'fence') and not draw_state['style']:
         _pick_style(tool)
         return
-    if build._busy[0]:
+    if build.busy[0]:
         core.speak(_BUSY)
         return
-    build._busy[0] = True
+    build.busy[0] = True
     core.speak('Drawing. Please wait, and let go of Alt.')
     threading.Thread(
         target=_draw_worker, args=(tool, tuple(s), (e, n)), name='simsight_plus_draw', daemon=True
@@ -359,11 +361,11 @@ def _select_style(ptype: int, tags: str, name: str) -> bool:
     names = [it[0] for it in items]
     if name not in names:
         return False
-    build._cat['silent_select'] = True
+    build.catalog_state['silent_select'] = True
     try:
         build.select_item(names.index(name), name)
     finally:
-        build._cat['silent_select'] = False
+        build.catalog_state['silent_select'] = False
     return True
 
 
@@ -373,8 +375,8 @@ def _corners_box(a: Sequence[int], b: Sequence[int]) -> Box:
 
 def _draw_roof(a: Sequence[int], b: Sequence[int], level: int) -> bool:
     """Worker thread. False when nothing was tried (the catalog choice failed)."""
-    if not _select_style(*_state['style']):
-        _say('I could not choose the {} in the catalog.'.format(_state['style'][2]))
+    if not _select_style(*draw_state['style']):
+        _say('I could not choose the {} in the catalog.'.format(draw_state['style'][2]))
         return False
     box = _corners_box(a, b)
     res = roof_worker(box, level)
@@ -387,7 +389,7 @@ def _draw_room(a: Sequence[int], b: Sequence[int]) -> bool:
     """Worker thread. False when nothing was tried (the Room Tool could not be chosen)."""
     import simsight_plus_house as house
 
-    if not house._pick_tool('Room Tool'):
+    if not house.pick_tool('Room Tool'):
         _say('I could not choose the Room Tool.')
         return False
     box = build.room_worker(_corners_box(a, b))
@@ -407,21 +409,21 @@ def _choose_line_tool(tool: str) -> bool:
     import simsight_plus_house as house
 
     if tool == 'wall':
-        if not house._pick_tool('Wall Tool'):
-            u = build._user32()  # the game's own key for the Wall Tool
+        if not house.pick_tool('Wall Tool'):
+            u = build.user32()  # the game's own key for the Wall Tool
             u.keybd_event(0x42, 0x30, 0, 0)
             u.keybd_event(0x42, 0x30, 2, 0)
             time.sleep(0.8)
         return True
-    if not _select_style(*_state['style']):
-        _say('I could not choose the {} in the catalog.'.format(_state['style'][2]))
+    if not _select_style(*draw_state['style']):
+        _say('I could not choose the {} in the catalog.'.format(draw_state['style'][2]))
         return False
     return True
 
 
 def _game_error_since(started: float) -> str:
     """What the game last said went wrong, when it said it after `started`."""
-    return build._last_error['text'] if build._last_error['at'] > started else ''
+    return build.last_error['text'] if build.last_error['at'] > started else ''
 
 
 def _drag_between(points: Sequence[Any]) -> Any:
@@ -463,7 +465,7 @@ def _draw_worker(tool: str, a: tuple[int, int], b: tuple[int, int]) -> None:
     try:
         _wait_keys_up()
         f = build.frame()
-        level = _state['level']
+        level = draw_state['level']
         if tool == 'roof':
             done = _draw_roof(a, b, level)
         elif tool == 'room':
@@ -473,12 +475,15 @@ def _draw_worker(tool: str, a: tuple[int, int], b: tuple[int, int]) -> None:
         if not done:
             return
         build.on_main(_refresh_map)
-        _state['start'] = (_state['e'], _state['n'])  # the next piece starts where this one ended
+        draw_state['start'] = (
+            draw_state['e'],
+            draw_state['n'],
+        )  # the next piece starts where this one ended
     except Exception:
         core.log_exc('draw job')
         _say('Sorry, drawing failed.')
     finally:
-        build._busy[0] = False
+        build.busy[0] = False
 
 
 # ---------------------------------------------------------------- roof over the whole house
@@ -497,7 +502,7 @@ def roof_whole_house() -> None:
         return
     # The roof goes on the top floor.
     level = max(r.level for r in all_rooms)
-    boxes = [build._room_box(r) for r in all_rooms if r.level == level]
+    boxes = [build.room_box(r) for r in all_rooms if r.level == level]
     box = (
         min(b[0] for b in boxes),
         min(b[1] for b in boxes),
@@ -513,22 +518,22 @@ def roof_whole_house() -> None:
         rows = [(name, None, name) for (name, _price, _colors) in items]
 
         def chosen(name: str) -> None:
-            if build._busy[0]:
+            if build.busy[0]:
                 core.speak(_BUSY)
                 return
-            build._busy[0] = True
-            _state['style'] = (4, '', name)
+            build.busy[0] = True
+            draw_state['style'] = (4, '', name)
             core.speak(
                 f'Putting a {name} over the house, {box[2] - box[0]} by {box[3] - box[1]} meters. Please wait.'
             )
-            saved = _state['tool']
-            _state['tool'] = 'roof'
+            saved = draw_state['tool']
+            draw_state['tool'] = 'roof'
 
             def go() -> None:
                 try:
-                    _draw_roof_box(box, level)
+                    draw_roof_box(box, level)
                 finally:
-                    _state['tool'] = saved
+                    draw_state['tool'] = saved
 
             threading.Thread(target=go, name='a11yplus_roof', daemon=True).start()
 
@@ -539,10 +544,10 @@ def roof_whole_house() -> None:
     threading.Thread(target=work, name='a11yplus_roofs', daemon=True).start()
 
 
-def _draw_roof_box(box: Sequence[int], level: int = 0) -> None:
+def draw_roof_box(box: Sequence[int], level: int = 0) -> None:
     try:
         _wait_keys_up()
-        if not _select_style(*_state['style']):
+        if not _select_style(*draw_state['style']):
             _say('I could not choose that roof in the catalog.')
             return
         res = roof_worker(box, level)
@@ -552,7 +557,7 @@ def _draw_roof_box(box: Sequence[int], level: int = 0) -> None:
         core.log_exc('roof job')
         _say('Sorry, the roof failed.')
     finally:
-        build._busy[0] = False
+        build.busy[0] = False
 
 
 # ---------------------------------------------------------------- roofs
@@ -662,13 +667,13 @@ def _drag_screen(a: Point, b: Point) -> None:
     (ax, ay), (bx, by) = a, b
     build.move_to(ax, ay)
     time.sleep(0.4)
-    build._mouse(build.LEFT_DOWN)
+    build.mouse(build.LEFT_DOWN)
     time.sleep(0.3)
     for i in range(1, 26):
         build.move_to(ax + (bx - ax) * i / 25, ay + (by - ay) * i / 25)
         time.sleep(0.03)
     time.sleep(0.4)
-    build._mouse(build.LEFT_UP)
+    build.mouse(build.LEFT_UP)
     time.sleep(0.6)
 
 
@@ -702,7 +707,7 @@ def _roof_camera(f: Any, box: Sequence[int], level: int = 0) -> None:
 
 def _park() -> None:
     """Mouse away from the roof (hovering it shows a tooltip) and from the screen edges (they scroll)."""
-    u = build._user32()
+    u = build.user32()
     build.move_to(int(u.GetSystemMetrics(0) * 0.9), int(u.GetSystemMetrics(1) * 0.85))
 
 
@@ -711,7 +716,7 @@ def _screen_of(f: Any, e: float, n: float, height: float, tries: int = 2) -> Any
         (x, z) = f.world(e, n)
         p = build.project(x, z, 0, height=height)
         if p:
-            return build._to_screen(*p)
+            return build.to_screen(*p)
     return None
 
 
@@ -735,9 +740,9 @@ def _screen_toward(f: Any, here: Point, there: Point, height: float) -> Point | 
 def _click_screen(point: Point) -> None:
     build.move_to(*point)
     time.sleep(0.4)
-    build._mouse(build.LEFT_DOWN)
+    build.mouse(build.LEFT_DOWN)
     time.sleep(0.1)
-    build._mouse(build.LEFT_UP)
+    build.mouse(build.LEFT_UP)
     time.sleep(1.0)
 
 

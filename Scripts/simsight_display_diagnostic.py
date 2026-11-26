@@ -52,7 +52,7 @@ def _win_dll(name: str) -> Any:
     return ctypes.WinDLL(name, use_last_error=True)  # type: ignore[attr-defined]  # Windows only; mypy checks as macOS
 
 
-def _api() -> Any:
+def user32_api() -> Any:
     # Private function objects: do not overwrite prototypes cached by the
     # existing mouse worker. HWND/context return values must be pointer-wide.
     u = _win_dll('user32')
@@ -183,7 +183,7 @@ class _Snapshot:
 
 
 def windows_snapshot(u: Any = None) -> dict[str, Any]:
-    u = _api() if u is None else u
+    u = user32_api() if u is None else u
     hwnd = u.GetForegroundWindow()
     owner = ctypes.c_uint32()
     if (
@@ -246,7 +246,7 @@ def record(kind: str, data: Any = None, build: Any = None) -> bool:
         row.update(kind=kind, data=data, saved_options=saved_options())
         if build is not None and 'refused' not in row:
             try:
-                row['adapter_size_reported'] = list(build._stage_size())
+                row['adapter_size_reported'] = list(build.stage_size())
             except Exception as exc:  # a diagnostic: name whatever failed
                 row['errors']['adapter_size_reported'] = type(exc).__name__
         simsight_log.line('display inspect: ' + json.dumps(row, sort_keys=True, default=str))

@@ -64,7 +64,7 @@ def _client() -> Any:
     return services.client_manager().get_first_client()
 
 
-def _ui(message: str) -> None:
+def send_ui(message: str) -> None:
     import distributor.ops
     import distributor.system
 
@@ -104,13 +104,15 @@ def _selected(reply: Any, callbacks: dict[int, Callable[..., object]]) -> None:
         _say('action unavailable')
 
 
-def _window(title: str, description: str, rows: Sequence[Row], localized_title: Any = None) -> bool:
+def show_window(
+    title: str, description: str, rows: Sequence[Row], localized_title: Any = None
+) -> bool:
     """Rows are (localized name, localized description, callback)."""
     from ui.ui_dialog_picker import ObjectPickerRow
 
-    menu._cancel_dialog(_state.dialog_id)
+    menu.cancel_dialog(_state.dialog_id)
     _state.dialog_id = None
-    dialog = menu._picker(lang.t(title), lang.t(description), localized_title=localized_title)
+    dialog = menu.picker(lang.t(title), lang.t(description), localized_title=localized_title)
     if dialog is None:
         _say('load a household first')
         return False
@@ -189,15 +191,15 @@ def household() -> bool:
         detail = 'active sim' if info is client.active_sim_info else 'select this sim'
         rows.append(
             (
-                menu._raw(names.full_name(info)),
-                menu._raw(lang.t(detail)),
+                menu.raw_text(names.full_name(info)),
+                menu.raw_text(lang.t(detail)),
                 lambda ident=sim_id: select_sim(ident),
             )
         )
     if not rows:
         _say('load a household first')
         return False
-    return _window('household sims', 'choose a sim', rows)
+    return show_window('household sims', 'choose a sim', rows)
 
 
 def funds_text(household: Any = None) -> str:
@@ -250,17 +252,17 @@ def self_interactions() -> bool:
     import simsight_scanner as scanner
 
     sim = services.get_active_sim()
-    if sim is None or not scanner.enabled() or not scanner._scan():
+    if sim is None or not scanner.enabled() or not scanner.rescan():
         _say('action unavailable')
         return False
     if not scanner.select_item(scanner.YOURSELF, sim.id):
         _say('action unavailable')
         return False
-    scanner._do_open()
+    scanner.open_pie_menu()
     return True
 
 
-def _queue_entries(sim: Any) -> list[tuple[Any, Any, str]]:
+def queue_entries(sim: Any) -> list[tuple[Any, Any, str]]:
     """The icons of EA's interaction queue, from the same UIManager records
     the client draws: running (super, group and posture) first, then queued
     in order. Each is (info, interaction or None, state)."""
@@ -311,7 +313,7 @@ def action_queue() -> bool:
         _say('load a household first')
         return False
     try:
-        entries = _queue_entries(sim)
+        entries = queue_entries(sim)
     except Exception:
         simsight_log.error('hub: queue read failed')
         _say('action unavailable')
@@ -322,7 +324,7 @@ def action_queue() -> bool:
     if len(cancelable) > 1:
         rows.append(
             (
-                menu._raw(lang.t('cancel all actions')),
+                menu.raw_text(lang.t('cancel all actions')),
                 None,
                 lambda ids=tuple(cancelable): cancel_actions(sim_id, ids),
             )
@@ -337,13 +339,13 @@ def action_queue() -> bool:
             name = interaction.get_name()
         if name is None:
             continue
-        detail = menu._raw(_queue_detail(info, interaction, state, position, queued_total))
+        detail = menu.raw_text(_queue_detail(info, interaction, state, position, queued_total))
         rows.append(
             (name, detail, lambda value=info.interaction_id: cancel_actions(sim_id, (value,)))
         )
     if not rows:
-        rows.append((menu._raw(lang.t('queue empty')), None, open_hub))
-    return _window('action queue', 'action queue instructions', rows)
+        rows.append((menu.raw_text(lang.t('queue empty')), None, open_hub))
+    return show_window('action queue', 'action queue instructions', rows)
 
 
 def cancel_actions(sim_id: int, interaction_ids: Sequence[int]) -> bool:
@@ -437,14 +439,14 @@ def _sell_rows(sim: Any, obj: Any, obj_id: int) -> list[Row]:
     """The selling rows of the item menu."""
     sim_id = sim.id
     if not _sellable(obj):
-        return [(menu._raw(lang.t('cannot be sold')), None, lambda: _say('cannot be sold'))]
+        return [(menu.raw_text(lang.t('cannot be sold')), None, lambda: _say('cannot be sold'))]
     count = obj.stack_count()
     currency = _currency()
     one = _price_text(_sell_price(sim, obj, 1), currency)
     if count <= 1:
         return [
             (
-                menu._raw(lang.t('sell for').format(one)),
+                menu.raw_text(lang.t('sell for').format(one)),
                 None,
                 lambda: sell_inventory_item(sim_id, obj_id, 1),
             )
@@ -452,17 +454,17 @@ def _sell_rows(sim: Any, obj: Any, obj_id: int) -> list[Row]:
     every = _price_text(_sell_price(sim, obj, count), currency)
     return [
         (
-            menu._raw(lang.t('sell one for').format(one)),
+            menu.raw_text(lang.t('sell one for').format(one)),
             None,
             lambda: sell_inventory_item(sim_id, obj_id, 1),
         ),
         (
-            menu._raw(lang.t('sell all for').format(count, every)),
+            menu.raw_text(lang.t('sell all for').format(count, every)),
             None,
             lambda: confirm_sell_all(sim_id, obj_id),
         ),
         (
-            menu._raw(lang.t('choose how many to sell')),
+            menu.raw_text(lang.t('choose how many to sell')),
             None,
             lambda: sell_window(sim_id, obj_id),
         ),
@@ -473,13 +475,15 @@ def inventory_item_menu(obj_id: int) -> bool:
     sim, obj = _inventory_item(obj_id)
     if obj is None:
         # Not the active Sim's own inventory: EA's menu as usual.
-        _ui('A11yInvItemActions')
+        send_ui('A11yInvItemActions')
         return False
     from sims4.localization import LocalizationHelperTuning
 
-    rows: list[Row] = [(menu._raw(lang.t('item actions')), None, lambda: _ui('A11yInvItemActions'))]
+    rows: list[Row] = [
+        (menu.raw_text(lang.t('item actions')), None, lambda: send_ui('A11yInvItemActions'))
+    ]
     rows.extend(_sell_rows(sim, obj, obj_id))
-    return _window(
+    return show_window(
         'inventory item',
         'inventory item instructions',
         rows,
@@ -510,16 +514,16 @@ def confirm_sell_all(sim_id: int, obj_id: int) -> bool:
 
     count = obj.stack_count()
     every = _price_text(_sell_price(sim, obj, count), _currency())
-    return _window(
+    return show_window(
         'inventory item',
         'sell all instructions',
         [
             (
-                menu._raw(lang.t('yes sell all').format(count, every)),
+                menu.raw_text(lang.t('yes sell all').format(count, every)),
                 None,
                 lambda: sell_inventory_item(sim_id, obj_id, count),
             ),
-            (menu._raw(lang.t('no keep them')), None, lambda: _say('nothing sold')),
+            (menu.raw_text(lang.t('no keep them')), None, lambda: _say('nothing sold')),
         ],
         localized_title=LocalizationHelperTuning.get_object_name(obj),
     )
@@ -606,7 +610,7 @@ def sell_window(sim_id: int, obj_id: int) -> bool:
     dialog = _state.sell_factory.default(
         sim,
         title=lambda *args, **kwargs: name,
-        text=lambda *args, **kwargs: menu._raw(lang.t('sell window instructions')),
+        text=lambda *args, **kwargs: menu.raw_text(lang.t('sell window instructions')),
     )
     dialog.inventory_object_id = sim.id
     dialog.use_dialog_pick_response = False
@@ -710,17 +714,17 @@ def events_window() -> bool:
         rows.append(
             (
                 name,
-                menu._raw(_event_detail(situation)),
+                menu.raw_text(_event_detail(situation)),
                 lambda value=situation.id: event_actions(value),
             )
         )
     if not rows:
         _say('no events')
         return False
-    return _window('events', 'events instructions', rows)
+    return show_window('events', 'events instructions', rows)
 
 
-def _event(situation_id: int) -> tuple[Any, Any]:
+def event_situation(situation_id: int) -> tuple[Any, Any]:
     manager = _situation_manager()
     situation = manager.get(situation_id) if manager is not None else None
     if situation is None or not getattr(situation, 'is_user_facing', False):
@@ -730,28 +734,28 @@ def _event(situation_id: int) -> tuple[Any, Any]:
 
 
 def event_actions(situation_id: int) -> bool:
-    _manager, situation = _event(situation_id)
+    _manager, situation = event_situation(situation_id)
     if situation is None:
         return False
     rows: list[Row] = [
-        (menu._raw(lang.t('current event goals')), None, lambda: event_goals(situation_id)),
+        (menu.raw_text(lang.t('current event goals')), None, lambda: event_goals(situation_id)),
         (
-            menu._raw(lang.t('send guests home and end event')),
+            menu.raw_text(lang.t('send guests home and end event')),
             None,
             lambda: end_event(situation_id, send_home=True, end=True),
         ),
         (
-            menu._raw(lang.t('end event')),
+            menu.raw_text(lang.t('end event')),
             None,
             lambda: end_event(situation_id, send_home=False, end=True),
         ),
         (
-            menu._raw(lang.t('send guests home')),
+            menu.raw_text(lang.t('send guests home')),
             None,
             lambda: end_event(situation_id, send_home=True, end=False),
         ),
     ]
-    return _window(
+    return show_window(
         'events',
         'event actions instructions',
         rows,
@@ -788,7 +792,7 @@ def _end_situation(manager: Any, situation_id: int) -> bool:
 
 
 def end_event(situation_id: int, send_home: bool, end: bool) -> bool:
-    manager, situation = _event(situation_id)
+    manager, situation = event_situation(situation_id)
     if situation is None:
         return False
     sent = _send_guests_home(manager, situation) if send_home else 0
@@ -862,24 +866,24 @@ def build_actions() -> bool:
 
     if not build.controls_enabled():
         return build.refuse_disabled()
-    if build._zone() is None:
+    if build.build_zone() is None:
         build._say('Enter Build mode first.', 'Najpierw włącz tryb budowania.')
         return False
     rows: list[Row] = [
-        (menu._raw(lang.t(label)), None, lambda value=action: _build_action(value))
+        (menu.raw_text(lang.t(label)), None, lambda value=action: _build_action(value))
         for label, action in BUILD_ACTIONS
     ]
-    return _window('build actions', 'build actions instructions', rows)
+    return show_window('build actions', 'build actions instructions', rows)
 
 
 def _rows(actions: Sequence[Action]) -> list[Row]:
-    return [(menu._raw(lang.t(label)), None, callback) for label, callback in actions]
+    return [(menu.raw_text(lang.t(label)), None, callback) for label, callback in actions]
 
 
 def _group(title: str, actions: Sequence[Action]) -> Action:
     def open_group() -> bool:
         back: Action = ('back to accessibility menu', open_hub)
-        return _window(
+        return show_window(
             title,
             'accessibility menu instructions',
             _rows([*actions, back]),
@@ -892,7 +896,7 @@ def _nearby_objects() -> bool:
     import simsight_scanner as scanner
 
     if scanner.enabled():
-        return menu._show_scanner_window(group=scanner.OBJECTS)
+        return menu.show_scanner_window(group=scanner.OBJECTS)
     _say('enable the scanner first')
     return False
 
@@ -906,13 +910,13 @@ def _travel() -> bool:
         _say('sim unavailable')
         return False
     if travel.enabled() and travel.simplified():
-        if travel._show_front(sim):
+        if travel.show_front(sim):
             return True
     else:
-        result = travel._push_travel(sim)
+        result = travel.push_travel(sim)
         if result == 'ok':
             return True
-        travel._say_refusal(result, sim)
+        travel.say_refusal(result, sim)
         return False
     _say('action unavailable')
     return False
@@ -921,7 +925,7 @@ def _travel() -> bool:
 def _panel(label: str) -> Action:
     """A row opening the native panel PANELS names for label."""
     message = dict(PANELS)[label]
-    return label, lambda: _ui(message)
+    return label, lambda: send_ui(message)
 
 
 def _yourself_rows() -> list[Action]:
@@ -973,7 +977,7 @@ def _other_rows() -> list[Action]:
     if phone.simplified():
         rows.append(('phone', phone.open_list))
     rows.append(('keyboard shortcuts', scanner_help))
-    rows.append(('settings menu', menu._show_settings_window))
+    rows.append(('settings menu', menu.show_settings_window))
     return rows
 
 
@@ -1007,7 +1011,7 @@ def open_hub() -> bool:
     ]
     other = _other_rows()
     # Mac: the phone companion first, the row people come here for most.
-    return _window(
+    return show_window(
         'accessibility menu',
         'accessibility menu instructions',
         _rows(_companion_rows() + build_tools + groups + other),

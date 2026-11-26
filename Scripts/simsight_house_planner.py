@@ -51,7 +51,7 @@ def overview_point_and_act(  # noqa: PLR0913, PLR0917 - same signature as build.
     import simsight_plus_build as build
 
     if not overview:
-        return build._point_and_act_base(
+        return build.point_and_act_base(
             points_world, level, action, describe, height=height, view=view, overview=False
         )
     points = tuple(points_world)
@@ -65,9 +65,9 @@ def overview_point_and_act(  # noqa: PLR0913, PLR0917 - same signature as build.
             build.on_main(_room_overview, points, level, attempt)
             time.sleep(1.8)
             projected = [build.project(x, z, level, height=height) for x, z in points]
-            clear = all(p is not None and build._clear_of_panels(p) for p in projected)
+            clear = all(p is not None and build.clear_of_panels(p) for p in projected)
             simsight_log.line(
-                f'house planner: room framing attempt={attempt + 1} level={level} bounds={points} screen={projected} stage={build._stage_size()} clear={clear}'
+                f'house planner: room framing attempt={attempt + 1} level={level} bounds={points} screen={projected} stage={build.stage_size()} clear={clear}'
             )
             if clear:
                 build.cursor_off()
@@ -83,7 +83,7 @@ def overview_point_and_act(  # noqa: PLR0913, PLR0917 - same signature as build.
         build.park_mouse()
 
 
-def _limits() -> tuple[int, int]:
+def floor_limits() -> tuple[int, int]:
     """(lowest, highest) floor the game allows here; (-1, 3) when it cannot say."""
     try:
         import build_buy
@@ -147,7 +147,7 @@ def _hall_doors(rooms: Sequence[dict[str, Any]], level: int) -> list[dict[str, A
     return doors
 
 
-def _build_plan(
+def build_plan(
     width: int, depth: int, levels: Sequence[int], layout: str, names_by_level: dict[int, list[str]]
 ) -> Any:
     """A house.Plan of stacked identical levels with a hallway and straight stairs."""
@@ -179,12 +179,12 @@ def _build_plan(
             f'That {width} by {depth} house does not fit this lot with the required setbacks.'
         )
         return p
-    house._map_plan(p, frame, along)
+    house.map_plan(p, frame, along)
     top = (width - 2, _FRONT)
     transitions = [
         (
-            house._tile_to_lot(p, frame, (along - width) // 2, top),
-            house._dir_to_lot(p, (1, 0)),
+            house.tile_to_lot(p, frame, (along - width) // 2, top),
+            house.dir_to_lot(p, (1, 0)),
             lower,
             lower + 1,
         )
@@ -197,28 +197,28 @@ def _build_plan(
 
 
 def _select_stairs_silently(build: Any, pick: Sequence[Any]) -> None:
-    build._cat['silent_select'] = True
+    build.catalog_state['silent_select'] = True
     try:
         build.select_item(*pick)
     finally:
-        build._cat['silent_select'] = False
+        build.catalog_state['silent_select'] = False
 
 
 def _click_stairs(screen: list[Any]) -> None:
     import simsight_plus_build as build
 
-    build.move_to(*build._to_screen(*screen[0]))
+    build.move_to(*build.to_screen(*screen[0]))
     time.sleep(0.8)
     build.click(screen[0])
 
 
-def _place_stair_at(top: Tile, climb: Tile, level: int) -> bool | str:
+def place_stair_at(top: Tile, climb: Tile, level: int) -> bool | str:
     """Worker thread only. Straight stairs whose highest step is lot tile `top`, climbing
     `climb`, from `level` up. True when placed where wanted, else a failure word."""
     import simsight_plus_build as build
     import simsight_plus_house as house
 
-    pick = house._pick_stairs()
+    pick = house.pick_stairs()
     if not pick:
         return 'nocatalog'
     if not build.set_floor(level):
@@ -231,7 +231,7 @@ def _place_stair_at(top: Tile, climb: Tile, level: int) -> bool | str:
     shift = [0.0, 0.0]
     turn = False
     for attempt in range(10):
-        before = set(build.on_main(house._stair_ids) or [])
+        before = set(build.on_main(house.stair_ids) or [])
         _select_stairs_silently(build, pick)
         if turn:
             build.tap_scan(52)
@@ -243,16 +243,16 @@ def _place_stair_at(top: Tile, climb: Tile, level: int) -> bool | str:
         ):
             return 'noscreen'
         time.sleep(0.5)
-        new = [oid for oid in build.on_main(house._stair_ids) or [] if oid not in before]
+        new = [oid for oid in build.on_main(house.stair_ids) or [] if oid not in before]
         if not new:
             simsight_log.line(
                 'house planner: stairs level {} attempt {} rejected: {}'.format(
-                    level, attempt + 1, build._last_error.get('text')
+                    level, attempt + 1, build.last_error.get('text')
                 )
             )
             turn = True
             continue
-        info = build.on_main(house._stair_info, new[0])
+        info = build.on_main(house.stair_info, new[0])
         simsight_log.line(
             f'house planner: stairs level {level} placed {info} wanted {want} climb {climb}'
         )
@@ -274,7 +274,7 @@ def _built_completely(plan: Any) -> bool:
         import simsight_plus_build as build
         import simsight_plus_rooms as rooms
 
-        actual = {(build._room_box(r), int(r.level)) for r in rooms.scan_rooms()}
+        actual = {(build.room_box(r), int(r.level)) for r in rooms.scan_rooms()}
         complete = all((r['box'], int(r.get('level', 0))) in actual for r in plan.rooms)
         simsight_log.line(
             'house planner: post-build completeness {} actual={} wanted={}'.format(
@@ -288,7 +288,7 @@ def _built_completely(plan: Any) -> bool:
         return False
 
 
-def _build_with_followup(plan: Any) -> Any:
+def build_with_followup(plan: Any) -> Any:
     """Build the plan; when a stacked house is complete, offer the roof builder."""
     result = _original_build(plan)
     complete = _built_completely(plan)
@@ -328,4 +328,4 @@ def shaped_stair_diagnostics() -> None:
 def _original_build(plan: Any) -> Any:
     import simsight_plus_house as house
 
-    return house._build_base(plan)
+    return house.build_base(plan)

@@ -367,7 +367,7 @@ def _built_completely(plan: Any) -> bool:
         import simsight_plus_build as build
         import simsight_plus_rooms as rooms
 
-        actual = {(build._room_box(r), int(r.level)) for r in rooms.scan_rooms()}
+        actual = {(build.room_box(r), int(r.level)) for r in rooms.scan_rooms()}
         complete = all((tuple(r['box']), int(r.get('level', 0))) in actual for r in plan.rooms)
         simsight_log.line(
             'detached builder: post-build complete={} actual={} wanted={}'.format(
@@ -404,7 +404,7 @@ def _follow_up(meta: dict[str, Any]) -> None:
         simsight_log.error('detached builder: roof follow-up')
 
 
-def _build_followup(plan: Any) -> Any:
+def build_followup(plan: Any) -> Any:
     """Build the plan; a complete detached structure gets its label and roof offer."""
     result = _original_build(plan)
     meta = getattr(plan, '_a11y_detached', None)
@@ -418,4 +418,4 @@ def _build_followup(plan: Any) -> Any:
 def _original_build(plan: Any) -> Any:
     import simsight_house_planner as planner
 
-    return planner._build_with_followup(plan)
+    return planner.build_with_followup(plan)

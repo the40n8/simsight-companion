@@ -41,7 +41,7 @@ _floor_lock = threading.Lock()
 _house_context = threading.local()  # .transitions: the running plan's stairs
 
 
-def _state() -> dict[str, Any]:
+def floor_state() -> dict[str, Any]:
     """Simulation thread: what a floor change must find unchanged."""
     import services
     import simsight_grid as grid
@@ -62,7 +62,7 @@ def _state() -> dict[str, Any]:
     }
 
 
-def _same_world(state: dict[str, Any]) -> bool:
+def same_world(state: dict[str, Any]) -> bool:
     import services
     import simsight_keys as keys
 
@@ -77,7 +77,7 @@ def _same_world(state: dict[str, Any]) -> bool:
 def _grid_message(message: str) -> None:
     import simsight_grid as grid
 
-    grid._flash(message)
+    grid.flash(message)
 
 
 def _grid_released() -> bool:
@@ -96,7 +96,7 @@ def _restore_grid(state: dict[str, Any]) -> bool:
         and int(services.current_zone_id()) == state['zone']
         and grid.build_cursor()
     ):
-        grid._flash('A11yBuildGridOn')
+        grid.flash('A11yBuildGridOn')
         return True
     return False
 
@@ -109,7 +109,7 @@ def _release_grid(state: dict[str, Any]) -> None:
     # A fresh native request is an ordered UI round trip after Off.
     # It does not move any cursor or click. Never inject a floor key
     # before the native guard and script owner have both released.
-    _runtime.coordinates._measure(state['center'][0], state['center'][1], state['floor'])
+    _runtime.coordinates.measure(state['center'][0], state['center'][1], state['floor'])
     deadline = time.monotonic() + 2.0
     while not build.on_main(_grid_released):
         if time.monotonic() >= deadline:
@@ -122,7 +122,7 @@ def _release_grid(state: dict[str, Any]) -> None:
 def _floor_input(state: dict[str, Any]) -> Iterator[tuple[Any, Any]]:
     """(user32, game window) with the grid's key ownership released meanwhile."""
     coordinates = _runtime.coordinates
-    u = coordinates._api()
+    u = coordinates.user32_api()
     sent_off = False
     try:
         with coordinates.physical_context(u):
@@ -164,7 +164,7 @@ def _receive_floor(
     job['done'].set()
 
 
-def _native_floor(state: dict[str, Any], timeout: float = 3.0) -> dict[str, int]:
+def native_floor(state: dict[str, Any], timeout: float = 3.0) -> dict[str, int]:
     """One outstanding read-only query; quarantine after timeout, never reuse late replies."""
     if _runtime.floor_quarantined:
         raise RuntimeError('Native floor channel timed out; restart the game before retrying')
@@ -176,9 +176,9 @@ def _native_floor(state: dict[str, Any], timeout: float = 3.0) -> dict[str, int]
         _runtime.floor_job = job
 
         def send() -> bool:
-            if not _same_world(state):
+            if not same_world(state):
                 raise RuntimeError('Build context changed before the native query')
-            build._send_ui('A11yNativeFloorQuery')
+            build.send_ui('A11yNativeFloorQuery')
             return True
 
         if build.on_main(send) is not True:
@@ -189,7 +189,7 @@ def _native_floor(state: dict[str, Any], timeout: float = 3.0) -> dict[str, int]
             raise RuntimeError('Native floor UI did not answer; install the matching UI package')
         if 'error' in job:
             raise RuntimeError(job['error'])
-        if not build.on_main(_same_world, state):
+        if not build.on_main(same_world, state):
             raise RuntimeError('Build context changed during the native query')
         return job['result']
     finally:
@@ -215,7 +215,7 @@ def _whole_level(level: Any) -> int | None:
 def _check_input(state: dict[str, Any], u: Any, geometry: Any) -> None:
     """Raise unless the same game window, Build context and released keys."""
     build = _runtime.build
-    if _runtime.coordinates.window(u) != geometry or not build.on_main(_same_world, state):
+    if _runtime.coordinates.window(u) != geometry or not build.on_main(same_world, state):
         raise RuntimeError('Game focus, window or Build context changed')
     if not build.on_main(_grid_released):
         raise RuntimeError('The grid reclaimed the floor keys')
@@ -240,10 +240,10 @@ def _floor_after_key(state: dict[str, Any], u: Any, geometry: Any, current: int)
     for _ in range(30):
         time.sleep(0.1)
         if _runtime.coordinates.window(u) != geometry or not _runtime.build.on_main(
-            _same_world, state
+            same_world, state
         ):
             raise RuntimeError('Build context changed while waiting for the floor')
-        actual = _native_floor(state)['floor']
+        actual = native_floor(state)['floor']
         if actual != current:
             break
     return actual
@@ -253,13 +253,13 @@ def _step(state: dict[str, Any], u: Any, geometry: Any, level: int) -> bool | No
     """One floor key toward level: True there, False when the game went
     elsewhere, None to press again."""
     _check_input(state, u, geometry)
-    current = _native_floor(state)['floor']
+    current = native_floor(state)['floor']
     if current == level:
         return True
     step = 1 if current < level else -1
     key, scan = _PAGE_UP if step > 0 else _PAGE_DOWN
     if (
-        not _runtime.build.on_main(_same_world, state)
+        not _runtime.build.on_main(same_world, state)
         or _runtime.coordinates.window(u) != geometry
         or u.GetAsyncKeyState(key) & _KEY_DOWN
     ):
@@ -277,10 +277,10 @@ def _step(state: dict[str, Any], u: Any, geometry: Any, level: int) -> bool | No
 
 
 def _change_floor(level: int) -> bool:
-    state = _runtime.build.on_main(_state)
+    state = _runtime.build.on_main(floor_state)
     if state is None:
         raise RuntimeError('Simulation thread did not answer')
-    info = _native_floor(state)
+    info = native_floor(state)
     state['floor'] = info['floor']
     simsight_log.json_line(_LOG, 'floor-query', wanted=level, **info)
     if not info['minimum'] <= level <= info['maximum']:
@@ -312,7 +312,7 @@ def set_floor(level: Any) -> bool:
         return False
 
 
-def _house_build(plan: Any) -> Any:
+def house_build(plan: Any) -> Any:
     """Scope stacked stairs to the running plan, even after a failed room."""
     planner = _runtime.planner
     if planner is None:
@@ -324,13 +324,13 @@ def _house_build(plan: Any) -> Any:
         _house_context.transitions = ()
 
 
-def _stairs_for_plan(top: Any, climb: Any) -> Any:
+def stairs_for_plan(top: Any, climb: Any) -> Any:
     planner = _runtime.planner
     transitions = getattr(_house_context, 'transitions', ())
     if planner is None or not transitions:
         return _original_house_stairs(top, climb)
     for stair_top, stair_climb, lower, upper in transitions:
-        result = planner._place_stair_at(stair_top, stair_climb, lower)
+        result = planner.place_stair_at(stair_top, stair_climb, lower)
         simsight_log.json_line(_LOG, 'stair-transition', lower=lower, upper=upper, result=result)
         if result is not True:
             return result
@@ -392,10 +392,10 @@ def install() -> None:
 def _original_house_build(plan: Any) -> Any:
     import simsight_detached as detached
 
-    return detached._build_followup(plan)
+    return detached.build_followup(plan)
 
 
 def _original_house_stairs(top: Any, climb: Any) -> Any:
     import simsight_plus_house as house
 
-    return house._place_stairs_worker_base(top, climb)
+    return house.place_stairs_worker_base(top, climb)

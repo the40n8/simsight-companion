@@ -304,7 +304,7 @@ def _apply_braille_mode(value: Any) -> None:
 def _apply_keyboard(value: Any) -> None:
     keys = _keys()
     keys.status.enabled = bool(value)
-    keys._send('A11yKeyboardOn' if value else 'A11yKeyboardOff')
+    keys.send_action('A11yKeyboardOn' if value else 'A11yKeyboardOff')
     settings.set('keyboard', bool(value))
     if value:
         keys.start()
@@ -473,7 +473,7 @@ def _voice_index(names: list[str], current: str) -> int:
     return -1
 
 
-def _change(row: Row, direction: int) -> bool:
+def step_value(row: Row, direction: int) -> bool:
     """Step the value. Returns True when something changed."""
     if row.kind == 'bool':
         _apply(row, not _value(row))
@@ -504,11 +504,11 @@ def _say(text: str) -> None:
 def _open_menu() -> bool:
     """Simulation thread: show only the visual settings window."""
     _state.index = 0
-    return _show_settings_window()
+    return show_settings_window()
 
 
 def _close() -> None:
-    _cancel_dialog(_state.visual_id)
+    cancel_dialog(_state.visual_id)
     _state.visual_id = None
     simsight_log.line('menu: closed')
 
@@ -523,7 +523,7 @@ def _toggle() -> None:
 def _enter(row: Row) -> bool:
     if row.kind == 'action':
         return _run_action(row)
-    return _change(row, 1)
+    return step_value(row, 1)
 
 
 def _reapply(row: Row) -> None:
@@ -561,13 +561,13 @@ def _run_action(row: Row) -> bool:
 # ------------------------------------------------------------------ dialogs
 
 
-def _raw(text: object) -> Any:
+def raw_text(text: object) -> Any:
     from sims4.localization import LocalizationHelperTuning
 
     return LocalizationHelperTuning.get_raw_text(str(text))
 
 
-def _ls_hash(key: int) -> Any:
+def loc_string(key: int) -> Any:
     """A LocalizedString for a string-table key the client will render."""
     try:
         from sims4.localization import _create_localized_string
@@ -581,7 +581,7 @@ def _ls_hash(key: int) -> Any:
         return result
 
 
-def _join(*strings: Any) -> Any:
+def join_localized(*strings: Any) -> Any:
     """Comma-join LocalizedStrings; falls back to the first one."""
     present = [s for s in strings if s is not None]
     if not present:
@@ -597,7 +597,7 @@ def _join(*strings: Any) -> Any:
         return present[0]
 
 
-def _cancel_dialog(dialog_id: Any) -> None:
+def cancel_dialog(dialog_id: Any) -> None:
     if not dialog_id:
         return
     try:
@@ -608,7 +608,7 @@ def _cancel_dialog(dialog_id: Any) -> None:
         simsight_log.error('menu: cancel dialog')
 
 
-def _picker(title: str, text: str, text_only: bool = False, localized_title: Any = None) -> Any:
+def picker(title: str, text: str, text_only: bool = False, localized_title: Any = None) -> Any:
     """localized_title: a game string used as the title as it is (a phone
     category, for example); title is then only a fallback."""
     import services
@@ -624,8 +624,8 @@ def _picker(title: str, text: str, text_only: bool = False, localized_title: Any
             _state.text_picker_factory = UiItemPicker.TunableFactory()
         return _state.text_picker_factory.default(
             owner,
-            title=lambda *args, **kwargs: _raw(title),
-            text=lambda *args, **kwargs: _raw(text),
+            title=lambda *args, **kwargs: raw_text(title),
+            text=lambda *args, **kwargs: raw_text(text),
             min_selectable=1,
             max_selectable=1,
         )
@@ -634,9 +634,9 @@ def _picker(title: str, text: str, text_only: bool = False, localized_title: Any
     return _state.picker_factory.default(
         owner,
         title=lambda *args, **kwargs: (
-            localized_title if localized_title is not None else _raw(title)
+            localized_title if localized_title is not None else raw_text(title)
         ),
-        text=lambda *args, **kwargs: _raw(text),
+        text=lambda *args, **kwargs: raw_text(text),
         picker_type=UiObjectPicker.UiObjectPickerObjectPickerType.OBJECT,
         min_selectable=1,
         max_selectable=1,
@@ -649,14 +649,14 @@ def _settings_row_name(row: Row) -> str:
     return f'{_label(row)}: {_value_text(row)}'
 
 
-def _show_settings_window() -> bool:
+def show_settings_window() -> bool:
     """Simulation thread. Replaces any earlier settings window."""
-    _cancel_dialog(_state.visual_id)
+    cancel_dialog(_state.visual_id)
     _state.visual_id = None
     try:
         from ui.ui_dialog_picker import BasePickerRow
 
-        dialog = _picker(
+        dialog = picker(
             lang.t('settings menu'),
             'Pick a row to change it. Numbers cycle back to their minimum after the maximum. '
             'Open this window with simsight.menu window.',
@@ -669,8 +669,8 @@ def _show_settings_window() -> bool:
             dialog.add_row(
                 BasePickerRow(
                     option_id=position,
-                    name=_raw(_settings_row_name(row)),
-                    row_description=_raw(row.help),
+                    name=raw_text(_settings_row_name(row)),
+                    row_description=raw_text(row.help),
                     row_tooltip=None,
                     icon=None,
                     tag=position,
@@ -715,7 +715,7 @@ def _on_settings_pick(dialog: Any) -> None:
             _close()
             return
         _enter(row)
-        _show_settings_window()
+        show_settings_window()
     except Exception:
         simsight_log.error('menu: settings pick')
 
@@ -735,8 +735,10 @@ def _add_scanner_rows(dialog: Any, groups: list[Any], current: tuple[Any, Any]) 
         dialog.add_row(
             ObjectPickerRow(
                 option_id=option,
-                name=_raw(lang.t(label)) if label else _ls_hash(scanner.label_hash(group_key)),
-                row_description=_raw(
+                name=raw_text(lang.t(label))
+                if label
+                else loc_string(scanner.label_hash(group_key)),
+                row_description=raw_text(
                     '{} items, {} subcategories{}'.format(
                         len(entries),
                         len(subs),
@@ -755,9 +757,11 @@ def _add_scanner_rows(dialog: Any, groups: list[Any], current: tuple[Any, Any]) 
             if entry is current_entry:
                 where = '>> ' + where
             if len(subs) > 1:
-                description = _join(_ls_hash(scanner.label_hash(entry.category)), _raw(where))
+                description = join_localized(
+                    loc_string(scanner.label_hash(entry.category)), raw_text(where)
+                )
             else:
-                description = _raw(where)
+                description = raw_text(where)
             dialog.add_row(
                 ObjectPickerRow(
                     option_id=option,
@@ -774,9 +778,9 @@ def _add_scanner_rows(dialog: Any, groups: list[Any], current: tuple[Any, Any]) 
     return option
 
 
-def _show_scanner_window(group: Any = None) -> bool:
+def show_scanner_window(group: Any = None) -> bool:
     """Simulation thread. What the scanner sees, one row per thing."""
-    _cancel_dialog(_state.scan_visual_id)
+    cancel_dialog(_state.scan_visual_id)
     _state.scan_visual_id = None
     try:
         import simsight_scanner as scanner
@@ -791,7 +795,7 @@ def _show_scanner_window(group: Any = None) -> bool:
             _say(lang.t('nothing nearby'))
             return False
         total = sum(len(entries) for _key, entries in groups)
-        dialog = _picker(
+        dialog = picker(
             'Scanner',
             f'{total} things in {len(groups)} categories around the active Sim. Pick a row to move the scanner there.',
         )
@@ -810,10 +814,10 @@ def _show_scanner_window(group: Any = None) -> bool:
 
 def _fallback_name(entry: Any, icon_info: Any) -> tuple[Any, Any]:
     if entry.name:
-        return _raw(entry.name), icon_info
+        return raw_text(entry.name), icon_info
     if entry.name_hash:
-        return _ls_hash(entry.name_hash), icon_info
-    return _raw('?'), icon_info
+        return loc_string(entry.name_hash), icon_info
+    return raw_text('?'), icon_info
 
 
 def _object_name(entry: Any, obj: Any) -> tuple[Any, Any]:
@@ -827,7 +831,7 @@ def _object_name(entry: Any, obj: Any) -> tuple[Any, Any]:
     except Exception:  # no icon for this object: the row goes without one
         icon_info = None
     if entry.name:
-        return _raw(entry.name), icon_info
+        return raw_text(entry.name), icon_info
     try:
         return LocalizationHelperTuning.get_object_name(obj), icon_info
     except Exception:
@@ -840,10 +844,10 @@ def _entry_name(entry: Any, manager: Any) -> tuple[Any, Any]:
     scanner entry."""
     if entry.is_sim:
         if entry.name:
-            return _raw(entry.name), None
+            return raw_text(entry.name), None
         if entry.name_hash:
-            return _ls_hash(entry.name_hash), None
-        return _raw('Sim'), None
+            return loc_string(entry.name_hash), None
+        return raw_text('Sim'), None
     try:
         obj = manager.get(entry.obj_id)
     except Exception:  # the object went away while the window was built
@@ -891,7 +895,7 @@ def _install_zone_hook() -> None:
 _MENU_ACTIONS: dict[str, Callable[[], Any]] = {
     'open': _open_menu,
     'close': _close,
-    'window': _show_settings_window,
+    'window': show_settings_window,
     'toggle': _toggle,
 }
 
@@ -922,7 +926,7 @@ def a11y_scanview(_connection: Any = None) -> bool:
     """Show the scanner window: what the scanner sees, with the cursor."""
     try:
         output = sims4.commands.CheatOutput(_connection)
-        shown = _show_scanner_window()
+        shown = show_scanner_window()
         output('simsight: scanner window {}'.format('shown' if shown else 'not shown (see log)'))
         return True
     except Exception:

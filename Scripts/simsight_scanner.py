@@ -22,7 +22,7 @@ How it stays in the game's own words:
   tuning dump and the client's KeysBB), resolved the same way. Sims use the
   game's "Sims" string.
 - Interactions are never listed here. The client asks for the real pie menu
-  itself (see _do_open), and from then on it is an ordinary pie menu.
+  itself (see open_pie_menu), and from then on it is an ordinary pie menu.
 - Only distance and bearing are words the game does not have; those come
   from simsight_lang like the rest of the mod's vocabulary.
 
@@ -56,7 +56,7 @@ import simsight_settings as settings
 import simsight_speech as speech
 
 if TYPE_CHECKING:
-    # What _speak_parts says: plain text, or ('loc', string hash) for the
+    # What speak_parts says: plain text, or ('loc', string hash) for the
     # client to resolve in the player's language.
     Part = str | tuple[str, int]
     # (subcategory, catalog group, tag names, buy-category flags)
@@ -70,7 +70,7 @@ OBJECTS = 'OBJECTS'
 GROUP_TERMS = {YOURSELF: 'yourself', OBJECTS: 'nearby objects'}
 MISC = 'MISC'
 BUILD = 'BUILD'
-_COMPASS = (
+COMPASS = (
     'north',
     'north east',
     'east',
@@ -208,17 +208,14 @@ class _State:
 
 _state = _State()
 
-# hash -> text. Read by simsight_bridge (and its tests) as scanner._loc_cache.
-_loc_cache: dict[int, str] = {}
+# hash -> text. Read by simsight_bridge (and its tests) as scanner.loc_cache.
+loc_cache: dict[int, str] = {}
 _loc_lock = threading.Lock()
 
 
-def __getattr__(name: str) -> Any:
-    # simsight_availability reads `_menu_open` (module attribute lookups that
-    # fail land here, PEP 562).
-    if name == '_menu_open':
-        return _state.menu_open
-    raise AttributeError(name)
+def menu_open() -> bool:
+    """A scanner menu is open (read by simsight_availability)."""
+    return bool(_state.menu_open)
 
 
 def _touch() -> None:
@@ -237,7 +234,7 @@ def _classification(obj: Any, now: float) -> Classification:
     if cached is not None and cached[0] is definition and now < cached[1]:
         stats['cache_hits'] += 1
         return cached[2]
-    names = _tag_names(obj)
+    names = tag_names(obj)
     flags = _buy_flags(obj)
     category = _sub_of(names)
     result = (category, _group_of(flags, category), names, flags)
@@ -255,7 +252,7 @@ def enabled() -> bool:
 # --------------------------------------------------------------- loc channel
 
 
-def _send_ui(name: str) -> bool:
+def send_ui(name: str) -> bool:
     """Python -> Flash message. Must be called on the simulation thread."""
     try:
         import distributor.ops
@@ -288,7 +285,7 @@ def _finish(pending: _Pending) -> None:
         if pending.seq != _state.announce_seq:
             return  # superseded by a newer announcement
         pieces = [
-            _loc_cache.get(part[1], '') if isinstance(part, tuple) else part
+            loc_cache.get(part[1], '') if isinstance(part, tuple) else part
             for part in pending.parts
         ]
     text = _clean_text(pieces)
@@ -304,7 +301,7 @@ def _finish_late(pending: _Pending) -> None:
         simsight_log.error('scanner: speak after loc timeout')
 
 
-def _speak_parts(parts: Sequence[Part]) -> None:
+def speak_parts(parts: Sequence[Part]) -> None:
     """Speak a list of strings and ('loc', hash) parts once the client has
     resolved every key (or the timeout passes). Simulation thread only."""
     need_send = []
@@ -312,7 +309,7 @@ def _speak_parts(parts: Sequence[Part]) -> None:
         _state.announce_seq += 1
         pending = _Pending(list(parts), _state.announce_seq)
         for part in pending.parts:
-            if isinstance(part, tuple) and part[1] and part[1] not in _loc_cache:
+            if isinstance(part, tuple) and part[1] and part[1] not in loc_cache:
                 pending.missing.add(part[1])
         if pending.missing:
             for key in pending.missing:
@@ -324,24 +321,24 @@ def _speak_parts(parts: Sequence[Part]) -> None:
             pending.timer.daemon = True
             pending.timer.start()
     for key in need_send:
-        _send_ui(f'A11y|loc|{key}|{key}')
+        send_ui(f'A11y|loc|{key}|{key}')
     if not pending.missing:
         _finish(pending)
 
 
 def _loc_reply(text: str) -> None:
     try:
-        from simsight_narrator import _decode_percent
+        from simsight_narrator import decode_percent
 
         head, _sep, body = text.partition('|')
         key = int(head)
-        resolved = _decode_percent(body).strip()
+        resolved = decode_percent(body).strip()
     except (ImportError, TypeError, ValueError) as ex:
         simsight_log.line(f'scanner: bad loc reply {text[:60]!r}: {ex!r}')
         return
     ready = []
     with _loc_lock:
-        _loc_cache[key] = resolved
+        loc_cache[key] = resolved
         for pending in _state.loc_waiting.pop(key, ()):
             pending.missing.discard(key)
             if not pending.missing:
@@ -418,7 +415,7 @@ def _tag_name(tag: Any) -> str | None:
         return None  # a tag value this game version does not know
 
 
-def _tag_names(obj: Any) -> set[str]:
+def tag_names(obj: Any) -> set[str]:
     try:
         tags = obj.definition.get_tags()
     except Exception:
@@ -525,7 +522,7 @@ def _label_part(key: str) -> Part:
 # ------------------------------------------------------------------ scanning
 
 
-def _bearing(dx: float, dz: float) -> int:
+def bearing_index(dx: float, dz: float) -> int:
     """Compass point index (0 north, clockwise) of an offset."""
     angle = math.degrees(math.atan2(dx, dz)) % 360.0
     return int(((angle + 22.5) % 360.0) // 45) % 8
@@ -622,7 +619,7 @@ def _object_name_parts(obj: Any) -> tuple[str | None, int]:
         return None, 0
 
 
-def _entry_for(  # noqa: PLR0913, PLR0917 - used by other modules with this signature
+def entry_for(  # noqa: PLR0913, PLR0917 - used by other modules with this signature
     obj: Any, origin: Any, origin_level: int, is_sim: bool, category: str, group: str
 ) -> Entry:
     pos = obj.position
@@ -634,10 +631,21 @@ def _entry_for(  # noqa: PLR0913, PLR0917 - used by other modules with this sign
         name, key = _sim_name_parts(obj.sim_info)
         first = _first_name(obj.sim_info)
         return Entry(
-            obj.id, True, name, key, distance, _bearing(dx, dz), level_delta, category, group, first
+            obj.id,
+            True,
+            name,
+            key,
+            distance,
+            bearing_index(dx, dz),
+            level_delta,
+            category,
+            group,
+            first,
         )
     name, key = _object_name_parts(obj)
-    return Entry(obj.id, False, name, key, distance, _bearing(dx, dz), level_delta, category, group)
+    return Entry(
+        obj.id, False, name, key, distance, bearing_index(dx, dz), level_delta, category, group
+    )
 
 
 def _subs_in(entries: list[Entry]) -> list[str]:
@@ -747,7 +755,7 @@ def _active_room() -> Any:
 
 
 def _apply_range() -> None:
-    """Filter the fresh lists to the chosen range, inside _scan, so the
+    """Filter the fresh lists to the chosen range, inside rescan, so the
     scanner's own focus restore runs on the filtered lists."""
     if _range()[1] is not None:
         return  # metre ranges were applied while collecting
@@ -781,10 +789,10 @@ def cycle_range(delta: int) -> bool:
     if not _has_active_sim():
         speech.speak(lang.t('no lot loaded'), explicit=True)
         return False
-    found = _scan(preserve=True)
+    found = rescan(preserve=True)
     parts: list[Part] = [f'Scanner range: {name}. ']
     parts.extend(_tree_parts() if found else ['Nothing in this range. '])
-    _speak_parts(parts)
+    speak_parts(parts)
     return True
 
 
@@ -792,7 +800,7 @@ def apply_range_setting() -> None:
     """The settings menu changed the range: refresh a live scanner list."""
     try:
         if enabled() and _state.groups:
-            _scan(preserve=True)
+            rescan(preserve=True)
     except Exception:
         simsight_log.error('scanner: range refresh')
 
@@ -813,7 +821,7 @@ def _add_sims(services: Any, sim: Any, origin: Any) -> None:
 
 def _add_sim(sim: Any, group: str, origin: Any, roles: dict[int, str]) -> None:
     try:
-        entry = _entry_for(sim, origin, _state.origin_level, True, group, group)
+        entry = entry_for(sim, origin, _state.origin_level, True, group, group)
         entry.role = roles.get(sim.id, '')
         _state.by_group.setdefault(group, []).append(entry)
     except Exception:
@@ -881,7 +889,7 @@ def _add_objects(
             verdict = availability.state(obj)
             if verdict == 'empty':
                 continue
-            entry = _entry_for(obj, origin, _state.origin_level, False, MISC, MISC)
+            entry = entry_for(obj, origin, _state.origin_level, False, MISC, MISC)
             entry.availability = verdict
             if entry.distance > limit:
                 continue
@@ -940,7 +948,7 @@ def _record_stats(started: float, examined: int, in_range: int) -> None:
     stats['in_range'] = in_range
 
 
-def _scan(preserve: bool = False) -> bool:
+def rescan(preserve: bool = False) -> bool:
     """Rebuild the lists around the active Sim. Simulation thread only."""
     import services
 
@@ -1027,7 +1035,7 @@ def label_hash(key: str) -> int:
 
 
 def place_text(entry: Entry) -> str:
-    return _place_part(entry)
+    return place_part(entry)
 
 
 def select_group(key: str) -> bool:
@@ -1062,7 +1070,7 @@ def select_item(key: str, obj_id: int) -> bool:
 # --------------------------------------------------------------- describing
 
 
-def _name_part(entry: Entry) -> Part:
+def name_part(entry: Entry) -> Part:
     if entry.name:
         return entry.name
     if entry.name_hash:
@@ -1083,12 +1091,12 @@ def _floor_part(delta: int) -> str:
     return ''
 
 
-def _place_part(entry: Entry) -> str:
+def place_part(entry: Entry) -> str:
     metres = int(round(entry.distance))
     if metres < 1:
         where = lang.t('here')
     else:
-        where = '{} {} {}'.format(metres, lang.t('meters'), lang.t(_COMPASS[entry.bearing]))
+        where = '{} {} {}'.format(metres, lang.t('meters'), lang.t(COMPASS[entry.bearing]))
     return where + _floor_part(entry.level_delta)
 
 
@@ -1099,8 +1107,8 @@ def _entry_parts(entry: Entry, index: int, total: int) -> list[Part]:
     if entry.role:
         status = ', ' + entry.role + status
     return [
-        _name_part(entry),
-        cleanliness.suffix(entry) + status + ', ' + _place_part(entry),
+        name_part(entry),
+        cleanliness.suffix(entry) + status + ', ' + place_part(entry),
         '. {} {} {}.'.format(index + 1, lang.t('of'), total),
     ]
 
@@ -1134,7 +1142,7 @@ def _ensure_scan() -> bool:
         and time.monotonic() - _state.last_scan < _REFRESH_SECONDS
     ):
         return True
-    return _scan(preserve=True)
+    return rescan(preserve=True)
 
 
 def _ui_owns_input() -> bool:
@@ -1163,7 +1171,7 @@ def _refresh() -> None:
         availability.pause()
         return
     if now - _state.last_scan >= _REFRESH_SECONDS:
-        _scan(preserve=True)
+        rescan(preserve=True)
 
 
 def _refresh_tick(_handle: Any = None) -> None:
@@ -1201,7 +1209,7 @@ def _active_sim_changed(old_sim: Any, new_sim: Any) -> None:
         availability.reset()
         _state.last_scan = 0.0
         if enabled() and _state.refresh_requested:
-            pump.post(_scan, True)
+            pump.post(rescan, True)
     except Exception:
         simsight_log.error('scanner: active Sim changed')
 
@@ -1302,7 +1310,7 @@ def _tree_parts() -> list[Part]:
 
 def _tree_speak(prefix: str = '') -> None:
     parts: list[Part] = [prefix] if prefix else []
-    _speak_parts(parts + _tree_parts())
+    speak_parts(parts + _tree_parts())
 
 
 def enter_mode() -> None:
@@ -1357,7 +1365,7 @@ def _tree_enter(activate: bool = False) -> None:
     elif _state.tree_level == 'subcategories':
         _state.tree_level = 'items'
     elif activate:
-        _do_open()
+        open_pie_menu()
         return
     # Right on a leaf only repeats it; Enter is required for interaction.
     _tree_speak()
@@ -1375,14 +1383,14 @@ def _tree_back() -> None:
 def _do_rescan() -> None:
     _state.class_cache.clear()
     availability.recheck()
-    if not _scan(preserve=True):
+    if not rescan(preserve=True):
         speech.speak(lang.t('nothing nearby'), source='widget')
         return
     total = sum(len(v) for v in _state.by_group.values())
     parts: list[Part] = [
         '{} {}, {} {}. '.format(total, lang.t('items'), len(_state.groups), lang.t('categories'))
     ]
-    _speak_parts(parts + _tree_parts())
+    speak_parts(parts + _tree_parts())
 
 
 def _do_step_sub(step: int) -> None:
@@ -1397,7 +1405,7 @@ def _do_step_sub(step: int) -> None:
     _state.tree_level = 'items'
     _tree_remember()
     landed = _current() or entry  # the list is not empty: always the restored entry
-    _speak_parts([_label_part(landed.category), '. ', *_tree_parts()])
+    speak_parts([_label_part(landed.category), '. ', *_tree_parts()])
 
 
 def _do_where() -> None:
@@ -1421,7 +1429,7 @@ def _do_where() -> None:
             parts.append(sub)
         parts.append('. ')
         parts.extend(_entry_parts(entry, _state.item_index % len(entries), len(entries)))
-    _speak_parts(parts)
+    speak_parts(parts)
 
 
 def _pick_message(entry: Entry, obj: Any, services: Any) -> str:
@@ -1439,7 +1447,7 @@ def _pick_message(entry: Entry, obj: Any, services: Any) -> str:
     return f'A11y|pick|{obj.id}|{int(pick_type)}|{lot_id}|{first}|{float(pos.x):.3f}|{float(pos.y):.3f}|{float(pos.z):.3f}|{level}'
 
 
-def _do_open() -> None:
+def open_pie_menu() -> None:
     """Ask the client to open the game's pie menu on the current thing.
 
     The request goes to Flash first (A11y|pick|...): the patched PieMenuMain
@@ -1458,7 +1466,7 @@ def _do_open() -> None:
         speech.speak(lang.t('no longer here'), source='widget')
         return
     try:
-        sent = _send_ui(_pick_message(entry, obj, services))
+        sent = send_ui(_pick_message(entry, obj, services))
     except Exception:
         simsight_log.error('scanner: open menu')
         sent = False
@@ -1526,7 +1534,7 @@ def on_key(intent: str, on_simulation_thread: bool = False) -> None:
         try:
             import simsight_keys as keys
 
-            keys._send(MENU_KEYS[intent])
+            keys.send_action(MENU_KEYS[intent])
         except Exception:
             simsight_log.error('scanner: menu key')
         return
@@ -1627,10 +1635,10 @@ def _reset_for_new_zone() -> None:
     except Exception:
         simsight_log.error('scanner: refresh alarm')
     with _loc_lock:
-        _loc_cache.clear()
+        loc_cache.clear()
         _state.loc_waiting.clear()
     # Re-assert the Flash game-message hook after every load.
-    _send_ui('A11yHook')
+    send_ui('A11yHook')
 
 
 def _install_zone_hook() -> None:
