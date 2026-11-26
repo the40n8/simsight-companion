@@ -2,14 +2,23 @@
 # The player says what kind of room it is; we buy the cheapest good item of each kind it needs
 # (picked by name from the Buy catalog) and let SimSight place each one, starting in the middle
 # of the room and then along the walls, away from doors.
+from __future__ import annotations
+
 import math
 import threading
 import time
-import simsight_plus_core as core
+from typing import TYPE_CHECKING, Any
+
 import simsight_plus_build as build
+import simsight_plus_core as core
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
+
+    Spot = tuple[float, float, float]  # world x, z and the angle to face
 
 # key -> (label, catalog tags, names to prefer in order, words that rule an item out)
-ITEMS = {
+ITEMS: dict[str, tuple[str, str, tuple[str, ...], tuple[str, ...]]] = {
     'double bed': (
         'Double bed',
         'BUYCAT_SS_BED',
@@ -71,7 +80,7 @@ SETS = (
     ('Hallway or other room', ['light']),
 )
 # What each set costs with the preferred items (October 2026 prices), to show before buying.
-PRICES = {
+PRICES: dict[str, int] = {
     'double bed': 725,
     'single bed': 330,
     'toddler bed': 150,
@@ -88,7 +97,7 @@ PRICES = {
 }
 
 
-def _guess_set(room_name):
+def _guess_set(room_name: str) -> int | None:
     n = room_name.lower()
     for word, i in (('bedroom', 0), ('bathroom', 4), ('kitchen', 5), ('living', 6), ('hall', 7)):
         if word in n:
@@ -96,7 +105,7 @@ def _guess_set(room_name):
     return None
 
 
-def furnish_room():
+def furnish_room() -> None:
     if not build.in_build_mode():
         core.speak('Go to Build mode first. Press F2, on a laptop Fn+F2.')
         return
@@ -108,7 +117,7 @@ def furnish_room():
         return
     rows = [(r.name, f'{r.size_text()}, {len(r.objects)} things in it now.', r) for r in all_rooms]
 
-    def got_room(room):
+    def got_room(room: Any) -> None:
         guess = _guess_set(room.name)
         srows = []
         for i, (label, keys) in enumerate(SETS):
@@ -118,7 +127,7 @@ def furnish_room():
         if guess is not None:
             srows.insert(0, srows.pop(guess))
 
-        def got_set(i):
+        def got_set(i: int) -> None:
             _furnish(room, SETS[i])
 
         core.choose(
@@ -132,9 +141,9 @@ def furnish_room():
     core.choose('Furnish a room', 'Choose the room.', rows, got_room, tag='build')
 
 
-def _choose_item(key):
+def _choose_item(key: str) -> tuple[str, int] | None:
     """Worker: select the catalog item for `key`. Returns (name, price) or None."""
-    (label, tags, prefer, exclude) = ITEMS[key]
+    (_label, tags, prefer, exclude) = ITEMS[key]
     items = build.fetch_catalog(2, tags, 'object')
     if not items:
         return None
@@ -161,31 +170,44 @@ def _choose_item(key):
     return (names[index], items[index][1])
 
 
-def _spots(room):
+def _door_tiles(wall_things: Sequence[tuple[float, float, str]]) -> set[tuple[int, int]]:
+    """Tiles touching a door: (e, n) of the four tiles around each door's spot on its wall."""
+    tiles = set()
+    for te, tn, kind in wall_things:
+        if kind == 'door':
+            for de in (-0.5, 0.5):
+                for dn in (-0.5, 0.5):
+                    tiles.add((int(math.floor(te + de)), int(math.floor(tn + dn))))
+    return tiles
+
+
+def _wall_faces(t: Sequence[int], box: Sequence[int]) -> list[tuple[int, int]]:
+    """Directions (de, dn) into the room from tile t, one per room wall the tile is against."""
+    (e0, n0, e1, n1) = box
+    faces = []
+    if t[1] == n0:
+        faces.append((0, 1))  # against the north wall: face south
+    if t[1] == n1 - 1:
+        faces.append((0, -1))
+    if t[0] == e0:
+        faces.append((1, 0))
+    if t[0] == e1 - 1:
+        faces.append((-1, 0))
+    return faces
+
+
+def _spots(room: Any) -> tuple[list[Spot], Spot]:
     """Places to put things: (x, z, angle) in the corners and along the walls, away from doors, each
     turned to face into the room; the middle of the room comes last (beds go there first)."""
     f = build.frame()
     tiles = sorted(build._room_tiles(room))
     (e0, n0, e1, n1) = build._room_box(room)
-    door_tiles = set()
-    for te, tn, kind in build._wall_things():
-        if kind == 'door':
-            for de in (-0.5, 0.5):
-                for dn in (-0.5, 0.5):
-                    door_tiles.add((int(math.floor(te + de)), int(math.floor(tn + dn))))
+    door_tiles = _door_tiles(build._wall_things())
     out = []
     for t in tiles:
         if t in door_tiles:
             continue
-        faces = []
-        if t[1] == n0:
-            faces.append((0, 1))  # against the north wall: face south
-        if t[1] == n1 - 1:
-            faces.append((0, -1))
-        if t[0] == e0:
-            faces.append((1, 0))
-        if t[0] == e1 - 1:
-            faces.append((-1, 0))
+        faces = _wall_faces(t, (e0, n0, e1, n1))
         if not faces:
             continue
         (de, dn) = faces[0]
@@ -198,7 +220,7 @@ def _spots(room):
     return spots, (cx, cz, 0.0)
 
 
-def _face_into_room(place, room):
+def _face_into_room(place: Any, room: Any) -> None:
     """The game may turn an object while finding room for it. If its front now faces a wall,
     turn it to face into the room."""
     import services
@@ -226,11 +248,77 @@ def _face_into_room(place, room):
         core.log_exc('face into room')
 
 
-def _say(text):
+def _say(text: str) -> None:
     core.post(core.speak, text)
 
 
-def _furnish(room, item_set):
+def _placer(place: Any, room: Any, spot: Spot) -> Callable[[], Any]:
+    """Main thread job: buy the selected catalog item and let SimSight place it at spot."""
+    (x, z, angle) = spot
+
+    def go() -> Any:
+        import routing
+        import services
+        import sims4.math
+        import terrain
+
+        surface = routing.SurfaceIdentifier(
+            services.current_zone_id(),
+            room.level,
+            routing.SurfaceType.SURFACETYPE_WORLD,
+        )
+        pos = sims4.math.Vector3(x, terrain.get_terrain_height(x, z, routing_surface=surface), z)
+        return place.place(pos, room.level, surface, angle)
+
+    return go
+
+
+class _SpotCursor:
+    """Walks the spots along the walls, round and round, across all the items of a set."""
+
+    def __init__(self, spots: list[Spot], middle: Spot) -> None:
+        self.spots = spots
+        self.middle = middle
+        self.index = 0
+
+    def next_spot(self) -> Spot:
+        spot = self.spots[self.index % len(self.spots)] if self.spots else self.middle
+        self.index += 1
+        return spot
+
+
+def _bought(before: int) -> bool:
+    """Worker: wait up to 5 seconds for the household's money to drop below `before`."""
+    for _ in range(20):
+        time.sleep(0.25)
+        if (build.on_main(build.funds) or 0) < before:
+            return True
+    return False
+
+
+def _place_item(place: Any, room: Any, key: str, cursor: _SpotCursor) -> bool:
+    """Worker: up to 4 tries to place the selected item for `key`. Beds try the middle first."""
+    for attempt in range(4):
+        first_bed_try = key.endswith('bed') and attempt == 0
+        spot = cursor.middle if first_bed_try else cursor.next_spot()
+        before = build.on_main(build.funds) or 0
+        build.on_main(_placer(place, room, spot))
+        if _bought(before):
+            return True
+        time.sleep(0.5)
+    return False
+
+
+def _furnish_text(room: Any, bought: list[str], missed: list[str], spent: int) -> str:
+    text = 'Done furnishing the {}. Bought: {}. It cost {:,} simoleons.'.format(
+        room.name, ', '.join(bought) if bought else 'nothing', spent
+    )
+    if missed:
+        text += ' Could not place: {}. The room may be too full.'.format(', '.join(missed))
+    return text
+
+
+def _furnish(room: Any, item_set: tuple[str, Sequence[str]]) -> None:
     (label, keys) = item_set
     if build._busy[0]:
         core.speak('Still working on the last build step.')
@@ -238,63 +326,25 @@ def _furnish(room, item_set):
     build._busy[0] = True
     core.speak(f'Furnishing the {room.name} as a {label.lower()}. Please wait.')
 
-    def work():
-        import routing
-        import services
-        import terrain
-        import sims4.math
+    def work() -> None:
         import simsight_place as place
 
-        bought, missed = [], []
+        bought: list[str] = []
+        missed: list[str] = []
         start = build.on_main(build.funds) or 0
         try:
-            (spots, middle) = _spots(room)
-            spot_i = 0
+            cursor = _SpotCursor(*_spots(room))
             for key in keys:
-                chosen = _choose_item(key)
-                if chosen is None:
+                if _choose_item(key) is None:
                     missed.append(ITEMS[key][0].lower())
                     continue
-                ok = False
-                for attempt in range(4):
-                    if key.endswith('bed') and attempt == 0:
-                        (x, z, angle) = middle
-                    else:
-                        (x, z, angle) = spots[spot_i % len(spots)] if spots else middle
-                        spot_i += 1
-                    before = build.on_main(build.funds) or 0
-
-                    def go():
-                        surface = routing.SurfaceIdentifier(
-                            services.current_zone_id(),
-                            room.level,
-                            routing.SurfaceType.SURFACETYPE_WORLD,
-                        )
-                        pos = sims4.math.Vector3(
-                            x, terrain.get_terrain_height(x, z, routing_surface=surface), z
-                        )
-                        return place.place(pos, room.level, surface, angle)
-
-                    build.on_main(go)
-                    for _ in range(20):
-                        time.sleep(0.25)
-                        if (build.on_main(build.funds) or 0) < before:
-                            ok = True
-                            break
-                    if ok:
-                        break
-                    time.sleep(0.5)
+                ok = _place_item(place, room, key, cursor)
                 if ok:
                     build.on_main(_face_into_room, place, room)
                 (bought if ok else missed).append(ITEMS[key][0].lower())
                 core.log('furnish {} {}: {}'.format(room.name, key, 'ok' if ok else 'missed'))
             spent = start - (build.on_main(build.funds) or 0)
-            text = 'Done furnishing the {}. Bought: {}. It cost {:,} simoleons.'.format(
-                room.name, ', '.join(bought) if bought else 'nothing', spent
-            )
-            if missed:
-                text += ' Could not place: {}. The room may be too full.'.format(', '.join(missed))
-            _say(text)
+            _say(_furnish_text(room, bought, missed, spent))
         except Exception:
             core.log_exc('furnish')
             _say('Sorry, furnishing failed.')

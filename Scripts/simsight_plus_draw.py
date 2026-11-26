@@ -2,10 +2,20 @@
 # by pointing at a start corner and an end corner on the lot grid. The player moves a cursor with
 # Alt+arrows and hears where it is; Alt+S marks the start, Alt+D draws with the chosen tool.
 # The drawing itself is the game's own tool driven by a real mouse drag (see simsight_plus_build).
+from __future__ import annotations
+
 import threading
 import time
-import simsight_plus_core as core
+from typing import TYPE_CHECKING, Any
+
 import simsight_plus_build as build
+import simsight_plus_core as core
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
+
+    Point = tuple[float, float]
+    Box = tuple[int, int, int, int]  # e0, n0, e1, n1: meters from the west and north lot edges
 
 TOOLS = {
     'wall': 'Wall',
@@ -14,7 +24,8 @@ TOOLS = {
     'fence': 'Fence',
 }
 
-_state = {
+# Read and written by simsight_roof_tools too ('style'): keep it a dict with these keys.
+_state: dict[str, Any] = {
     'on': False,
     'e': 0,
     'n': 0,
@@ -26,15 +37,18 @@ _state = {
     'names': {},
 }
 
+_NOT_BUILD_MODE = 'Go to Build mode first. Press F2, on a laptop Fn+F2.'
+_BUSY = 'Still working on the last build step.'
 
-def is_on():
-    return _state['on'] and build.in_build_mode()
+
+def is_on() -> bool:
+    return bool(_state['on'] and build.in_build_mode())
 
 
 # ---------------------------------------------------------------- what is where
 
 
-def _refresh_map():
+def _refresh_map() -> None:
     """Room of every 1 m tile on the cursor's floor: grid[n][e] = room id, 0 for outside."""
     import simsight_plus_rooms as rooms
 
@@ -55,14 +69,14 @@ def _refresh_map():
     _state['names'] = real
 
 
-def _tile(e, n):
+def _tile(e: int, n: int) -> Any:
     g = _state['grid']
     if g is None or n < 0 or e < 0 or n >= len(g) or e >= len(g[0]):
         return 0
     return g[n][e]
 
 
-def _wall_dirs(e, n):
+def _wall_dirs(e: int, n: int) -> list[str]:
     """Which ways a wall runs from grid corner (e, n), judged by rooms on either side."""
     dirs = []
     if _tile(e, n - 1) != _tile(e, n):
@@ -76,7 +90,7 @@ def _wall_dirs(e, n):
     return dirs
 
 
-def _area_text(e, n):
+def _area_text(e: int, n: int) -> str:
     ids = []
     for t in (_tile(e - 1, n - 1), _tile(e, n - 1), _tile(e - 1, n), _tile(e, n)):
         if t not in ids:
@@ -87,7 +101,7 @@ def _area_text(e, n):
     return 'between ' + ', '.join(names[:-1]) + ' and ' + names[-1]
 
 
-def _from_start(e, n):
+def _from_start(e: int, n: int) -> str:
     s = _state['start']
     if s is None:
         return ''
@@ -102,13 +116,13 @@ def _from_start(e, n):
     return 'From the start: ' + ' and '.join(parts) + '.'
 
 
-def _where(full=False):
+def _where(full: bool = False) -> str:
     e, n = _state['e'], _state['n']
     area = _area_text(e, n)
     text = f'{e} from west, {n} from north. {area[:1].upper() + area[1:]}.'
     dirs = _wall_dirs(e, n)
     if dirs:
-        text += ' On a wall going ' + ', '.join(dirs) + '.' if full else ' On a wall.'
+        text += (' On a wall going ' + ', '.join(dirs) + '.') if full else ' On a wall.'
     s = _from_start(e, n)
     if s:
         text += ' ' + s
@@ -121,9 +135,9 @@ def _where(full=False):
 # ---------------------------------------------------------------- turning the cursor on and off
 
 
-def start():
+def start() -> None:
     if not build.in_build_mode():
-        core.speak('Go to Build mode first. Press F2, on a laptop Fn+F2.')
+        core.speak(_NOT_BUILD_MODE)
         return
     build._hook_product()
     _refresh_map()
@@ -147,12 +161,12 @@ def start():
     )
 
 
-def stop():
+def stop() -> None:
     _state['on'] = False
     core.speak('Drawing cursor off.')
 
 
-def choose_tool():
+def choose_tool() -> None:
     rows = [
         ('Wall', 'Draws a straight wall from the start point to the cursor.', 'wall'),
         ('Room', 'Draws four walls: the start point and the cursor are opposite corners.', 'room'),
@@ -164,7 +178,7 @@ def choose_tool():
         # Fences: the game refused a dragged fence ("Must be applied to a room", October 2026). Not offered yet.
     ]
 
-    def picked(tool):
+    def picked(tool: str) -> None:
         if tool in ('wall', 'room'):
             _state['tool'], _state['style'] = tool, None
             core.speak(f'Tool: {TOOLS[tool]}. ' + _hint())
@@ -174,22 +188,22 @@ def choose_tool():
     core.choose('Drawing tool', 'Now: {}.'.format(TOOLS[_state['tool']]), rows, picked, tag='build')
 
 
-def _hint():
+def _hint() -> str:
     if _state['start'] is None:
         return 'Move to the first corner and press Alt+S.'
     return 'Move to the end and press Alt+D.'
 
 
-def _pick_style(tool):
+def _pick_style(tool: str) -> None:
     (ptype, tags) = (4, '') if tool == 'roof' else (10, '')
 
-    def work():
+    def work() -> None:
         items = build.fetch_catalog(ptype, tags, 'none')
         if not items:
             core.post(core.speak, f'I could not get the list of {tool}s.')
             return
         rows = []
-        for name, price, colors in items:
+        for name, price, _colors in items:
             desc = (
                 '{:,} simoleons{}'.format(price, ' a meter' if tool == 'fence' else '')
                 if price
@@ -197,7 +211,7 @@ def _pick_style(tool):
             )
             rows.append((name, desc, name))
 
-        def chosen(name):
+        def chosen(name: str) -> None:
             _state['tool'] = tool
             _state['style'] = (ptype, tags, name)
             core.speak(f'Tool: {TOOLS[tool]}, {name}. ' + _hint())
@@ -216,8 +230,16 @@ def _pick_style(tool):
 
 # ---------------------------------------------------------------- keys (only while the cursor is on)
 
+_WANTS_SHIFT = '_wants_shift'  # marker read by simsight_plus_core._wants_shift
 
-def _move(de, dn, shift=False):
+
+def _wants_shift(fn: Callable[[bool], None]) -> Callable[[bool], None]:
+    """The hotkey is called with whether Shift is held."""
+    setattr(fn, _WANTS_SHIFT, True)
+    return fn
+
+
+def _move(de: int, dn: int, shift: bool = False) -> None:
     if not is_on():
         return
     step = 5 if shift else 1
@@ -230,37 +252,37 @@ def _move(de, dn, shift=False):
 
 
 @core.hotkey(0x25, 'drawing cursor west')
-def _west(shift=False):
+@_wants_shift
+def _west(shift: bool = False) -> None:
     _move(-1, 0, shift)
 
 
 @core.hotkey(0x27, 'drawing cursor east')
-def _east(shift=False):
+@_wants_shift
+def _east(shift: bool = False) -> None:
     _move(1, 0, shift)
 
 
 @core.hotkey(0x26, 'drawing cursor north')
-def _north(shift=False):
+@_wants_shift
+def _north(shift: bool = False) -> None:
     _move(0, -1, shift)
 
 
 @core.hotkey(0x28, 'drawing cursor south')
-def _south(shift=False):
+@_wants_shift
+def _south(shift: bool = False) -> None:
     _move(0, 1, shift)
 
 
-for _fn in (_west, _east, _north, _south):
-    _fn._wants_shift = True
-
-
 @core.hotkey(ord('X'), 'drawing cursor: where am I')
-def _say_where():
+def _say_where() -> None:
     if is_on():
         core.speak(_where(full=True))
 
 
 @core.hotkey(ord('S'), 'drawing cursor: mark start')
-def _mark_start():
+def _mark_start() -> None:
     if not is_on():
         return
     _state['start'] = (_state['e'], _state['n'])
@@ -272,15 +294,26 @@ def _mark_start():
 
 
 @core.hotkey(ord('Z'), 'drawing cursor: undo')
-def _undo():
+def _undo() -> None:
     if is_on():
         build.undo()
         core.speak('Undone.')
         core.post(_refresh_map)
 
 
+def _shape_problem(tool: str, s: Sequence[int], e: int, n: int) -> str | None:
+    """Why the start and the cursor cannot make this tool's shape, or None when they can."""
+    if (e, n) == tuple(s):
+        return 'The cursor is on the start point. Move it to the end first.'
+    if tool in ('wall', 'fence') and e != s[0] and n != s[1]:
+        return f'A {tool} goes straight. Move the cursor straight east, west, north or south of the start.'
+    if tool in ('room', 'roof') and (e == s[0] or n == s[1]):
+        return f'A {tool} needs two opposite corners. Move the cursor so it is both across and down from the start.'
+    return None
+
+
 @core.hotkey(ord('D'), 'drawing cursor: draw')
-def _draw():
+def _draw() -> None:
     if not is_on():
         return
     s = _state['start']
@@ -289,24 +322,15 @@ def _draw():
         return
     e, n = _state['e'], _state['n']
     tool = _state['tool']
-    if (e, n) == tuple(s):
-        core.speak('The cursor is on the start point. Move it to the end first.')
-        return
-    if tool in ('wall', 'fence') and e != s[0] and n != s[1]:
-        core.speak(
-            f'A {tool} goes straight. Move the cursor straight east, west, north or south of the start.'
-        )
-        return
-    if tool in ('room', 'roof') and (e == s[0] or n == s[1]):
-        core.speak(
-            f'A {tool} needs two opposite corners. Move the cursor so it is both across and down from the start.'
-        )
+    problem = _shape_problem(tool, s, e, n)
+    if problem:
+        core.speak(problem)
         return
     if tool in ('roof', 'fence') and not _state['style']:
         _pick_style(tool)
         return
     if build._busy[0]:
-        core.speak('Still working on the last build step.')
+        core.speak(_BUSY)
         return
     build._busy[0] = True
     core.speak('Drawing. Please wait, and let go of Alt.')
@@ -315,22 +339,22 @@ def _draw():
     ).start()
 
 
-def _wait_keys_up():
+def _wait_keys_up() -> None:
     """Holding Alt during a drag makes the game place things off the grid; wait until it is let go."""
     import ctypes
 
-    read = ctypes.windll.user32.GetAsyncKeyState
+    read = ctypes.windll.user32.GetAsyncKeyState  # type: ignore[attr-defined]  # Windows only
     end = time.monotonic() + 4.0
     while time.monotonic() < end and (read(0x12) & 0x8000 or read(0x10) & 0x8000):
         time.sleep(0.05)
     time.sleep(0.3)
 
 
-def _say(text):
+def _say(text: str) -> None:
     core.post(core.speak, text)
 
 
-def _select_style(ptype, tags, name):
+def _select_style(ptype: int, tags: str, name: str) -> bool:
     items = build.fetch_catalog(ptype, tags, 'none')
     names = [it[0] for it in items]
     if name not in names:
@@ -343,72 +367,111 @@ def _select_style(ptype, tags, name):
     return True
 
 
-def _draw_worker(tool, a, b):
+def _corners_box(a: Sequence[int], b: Sequence[int]) -> Box:
+    return (min(a[0], b[0]), min(a[1], b[1]), max(a[0], b[0]), max(a[1], b[1]))
+
+
+def _draw_roof(a: Sequence[int], b: Sequence[int], level: int) -> bool:
+    """Worker thread. False when nothing was tried (the catalog choice failed)."""
+    if not _select_style(*_state['style']):
+        _say('I could not choose the {} in the catalog.'.format(_state['style'][2]))
+        return False
+    box = _corners_box(a, b)
+    res = roof_worker(box, level)
+    core.log(f'draw: roof {box} result {res}')
+    _say(_roof_result(res, box))
+    return True
+
+
+def _draw_room(a: Sequence[int], b: Sequence[int]) -> bool:
+    """Worker thread. False when nothing was tried (the Room Tool could not be chosen)."""
     import simsight_plus_house as house
 
+    if not house._pick_tool('Room Tool'):
+        _say('I could not choose the Room Tool.')
+        return False
+    box = build.room_worker(_corners_box(a, b))
+    if box in (None, 'nomoney'):
+        _say('The room was not built. Something may be in the way, or there is not enough money.')
+    elif box == 'noscreen':
+        pass
+    elif box == 'open':
+        _say('The walls were built, but they did not make a closed room.')
+    else:
+        _say(f'Built a {box[2] - box[0]} by {box[3] - box[1]} meter room.')
+    return True
+
+
+def _choose_line_tool(tool: str) -> bool:
+    """Worker thread: the Wall Tool, or the chosen fence. False when the fence cannot be chosen."""
+    import simsight_plus_house as house
+
+    if tool == 'wall':
+        if not house._pick_tool('Wall Tool'):
+            u = build._user32()  # the game's own key for the Wall Tool
+            u.keybd_event(0x42, 0x30, 0, 0)
+            u.keybd_event(0x42, 0x30, 2, 0)
+            time.sleep(0.8)
+        return True
+    if not _select_style(*_state['style']):
+        _say('I could not choose the {} in the catalog.'.format(_state['style'][2]))
+        return False
+    return True
+
+
+def _game_error_since(started: float) -> str:
+    """What the game last said went wrong, when it said it after `started`."""
+    return build._last_error['text'] if build._last_error['at'] > started else ''
+
+
+def _drag_between(points: Sequence[Any]) -> Any:
+    return build.drag(points[0], points[1])
+
+
+def _draw_line(tool: str, f: Any, a: Sequence[int], b: Sequence[int], level: int) -> bool:
+    """Worker thread: a wall or a fence by a drag from a to b."""
+    if not _choose_line_tool(tool):
+        return False
+    money = build.on_main(build.funds) or 0
+    started = time.monotonic()
+    ok = build.point_and_act(
+        [f.world(*a), f.world(*b)],
+        level,
+        _drag_between,
+        f'{tool} {a}->{b}',
+        overview=True,
+    )
+    time.sleep(0.8)
+    spent = money - (build.on_main(build.funds) or 0)
+    core.log(f'draw: {tool} {a}->{b} ok={ok} spent={spent}')
+    if ok and spent > 0:
+        _say(f'Built the {tool}. It cost {spent:,} simoleons.')
+    elif ok:
+        reason = _game_error_since(started)
+        _say(
+            'The {} was not built. {}'.format(
+                tool,
+                ('The game says: ' + reason)
+                if reason
+                else 'Something may be in the way, or there is not enough money.',
+            )
+        )
+    return True
+
+
+def _draw_worker(tool: str, a: tuple[int, int], b: tuple[int, int]) -> None:
     try:
         _wait_keys_up()
         f = build.frame()
         level = _state['level']
         if tool == 'roof':
-            if not _select_style(*_state['style']):
-                _say('I could not choose the {} in the catalog.'.format(_state['style'][2]))
-                return
-            box = (min(a[0], b[0]), min(a[1], b[1]), max(a[0], b[0]), max(a[1], b[1]))
-            res = roof_worker(box, level)
-            core.log(f'draw: roof {box} result {res}')
-            _say(_roof_result(res, box))
+            done = _draw_roof(a, b, level)
         elif tool == 'room':
-            if not house._pick_tool('Room Tool'):
-                _say('I could not choose the Room Tool.')
-                return
-            want = (min(a[0], b[0]), min(a[1], b[1]), max(a[0], b[0]), max(a[1], b[1]))
-            box = build.room_worker(want)
-            if box in (None, 'nomoney'):
-                _say(
-                    'The room was not built. Something may be in the way, or there is not enough money.'
-                )
-            elif box == 'noscreen':
-                pass
-            elif box == 'open':
-                _say('The walls were built, but they did not make a closed room.')
-            else:
-                _say(f'Built a {box[2] - box[0]} by {box[3] - box[1]} meter room.')
+            done = _draw_room(a, b)
         else:
-            if tool == 'wall':
-                if not house._pick_tool('Wall Tool'):
-                    u = build._user32()  # the game's own key for the Wall Tool
-                    u.keybd_event(0x42, 0x30, 0, 0)
-                    u.keybd_event(0x42, 0x30, 2, 0)
-                    time.sleep(0.8)
-            elif not _select_style(*_state['style']):
-                _say('I could not choose the {} in the catalog.'.format(_state['style'][2]))
-                return
-            money = build.on_main(build.funds) or 0
-            started = time.monotonic()
-            ok = build.point_and_act(
-                [f.world(*a), f.world(*b)],
-                level,
-                lambda s: build.drag(s[0], s[1]),
-                f'{tool} {a}->{b}',
-                overview=True,
-            )
-            time.sleep(0.8)
-            spent = money - (build.on_main(build.funds) or 0)
-            core.log(f'draw: {tool} {a}->{b} ok={ok} spent={spent}')
-            what = {'wall': 'wall', 'fence': 'fence', 'roof': 'roof'}[tool]
-            if ok and spent > 0:
-                _say(f'Built the {what}. It cost {spent:,} simoleons.')
-            elif ok:
-                reason = build._last_error['text'] if build._last_error['at'] > started else ''
-                _say(
-                    'The {} was not built. {}'.format(
-                        what,
-                        ('The game says: ' + reason)
-                        if reason
-                        else 'Something may be in the way, or there is not enough money.',
-                    )
-                )
+            done = _draw_line(tool, f, a, b, level)
+        if not done:
+            return
         build.on_main(_refresh_map)
         _state['start'] = (_state['e'], _state['n'])  # the next piece starts where this one ended
     except Exception:
@@ -421,10 +484,10 @@ def _draw_worker(tool, a, b):
 # ---------------------------------------------------------------- roof over the whole house
 
 
-def roof_whole_house():
+def roof_whole_house() -> None:
     """Choose a roof style, then put one roof over every ground floor room (their outer corners)."""
     if not build.in_build_mode():
-        core.speak('Go to Build mode first. Press F2, on a laptop Fn+F2.')
+        core.speak(_NOT_BUILD_MODE)
         return
     import simsight_plus_rooms as rooms
 
@@ -442,16 +505,16 @@ def roof_whole_house():
         max(b[3] for b in boxes),
     )
 
-    def work():
+    def work() -> None:
         items = build.fetch_catalog(4, '', 'none')
         if not items:
             _say('I could not get the list of roofs.')
             return
-        rows = [(name, None, name) for (name, price, colors) in items]
+        rows = [(name, None, name) for (name, _price, _colors) in items]
 
-        def chosen(name):
+        def chosen(name: str) -> None:
             if build._busy[0]:
-                core.speak('Still working on the last build step.')
+                core.speak(_BUSY)
                 return
             build._busy[0] = True
             _state['style'] = (4, '', name)
@@ -461,7 +524,7 @@ def roof_whole_house():
             saved = _state['tool']
             _state['tool'] = 'roof'
 
-            def go():
+            def go() -> None:
                 try:
                     _draw_roof_box(box, level)
                 finally:
@@ -476,7 +539,7 @@ def roof_whole_house():
     threading.Thread(target=work, name='a11yplus_roofs', daemon=True).start()
 
 
-def _draw_roof_box(box, level=0):
+def _draw_roof_box(box: Sequence[int], level: int = 0) -> None:
     try:
         _wait_keys_up()
         if not _select_style(*_state['style']):
@@ -504,11 +567,26 @@ HANDLE_UP = 3.5
 WALL_TOP = 3.0
 
 
-def _grab_screen(x0, y0, w, h):
-    """Screen pixels of a rectangle as bytes, 4 per pixel (blue, green, red, unused)."""
-    import ctypes
+def _gdi_prototypes(ctypes: Any, u: Any, g: Any) -> None:
+    """Argument and result types of the user32 / gdi32 calls _grab_screen makes."""
+    vp, i = ctypes.c_void_p, ctypes.c_int
+    u.GetDC.restype = vp
+    u.GetDC.argtypes = [vp]
+    u.ReleaseDC.argtypes = [vp, vp]
+    g.CreateCompatibleDC.restype = vp
+    g.CreateCompatibleDC.argtypes = [vp]
+    g.DeleteDC.argtypes = [vp]
+    g.CreateCompatibleBitmap.restype = vp
+    g.CreateCompatibleBitmap.argtypes = [vp, i, i]
+    g.SelectObject.restype = vp
+    g.SelectObject.argtypes = [vp, vp]
+    g.DeleteObject.argtypes = [vp]
+    g.BitBlt.argtypes = [vp, i, i, i, i, vp, i, i, ctypes.c_uint32]
+    g.GetDIBits.argtypes = [vp, vp, ctypes.c_uint, ctypes.c_uint, vp, vp, ctypes.c_uint]
 
-    u, g = ctypes.windll.user32, ctypes.windll.gdi32
+
+def _bitmap_info(ctypes: Any, w: int, h: int) -> Any:
+    """A BITMAPINFO for a top-down 32-bit image of w by h pixels."""
 
     class BMI(ctypes.Structure):
         _fields_ = [
@@ -526,45 +604,25 @@ def _grab_screen(x0, y0, w, h):
             ('pad', ctypes.c_uint32 * 4),
         ]
 
-    u.GetDC.restype = ctypes.c_void_p
-    u.GetDC.argtypes = [ctypes.c_void_p]
-    u.ReleaseDC.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-    g.CreateCompatibleDC.restype = ctypes.c_void_p
-    g.CreateCompatibleDC.argtypes = [ctypes.c_void_p]
-    g.DeleteDC.argtypes = [ctypes.c_void_p]
-    g.CreateCompatibleBitmap.restype = ctypes.c_void_p
-    g.CreateCompatibleBitmap.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int]
-    g.SelectObject.restype = ctypes.c_void_p
-    g.SelectObject.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-    g.DeleteObject.argtypes = [ctypes.c_void_p]
-    g.BitBlt.argtypes = [
-        ctypes.c_void_p,
-        ctypes.c_int,
-        ctypes.c_int,
-        ctypes.c_int,
-        ctypes.c_int,
-        ctypes.c_void_p,
-        ctypes.c_int,
-        ctypes.c_int,
-        ctypes.c_uint32,
-    ]
-    g.GetDIBits.argtypes = [
-        ctypes.c_void_p,
-        ctypes.c_void_p,
-        ctypes.c_uint,
-        ctypes.c_uint,
-        ctypes.c_void_p,
-        ctypes.c_void_p,
-        ctypes.c_uint,
-    ]
+    bmi = BMI()
+    bmi.biSize = 40
+    bmi.biWidth, bmi.biHeight, bmi.biPlanes, bmi.biBitCount = w, -h, 1, 32
+    return bmi
+
+
+def _grab_screen(x0: int, y0: int, w: int, h: int) -> bytes:
+    """Screen pixels of a rectangle as bytes, 4 per pixel (blue, green, red, unused)."""
+    import ctypes
+
+    windll = ctypes.windll  # type: ignore[attr-defined]  # Windows only
+    u, g = windll.user32, windll.gdi32
+    _gdi_prototypes(ctypes, u, g)
     src = u.GetDC(None)
     mem = g.CreateCompatibleDC(src)
     bmp = g.CreateCompatibleBitmap(src, w, h)
     old = g.SelectObject(mem, bmp)
     g.BitBlt(mem, 0, 0, w, h, src, x0, y0, 0x00CC0020)
-    bmi = BMI()
-    bmi.biSize = 40
-    bmi.biWidth, bmi.biHeight, bmi.biPlanes, bmi.biBitCount = w, -h, 1, 32
+    bmi = _bitmap_info(ctypes, w, h)
     buf = ctypes.create_string_buffer(w * h * 4)
     g.GetDIBits(mem, bmp, 0, h, buf, ctypes.byref(bmi), 0)
     g.SelectObject(mem, old)
@@ -574,11 +632,9 @@ def _grab_screen(x0, y0, w, h):
     return buf.raw
 
 
-def _find_handle(sx, sy, radius=40):
-    """Screen point of the white handle nearest to (sx, sy), or None."""
-    x0, y0 = int(sx - radius), int(sy - radius)
+def _handle_center(data: bytes, x0: int, y0: int, radius: int) -> Point | None:
+    """Screen point of the white blob nearest the middle of a 2*radius square grab, or None."""
     w = h = 2 * radius
-    data = _grab_screen(x0, y0, w, h)
     white = []
     for y in range(h):
         row = y * w * 4
@@ -595,7 +651,14 @@ def _find_handle(sx, sy, radius=40):
     return (x0 + sum(p[0] for p in blob) / len(blob), y0 + sum(p[1] for p in blob) / len(blob))
 
 
-def _drag_screen(a, b):
+def _find_handle(sx: float, sy: float, radius: int = 40) -> Point | None:
+    """Screen point of the white handle nearest to (sx, sy), or None."""
+    x0, y0 = int(sx - radius), int(sy - radius)
+    data = _grab_screen(x0, y0, 2 * radius, 2 * radius)
+    return _handle_center(data, x0, y0, radius)
+
+
+def _drag_screen(a: Point, b: Point) -> None:
     (ax, ay), (bx, by) = a, b
     build.move_to(ax, ay)
     time.sleep(0.4)
@@ -609,7 +672,7 @@ def _drag_screen(a, b):
     time.sleep(0.6)
 
 
-def _handle_point(side, r):
+def _handle_point(side: str, r: Sequence[float]) -> Point:
     mid_e, mid_n = (r[0] + r[2]) / 2.0, (r[1] + r[3]) / 2.0
     return {
         'south': (mid_e, r[3] + HANDLE_OUT),
@@ -619,12 +682,12 @@ def _handle_point(side, r):
     }[side]
 
 
-def _roof_camera(f, box, level=0):
+def _roof_camera(f: Any, box: Sequence[int], level: int = 0) -> None:
     """Look at the middle of the house from high above its north side, so the whole roof and all four
     handles are on screen, away from the toolbar at the top."""
     import camera
-    import terrain
     import sims4.math
+    import terrain
 
     # Aimed a little north of the middle: the near (north) handle ends up low on the screen.
     (x, z) = f.world((box[0] + box[2]) / 2.0, (box[1] + box[3]) / 2.0 - 1.5)
@@ -637,21 +700,22 @@ def _roof_camera(f, box, level=0):
     )
 
 
-def _park():
+def _park() -> None:
     """Mouse away from the roof (hovering it shows a tooltip) and from the screen edges (they scroll)."""
     u = build._user32()
     build.move_to(int(u.GetSystemMetrics(0) * 0.9), int(u.GetSystemMetrics(1) * 0.85))
 
 
-def _screen_of(f, e, n, height, tries=2):
+def _screen_of(f: Any, e: float, n: float, height: float, tries: int = 2) -> Any:
     for _ in range(tries):
-        p = build.project(*f.world(e, n), 0, height=height)
+        (x, z) = f.world(e, n)
+        p = build.project(x, z, 0, height=height)
         if p:
             return build._to_screen(*p)
     return None
 
 
-def _screen_toward(f, here, there, height):
+def _screen_toward(f: Any, here: Point, there: Point, height: float) -> Point | None:
     """Screen point of `there`. When it cannot be projected, step from `here` one meter toward it and
     stretch that step to the full distance."""
     p = _screen_of(f, there[0], there[1], height)
@@ -668,7 +732,56 @@ def _screen_toward(f, here, there, height):
     return (a[0] + (b[0] - a[0]) * dist, a[1] + (b[1] - a[1]) * dist)
 
 
-def roof_worker(box, level=0):
+def _click_screen(point: Point) -> None:
+    build.move_to(*point)
+    time.sleep(0.4)
+    build._mouse(build.LEFT_DOWN)
+    time.sleep(0.1)
+    build._mouse(build.LEFT_UP)
+    time.sleep(1.0)
+
+
+# The far (south) side first, while the roof is still low and that handle is not hidden behind it.
+# (side, index in the box, then the box index it is stretched to)
+_ROOF_SIDES = (('south', 3), ('east', 2), ('west', 0), ('north', 1))
+
+
+def _stretch_side(
+    f: Any, r: list[int], side: str, idx: int, want: int, up: float
+) -> list[int] | str:
+    """Worker: drag one roof handle so side `idx` of r reaches `want`. The new box, or a reason."""
+    goal_r = list(r)
+    goal_r[idx] = want
+    here, there = _handle_point(side, r), _handle_point(side, goal_r)
+    a = _screen_of(f, here[0], here[1], HANDLE_UP + up)
+    b = _screen_toward(f, here, there, HANDLE_UP + up)
+    build.cursor_off()
+    if a is None or b is None:
+        return 'noscreen'
+    found = _find_handle(a[0], a[1])
+    core.log(f'roof: {side} handle expected {a} found {found}')
+    if found is None:
+        return 'nohandle'
+    _drag_screen(found, (found[0] + b[0] - a[0], found[1] + b[1] - a[1]))
+    _park()
+    time.sleep(0.6)
+    return goal_r
+
+
+def _roof_checks_out(f: Any, r: Sequence[int], up: float) -> bool:
+    """Worker: the east and north handles are where the finished roof puts them."""
+    for side in ('east', 'north'):
+        e, n = _handle_point(side, r)
+        p = _screen_of(f, e, n, HANDLE_UP + up)
+        build.cursor_off()
+        found = _find_handle(p[0], p[1], radius=25) if p else None
+        core.log(f'roof: check {side} expected {p} found {found}')
+        if found is None:
+            return False
+    return True
+
+
+def roof_worker(box: Sequence[int], level: int = 0) -> bool | str:
     """Worker thread only, roof style already chosen. Put a roof over box (e0, n0, e1, n1), in meters
     from the west and north lot edges, on top of the walls of floor `level`. Returns True or a reason."""
     f = build.frame()
@@ -687,59 +800,30 @@ def roof_worker(box, level=0):
     build.cursor_off()
     if click is None:
         return 'noscreen'
-    build.move_to(*click)
-    time.sleep(0.4)
-    build._mouse(build.LEFT_DOWN)
-    time.sleep(0.1)
-    build._mouse(build.LEFT_UP)
-    time.sleep(1.0)
+    _click_screen(click)
     _park()
     time.sleep(0.6)
-    # The far (south) side first, while the roof is still low and that handle is not hidden behind it.
-    for side, idx, want in (
-        ('south', 3, box[3]),
-        ('east', 2, box[2]),
-        ('west', 0, box[0]),
-        ('north', 1, box[1]),
-    ):
-        if r[idx] == want:
+    for side, idx in _ROOF_SIDES:
+        if r[idx] == box[idx]:
             continue
-        goal_r = list(r)
-        goal_r[idx] = want
-        here, there = _handle_point(side, r), _handle_point(side, goal_r)
-        a = _screen_of(f, here[0], here[1], HANDLE_UP + up)
-        b = _screen_toward(f, here, there, HANDLE_UP + up)
-        build.cursor_off()
-        if a is None or b is None:
-            return 'noscreen'
-        found = _find_handle(*a)
-        core.log(f'roof: {side} handle expected {a} found {found}')
-        if found is None:
-            return 'nohandle'
-        _drag_screen(found, (found[0] + b[0] - a[0], found[1] + b[1] - a[1]))
-        _park()
-        time.sleep(0.6)
-        r = goal_r
-    # Check: the east and north handles must now be where the finished roof puts them.
-    for side in ('east', 'north'):
-        e, n = _handle_point(side, r)
-        p = _screen_of(f, e, n, HANDLE_UP + up)
-        build.cursor_off()
-        found = _find_handle(*p, radius=25) if p else None
-        core.log(f'roof: check {side} expected {p} found {found}')
-        if found is None:
-            return 'unsure'
-    return True
+        stretched = _stretch_side(f, r, side, idx, box[idx], up)
+        if isinstance(stretched, str):
+            return stretched
+        r = stretched
+    return True if _roof_checks_out(f, r, up) else 'unsure'
 
 
-def _roof_result(res, box):
+_ROOF_RESULTS = {
+    'unsure': 'I put the roof down and stretched it, but I could not check its size. Undo it if it sounds wrong.',
+    'nohandle': 'I put a small roof down but could not grab its handles to stretch it. Undo it and try again.',
+    'nofloor': 'I could not switch the game to the right floor. Press Page Up or Page Down and try again.',
+}
+
+
+def _roof_result(res: object, box: Sequence[int]) -> str:
     w, d = box[2] - box[0], box[3] - box[1]
     if res is True:
         return f'The roof is on, {w} by {d} meters.'
-    if res == 'unsure':
-        return 'I put the roof down and stretched it, but I could not check its size. Undo it if it sounds wrong.'
-    if res == 'nohandle':
-        return 'I put a small roof down but could not grab its handles to stretch it. Undo it and try again.'
-    if res == 'nofloor':
-        return 'I could not switch the game to the right floor. Press Page Up or Page Down and try again.'
+    if isinstance(res, str) and res in _ROOF_RESULTS:
+        return _ROOF_RESULTS[res]
     return 'I could not get that spot on screen.'
