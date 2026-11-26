@@ -11,6 +11,7 @@ import simsight_log
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
+    from simsight_steps import Job
     from simsight_tiles import Frame
 
     Cell = tuple[int, int]
@@ -518,8 +519,11 @@ def _choose_roof_style(
     import simsight_plus_build as build
     import simsight_plus_core as core
     import simsight_plus_draw as draw
+    import simsight_steps as steps
 
     def chosen(name: str) -> None:
+        if build.no_mouse():
+            return
         if build.busy[0]:
             core.speak('Still working on the last build step.')
             return
@@ -537,9 +541,9 @@ def _choose_roof_style(
             target=draw.draw_roof_box, args=(box, level), name='a11y_roof_builder', daemon=True
         ).start()
 
-    def work() -> None:
+    def work() -> Job[None]:
         try:
-            items = build.fetch_catalog(4, '', 'none')
+            items = yield from build.fetch_catalog_steps(4, '', 'none')
             words = ('gable', 'gabled') if kind == 'gable' else ('hip', 'hipped', 'pyramid')
             matched = [it for it in items if any(w in str(it[0]).lower() for w in words)]
             choices = matched or items
@@ -567,7 +571,7 @@ def _choose_roof_style(
         except Exception:
             simsight_log.error('roof tools: roof catalog')
 
-    threading.Thread(target=work, name='a11y_roof_catalog', daemon=True).start()
+    steps.start('a11y_roof_catalog', work())
 
 
 def describe_roof_level() -> None:

@@ -914,13 +914,10 @@ def _checks(
 
 def _start_ack_timer(serial: int) -> None:
     try:
-        import threading
-
         import simsight_pump as pump
+        import simsight_steps as steps
 
-        timer = threading.Timer(ACK_SECONDS, lambda: pump.post(_ack_timeout, serial))
-        timer.daemon = True
-        timer.start()
+        steps.after(ACK_SECONDS, pump.post, _ack_timeout, serial)
     except Exception as ex:
         simsight_log.line(f'place: no acknowledgement timer ({ex!r})')
 

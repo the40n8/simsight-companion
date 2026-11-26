@@ -12,6 +12,8 @@ import simsight_log
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from simsight_steps import Job
+
     _Box = tuple[int, int, int, int]  # west, north, east, south in lot metres
     _Rooms = set[tuple[tuple[int, ...], int]]  # (box, level) of every room
     _Result = str | _Box  # the drawn box, or why it was not drawn
@@ -346,25 +348,34 @@ def room_worker(want: Sequence[Any], overview: bool = False, tries: int = 4, lev
     return result
 
 
-def _run_busy(name: str, work: Callable[[], None]) -> None:
-    """Run work on its own thread, holding the build engine's busy flag."""
+def _run_busy(name: str, job: Job[None]) -> None:
+    """Run job (a thread on Windows, the pump on the Mac), holding the build
+    engine's busy flag."""
+    import simsight_steps as steps
+
     busy = _state.build.busy
-
-    def run() -> None:
-        try:
-            work()
-        except Exception:
-            simsight_log.error(f'basement: {name}')
-            raise
-        finally:
-            busy[0] = False
-
     busy[0] = True
     try:
-        threading.Thread(target=run, name=name, daemon=True).start()
+        steps.start(name, _holding_busy(name, job, busy))
     except Exception:
         busy[0] = False
         raise
+
+
+def _holding_busy(name: str, job: Job[None], busy: list[bool]) -> Job[None]:
+    try:
+        yield from job
+    except Exception:
+        simsight_log.error(f'basement: {name}')
+        raise
+    finally:
+        busy[0] = False
+
+
+def _call(work: Callable[[], None]) -> Job[None]:
+    """A job of one blocking call: Windows worker threads only."""
+    yield from ()
+    work()
 
 
 def _build_room(wanted: _Wanted) -> None:
@@ -387,6 +398,8 @@ def _build_room(wanted: _Wanted) -> None:
 
 def _start_room(wanted: _Wanted) -> None:
     core = _state.core
+    if _state.build.no_mouse():
+        return
     if _state.build.busy[0]:
         core.speak('Still working on the last build step.')
         return
@@ -394,7 +407,7 @@ def _start_room(wanted: _Wanted) -> None:
         core.speak('Turn on experimental basement creation in accessibility settings first.')
         return
     core.speak('Building the basement room. Please do not press keys until it finishes.')
-    _run_busy('a11y_basement_room', lambda: _build_room(wanted))
+    _run_busy('a11y_basement_room', _call(lambda: _build_room(wanted)))
 
 
 def _confirm_room(width: float, depth: float, coords: Sequence[float]) -> None:
@@ -457,12 +470,13 @@ def _ask_room() -> None:
     )
 
 
-def _inspect_work() -> None:
-    build = _state.build
+def _inspect_work() -> Job[None]:
+    import simsight_steps as steps
+
     try:
-        state = build.on_main(_context)
-        info = _state.helpers.native_floor(state)
-        geometry = build.on_main(_rooms)
+        state = yield steps.OnMain(_context)
+        info = yield from _state.helpers.native_floor_steps(state)
+        geometry = yield steps.OnMain(_rooms)
         if geometry is None:
             raise RuntimeError('Room inspection timed out')
         basements = sorted(box for box, level in geometry if level == -1)
@@ -470,7 +484,7 @@ def _inspect_work() -> None:
         _speak_later(
             f'Logged current floor bounds and {len(basements)} basement rooms. Nothing was built or selected.'
         )
-    except Exception as exc:  # worker thread: report every failure, never raise
+    except Exception as exc:  # a job: report every failure, never raise
         simsight_log.json_line(_LOG, 'inspect-failed', error=str(exc))
         _speak_later('Basement inspection failed. ' + str(exc))
 
@@ -479,7 +493,7 @@ def _inspect() -> None:
     if _state.build.busy[0]:
         _state.core.speak('Still working on the last build step.')
         return
-    _run_busy('a11y_basement_inspect', _inspect_work)
+    _run_busy('a11y_basement_inspect', _inspect_work())
 
 
 def open_assistant() -> None:

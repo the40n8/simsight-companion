@@ -3,7 +3,6 @@ each level, floor limits, stair placement, room framing and the roof follow-up."
 
 from __future__ import annotations
 
-import threading
 import time
 from typing import TYPE_CHECKING, Any
 
@@ -11,6 +10,8 @@ import simsight_log
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
+
+    from simsight_steps import Job
 
     Point = tuple[float, float]
     Tile = tuple[int, int]
@@ -311,9 +312,10 @@ def build_with_followup(plan: Any) -> Any:
 def shaped_stair_diagnostics() -> None:
     import simsight_plus_build as build
     import simsight_plus_core as core
+    import simsight_steps as steps
 
-    def work() -> None:
-        items = build.fetch_catalog(14, '', 'none') or []
+    def work() -> Job[None]:
+        items = (yield from build.fetch_catalog_steps(14, '', 'none')) or []
         simsight_log.line(
             f'house planner: stair catalog discovery {[(str(n), p, c) for n, p, c in items]}'
         )
@@ -322,7 +324,7 @@ def shaped_stair_diagnostics() -> None:
             f'Logged {len(items)} stair catalog entries and swatch counts. No shaped, flared, L, U or spiral stair was placed.',
         )
 
-    threading.Thread(target=work, name='a11y_stair_discovery', daemon=True).start()
+    steps.start('a11y_stair_discovery', work())
 
 
 def _original_build(plan: Any) -> Any:

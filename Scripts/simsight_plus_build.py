@@ -14,9 +14,12 @@ from typing import TYPE_CHECKING, Any
 from simsight_commands import real_annotations
 import simsight_log
 import simsight_plus_core as core
+import simsight_steps as steps
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
+
+    from simsight_steps import Job
 
     Point = tuple[float, float]  # world (x, z), or screen (x, y)
     Box = tuple[int, int, int, int]  # (e0, n0, e1, n1) meters from the west and north edges
@@ -483,20 +486,20 @@ def point_and_act_base(  # noqa: PLR0913, PLR0917 - signature other modules call
 
 def on_main(fn: Callable[..., Any], *args: Any) -> Any:
     """Worker thread only: run fn on the game thread and wait for its result."""
-    ev = threading.Event()
-    box: list[Any] = []
+    return steps.on_main(fn, *args)
 
-    def go() -> None:
-        try:
-            box.append(fn(*args))
-        except Exception:
-            core.log_exc('on_main')
-            box.append(None)
-        ev.set()
 
-    core.post(go)
-    ev.wait(10)
-    return box[0] if box else None
+NO_MOUSE_TEXT = 'This build step moves the mouse, which SimSight cannot do on the Mac yet.'
+
+
+def no_mouse() -> bool:
+    """True, and says so, where the real mouse cannot be moved (the Mac: no
+    ctypes, no simsight_build_coordinates). The pointing workers would only
+    fail there, and on a thread, which the Mac game does not survive."""
+    if not steps.IS_MAC:
+        return False
+    core.speak(NO_MOUSE_TEXT)
+    return True
 
 
 def undo() -> None:
@@ -514,6 +517,8 @@ def run_job(  # noqa: PLR0913, PLR0917 - signature other modules call
     focus_height: float | None = None,
 ) -> None:
     """Do one pointing job in a background thread so the game keeps drawing frames."""
+    if no_mouse():
+        return
     if busy[0]:
         core.speak('Still working on the last build step.')
         return
@@ -673,6 +678,8 @@ def _do_room(w: int, d: int, e: int | None, n: int | None) -> None:
         core.speak(
             f'That does not fit. Rooms must stay at least 1 meter inside the lot edge. The lot is {f.width} by {f.depth} meters.'
         )
+        return
+    if no_mouse():
         return
     if busy[0]:
         core.speak('Still working on the last build step.')
@@ -1285,13 +1292,13 @@ def request_catalog(name: str, product_type: int, tags: str, nxt: str) -> None:
                 'The catalog did not answer. The SimSight Plus part of the SimSight interface file may be missing.'
             )
 
-    threading.Timer(4.0, lambda: core.post(timeout)).start()
+    steps.after(4.0, core.post, timeout, daemon=False)
 
 
-def fetch_catalog(
+def fetch_catalog_steps(
     product_type: int, tags: str, nxt: str, timeout: float = 6.0
-) -> list[tuple[str, int, int]]:
-    """Worker thread only: list a catalog category without showing it. Returns [(name, price, colors)]."""
+) -> Job[list[tuple[str, int, int]]]:
+    """Job steps: list a catalog category without showing it. Returns [(name, price, colors)]."""
     ev = threading.Event()
 
     def start() -> None:
@@ -1300,17 +1307,29 @@ def fetch_catalog(
         send_ui('A11y|plus|catalog|{}|{}|{}'.format(product_type, tags, catalog_state['serial']))
 
     core.post(start)
-    ev.wait(timeout)
+    yield steps.WaitEvent(ev, timeout)
     catalog_state['quiet'] = None
     return list(catalog_state['items'])
 
 
-def select_item(index: int, name: str) -> None:
-    """Worker thread only: choose catalog item `index` of the last fetched list, as clicking it would."""
+def fetch_catalog(
+    product_type: int, tags: str, nxt: str, timeout: float = 6.0
+) -> list[tuple[str, int, int]]:
+    """Worker thread only: list a catalog category without showing it. Returns [(name, price, colors)]."""
+    return steps.run(fetch_catalog_steps(product_type, tags, nxt, timeout))
+
+
+def select_item_steps(index: int, name: str) -> Job[None]:
+    """Job steps: choose catalog item `index` of the last fetched list, as clicking it would."""
     catalog_state['chosen'] = index
     _product['name'] = name
-    on_main(send_ui, f'A11y|plus|select|{index}')
-    time.sleep(0.8)
+    yield steps.OnMain(send_ui, f'A11y|plus|select|{index}')
+    yield steps.Sleep(0.8)
+
+
+def select_item(index: int, name: str) -> None:
+    """Worker thread only: choose catalog item `index` of the last fetched list, as clicking it would."""
+    steps.run(select_item_steps(index, name))
 
 
 def _show_catalog() -> None:

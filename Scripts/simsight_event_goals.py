@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import threading
 import time
 from typing import Any, NamedTuple
 
@@ -107,6 +106,7 @@ def _register() -> None:
 def open_goals(situation_id: Any) -> bool:
     import simsight_hub as hub
     import simsight_pump as pump
+    import simsight_steps as steps
 
     _manager, situation = hub.event_situation(situation_id)
     if situation is None:
@@ -122,7 +122,5 @@ def open_goals(situation_id: Any) -> bool:
     _state.pending = job
     hub.send_ui(f'A11y|eventgoals|{job.event}|{job.zone}|{job.serial}')
     # The timer never touches game data; only the simulation pump may expire it.
-    timer = threading.Timer(_TIMEOUT_SECONDS, lambda: pump.post(_expire, job.serial))
-    timer.daemon = True
-    timer.start()
+    steps.after(_TIMEOUT_SECONDS, pump.post, _expire, job.serial)
     return True

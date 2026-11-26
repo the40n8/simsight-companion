@@ -14,6 +14,8 @@ import simsight_log
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+    from simsight_steps import Job
+
 _LOG = 'build helpers: '  # log line prefix
 _PAGE_UP = (33, 0x49)  # virtual key, scan code: one floor up
 _PAGE_DOWN = (34, 0x51)  # one floor down
@@ -164,13 +166,18 @@ def _receive_floor(
     job['done'].set()
 
 
-def native_floor(state: dict[str, Any], timeout: float = 3.0) -> dict[str, int]:
-    """One outstanding read-only query; quarantine after timeout, never reuse late replies."""
+def native_floor_steps(state: dict[str, Any], timeout: float = 3.0) -> Job[dict[str, int]]:
+    """Job steps: one outstanding read-only query; quarantine after timeout,
+    never reuse late replies."""
+    import simsight_steps as steps
+
     if _runtime.floor_quarantined:
         raise RuntimeError('Native floor channel timed out; restart the game before retrying')
+    build = _runtime.build
+    if build is None:
+        raise RuntimeError('Native floor queries are not installed in this game')
     if not _floor_lock.acquire(False):
         raise RuntimeError('Another native floor query is active')
-    build = _runtime.build
     try:
         job: dict[str, Any] = {'zone': state['zone'], 'done': threading.Event()}
         _runtime.floor_job = job
@@ -181,20 +188,27 @@ def native_floor(state: dict[str, Any], timeout: float = 3.0) -> dict[str, int]:
             build.send_ui('A11yNativeFloorQuery')
             return True
 
-        if build.on_main(send) is not True:
+        if (yield steps.OnMain(send)) is not True:
             _runtime.floor_quarantined = True
             raise RuntimeError('Native floor query could not be dispatched')
-        if not job['done'].wait(timeout):
+        if not (yield steps.WaitEvent(job['done'], timeout)):
             _runtime.floor_quarantined = True
             raise RuntimeError('Native floor UI did not answer; install the matching UI package')
         if 'error' in job:
             raise RuntimeError(job['error'])
-        if not build.on_main(same_world, state):
+        if not (yield steps.OnMain(same_world, state)):
             raise RuntimeError('Build context changed during the native query')
         return job['result']
     finally:
         _runtime.floor_job = None
         _floor_lock.release()
+
+
+def native_floor(state: dict[str, Any], timeout: float = 3.0) -> dict[str, int]:
+    """Worker thread only: native_floor_steps run to its end."""
+    import simsight_steps as steps
+
+    return steps.run(native_floor_steps(state, timeout))
 
 
 def _whole_level(level: Any) -> int | None:

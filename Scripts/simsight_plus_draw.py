@@ -10,9 +10,12 @@ from typing import TYPE_CHECKING, Any
 
 import simsight_plus_build as build
 import simsight_plus_core as core
+import simsight_steps as steps
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
+
+    from simsight_steps import Job
 
     Point = tuple[float, float]
     Box = tuple[int, int, int, int]  # e0, n0, e1, n1: meters from the west and north lot edges
@@ -198,36 +201,36 @@ def _hint() -> str:
 
 def _pick_style(tool: str) -> None:
     (ptype, tags) = (4, '') if tool == 'roof' else (10, '')
+    steps.start('a11yplus_style', _pick_style_steps(tool, ptype, tags))
 
-    def work() -> None:
-        items = build.fetch_catalog(ptype, tags, 'none')
-        if not items:
-            core.post(core.speak, f'I could not get the list of {tool}s.')
-            return
-        rows = []
-        for name, price, _colors in items:
-            desc = (
-                '{:,} simoleons{}'.format(price, ' a meter' if tool == 'fence' else '')
-                if price
-                else None
-            )
-            rows.append((name, desc, name))
 
-        def chosen(name: str) -> None:
-            draw_state['tool'] = tool
-            draw_state['style'] = (ptype, tags, name)
-            core.speak(f'Tool: {TOOLS[tool]}, {name}. ' + _hint())
-
-        core.post(
-            core.choose,
-            'Choose a ' + tool,
-            f'{len(rows)} to choose from.',
-            rows,
-            chosen,
-            'build',
+def _pick_style_steps(tool: str, ptype: int, tags: str) -> Job[None]:
+    items = yield from build.fetch_catalog_steps(ptype, tags, 'none')
+    if not items:
+        core.post(core.speak, f'I could not get the list of {tool}s.')
+        return
+    rows = []
+    for name, price, _colors in items:
+        desc = (
+            '{:,} simoleons{}'.format(price, ' a meter' if tool == 'fence' else '')
+            if price
+            else None
         )
+        rows.append((name, desc, name))
 
-    threading.Thread(target=work, name='a11yplus_style', daemon=True).start()
+    def chosen(name: str) -> None:
+        draw_state['tool'] = tool
+        draw_state['style'] = (ptype, tags, name)
+        core.speak(f'Tool: {TOOLS[tool]}, {name}. ' + _hint())
+
+    core.post(
+        core.choose,
+        'Choose a ' + tool,
+        f'{len(rows)} to choose from.',
+        rows,
+        chosen,
+        'build',
+    )
 
 
 # ---------------------------------------------------------------- keys (only while the cursor is on)
@@ -327,6 +330,8 @@ def _draw() -> None:
     problem = _shape_problem(tool, s, e, n)
     if problem:
         core.speak(problem)
+        return
+    if build.no_mouse():
         return
     if tool in ('roof', 'fence') and not draw_state['style']:
         _pick_style(tool)
@@ -510,38 +515,46 @@ def roof_whole_house() -> None:
         max(b[3] for b in boxes),
     )
 
-    def work() -> None:
-        items = build.fetch_catalog(4, '', 'none')
-        if not items:
-            _say('I could not get the list of roofs.')
-            return
-        rows = [(name, None, name) for (name, _price, _colors) in items]
+    steps.start('a11yplus_roofs', _roof_styles_steps(box, level))
 
-        def chosen(name: str) -> None:
-            if build.busy[0]:
-                core.speak(_BUSY)
-                return
-            build.busy[0] = True
-            draw_state['style'] = (4, '', name)
-            core.speak(
-                f'Putting a {name} over the house, {box[2] - box[0]} by {box[3] - box[1]} meters. Please wait.'
-            )
-            saved = draw_state['tool']
-            draw_state['tool'] = 'roof'
 
-            def go() -> None:
-                try:
-                    draw_roof_box(box, level)
-                finally:
-                    draw_state['tool'] = saved
+def _roof_whole_house_chosen(name: str, box: Box, level: int) -> None:
+    if build.no_mouse():
+        return
+    if build.busy[0]:
+        core.speak(_BUSY)
+        return
+    build.busy[0] = True
+    draw_state['style'] = (4, '', name)
+    core.speak(
+        f'Putting a {name} over the house, {box[2] - box[0]} by {box[3] - box[1]} meters. Please wait.'
+    )
+    saved = draw_state['tool']
+    draw_state['tool'] = 'roof'
 
-            threading.Thread(target=go, name='a11yplus_roof', daemon=True).start()
+    def go() -> None:
+        try:
+            draw_roof_box(box, level)
+        finally:
+            draw_state['tool'] = saved
 
-        core.post(
-            core.choose, 'Roof style', 'Choose the roof for the whole house.', rows, chosen, 'build'
-        )
+    threading.Thread(target=go, name='a11yplus_roof', daemon=True).start()
 
-    threading.Thread(target=work, name='a11yplus_roofs', daemon=True).start()
+
+def _roof_styles_steps(box: Box, level: int) -> Job[None]:
+    """Job steps: list the roofs, then roof the whole house with the chosen one."""
+    items = yield from build.fetch_catalog_steps(4, '', 'none')
+    if not items:
+        _say('I could not get the list of roofs.')
+        return
+    rows = [(name, None, name) for (name, _price, _colors) in items]
+
+    def chosen(name: str) -> None:
+        _roof_whole_house_chosen(name, box, level)
+
+    core.post(
+        core.choose, 'Roof style', 'Choose the roof for the whole house.', rows, chosen, 'build'
+    )
 
 
 def draw_roof_box(box: Sequence[int], level: int = 0) -> None:

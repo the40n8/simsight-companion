@@ -9,7 +9,6 @@ and Ctrl+Alt+D step through ground, six wall heights and ceiling.
 from __future__ import annotations
 
 import os
-import threading
 import time
 from typing import TYPE_CHECKING, Any
 
@@ -540,8 +539,11 @@ def hang_with_game_tool(
     import simsight_grid as grid
     import simsight_place as place_mod
     import simsight_plus_build as plus
+    import simsight_steps as steps
     import simsight_tiles as tiles
 
+    if plus.no_mouse():  # the click below needs the real mouse
+        return False
     if plus.catalog_state.get('chosen') is None:
         place_mod.say_text(
             "Choose it with Control Alt O first, so the game's tool can hold it. Nothing was bought.",
@@ -579,9 +581,7 @@ def hang_with_game_tool(
     # drawn wall ("Must be placed on a wall"). Walls up first; the player's
     # view comes back after the click, or after 15 seconds if none happens.
     plus.send_ui('A11y|plus|wallsup')
-    fallback = threading.Timer(15.0, lambda: plus.core.post(_restore_walls))
-    fallback.daemon = True
-    fallback.start()
+    steps.after(15.0, plus.core.post, _restore_walls)
     job = _Hang(name, _spot_key(side), plus.funds())
     # Live 2026-11-12 (screenshots): the click is the screen centre, where the
     # camera looks. Looking at the floor by the wall missed it from outside

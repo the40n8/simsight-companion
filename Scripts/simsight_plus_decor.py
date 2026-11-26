@@ -10,9 +10,12 @@ from typing import TYPE_CHECKING, Any
 
 import simsight_plus_build as build
 import simsight_plus_core as core
+import simsight_steps as steps
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
+
+    from simsight_steps import Job
 
 # part -> (catalog product type, label)
 PARTS = {'walls': (7, 'Wall patterns, paint and wallpaper'), 'floor': (5, 'Floor patterns')}
@@ -71,14 +74,15 @@ def _list_patterns(room: Any, part: str) -> None:
     (ptype, label) = PARTS[part]
     core.speak(f'Getting the {label.lower()}. Please wait.')
 
-    def work() -> None:
-        items = build.fetch_catalog(ptype, '', 'paint' + part)
-        if not items:
-            _say('The catalog did not answer. Try again in a moment.')
-            return
-        core.post(_show_patterns, room, part, items)
+    steps.start('a11yplus_decor_list', _list_patterns_steps(room, part, ptype))
 
-    threading.Thread(target=work, name='a11yplus_decor_list', daemon=True).start()
+
+def _list_patterns_steps(room: Any, part: str, ptype: int) -> Job[None]:
+    items = yield from build.fetch_catalog_steps(ptype, '', 'paint' + part)
+    if not items:
+        _say('The catalog did not answer. Try again in a moment.')
+        return
+    core.post(_show_patterns, room, part, items)
 
 
 def _show_patterns(room: Any, part: str, items: Sequence[Any]) -> None:
@@ -103,6 +107,8 @@ def _show_patterns(room: Any, part: str, items: Sequence[Any]) -> None:
 
 
 def _paint(room: Any, part: str, index: int, name: str) -> None:
+    if build.no_mouse():
+        return
     if build.busy[0]:
         core.speak('Still working on the last build step.')
         return

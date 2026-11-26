@@ -646,6 +646,8 @@ def _claim_busy() -> bool:
 
 
 def start_build(p: Plan) -> None:
+    if build.no_mouse():
+        return
     if not _claim_busy():
         return
     core.speak(
@@ -884,6 +886,8 @@ def door_between_rooms() -> None:
 
 
 def _run_door(a: Tile, b: Tile, level: int, what: str) -> None:
+    if build.no_mouse():
+        return
     if not _claim_busy():
         return
     use_chosen = (
@@ -1044,6 +1048,8 @@ def remove_door_or_window() -> None:
 
     def got(value: tuple[Any, ...]) -> None:
         kind = value[4]
+        if build.no_mouse():
+            return
         if not _claim_busy():
             return
         core.speak(f'Removing the {kind.lower()}. Please wait.')

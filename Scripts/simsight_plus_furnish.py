@@ -5,15 +5,16 @@
 from __future__ import annotations
 
 import math
-import threading
-import time
 from typing import TYPE_CHECKING, Any
 
 import simsight_plus_build as build
 import simsight_plus_core as core
+import simsight_steps as steps
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
+
+    from simsight_steps import Job
 
     Spot = tuple[float, float, float]  # world x, z and the angle to face
 
@@ -141,33 +142,37 @@ def furnish_room() -> None:
     core.choose('Furnish a room', 'Choose the room.', rows, got_room, tag='build')
 
 
-def _choose_item(key: str) -> tuple[str, int] | None:
-    """Worker: select the catalog item for `key`. Returns (name, price) or None."""
-    (_label, tags, prefer, exclude) = ITEMS[key]
-    items = build.fetch_catalog(2, tags, 'object')
-    if not items:
-        return None
+def _pick_index(items: Sequence[Any], prefer: Sequence[str], exclude: Sequence[str]) -> int | None:
+    """The catalog row to buy: the first preferred name listed, else the cheapest
+    item none of the excluded words rule out, else None."""
     names = [it[0] for it in items]
-    index = None
     for want in prefer:
         if want in names:
-            index = names.index(want)
-            break
+            return names.index(want)
+    ok = [
+        (it[1], i) for (i, it) in enumerate(items) if not any(w in it[0].lower() for w in exclude)
+    ]
+    if not ok:
+        return None
+    return min(ok)[1]
+
+
+def _choose_item(key: str) -> Job[tuple[str, int] | None]:
+    """Job steps: select the catalog item for `key`. Returns (name, price) or None."""
+    (_label, tags, prefer, exclude) = ITEMS[key]
+    items = yield from build.fetch_catalog_steps(2, tags, 'object')
+    if not items:
+        return None
+    index = _pick_index(items, prefer, exclude)
     if index is None:
-        ok = [
-            (it[1], i)
-            for (i, it) in enumerate(items)
-            if not any(w in it[0].lower() for w in exclude)
-        ]
-        if not ok:
-            return None
-        index = min(ok)[1]
+        return None
+    name = items[index][0]
     build.catalog_state['silent_select'] = True
     try:
-        build.select_item(index, names[index])
+        yield from build.select_item_steps(index, name)
     finally:
         build.catalog_state['silent_select'] = False
-    return (names[index], items[index][1])
+    return (name, items[index][1])
 
 
 def _door_tiles(wall_things: Sequence[tuple[float, float, str]]) -> set[tuple[int, int]]:
@@ -287,25 +292,25 @@ class _SpotCursor:
         return spot
 
 
-def _bought(before: int) -> bool:
-    """Worker: wait up to 5 seconds for the household's money to drop below `before`."""
+def _bought(before: int) -> Job[bool]:
+    """Job steps: wait up to 5 seconds for the household's money to drop below `before`."""
     for _ in range(20):
-        time.sleep(0.25)
-        if (build.on_main(build.funds) or 0) < before:
+        yield steps.Sleep(0.25)
+        if ((yield steps.OnMain(build.funds)) or 0) < before:
             return True
     return False
 
 
-def _place_item(place: Any, room: Any, key: str, cursor: _SpotCursor) -> bool:
-    """Worker: up to 4 tries to place the selected item for `key`. Beds try the middle first."""
+def _place_item(place: Any, room: Any, key: str, cursor: _SpotCursor) -> Job[bool]:
+    """Job steps: up to 4 tries to place the selected item for `key`. Beds try the middle first."""
     for attempt in range(4):
         first_bed_try = key.endswith('bed') and attempt == 0
         spot = cursor.middle if first_bed_try else cursor.next_spot()
-        before = build.on_main(build.funds) or 0
-        build.on_main(_placer(place, room, spot))
-        if _bought(before):
+        before = (yield steps.OnMain(build.funds)) or 0
+        yield steps.OnMain(_placer(place, room, spot))
+        if (yield from _bought(before)):
             return True
-        time.sleep(0.5)
+        yield steps.Sleep(0.5)
     return False
 
 
@@ -318,37 +323,38 @@ def _furnish_text(room: Any, bought: list[str], missed: list[str], spent: int) -
     return text
 
 
+def _furnish_steps(place: Any, room: Any, keys: Sequence[str]) -> Job[None]:
+    """Job steps: buy and place each item of the set, then say what it cost."""
+    bought: list[str] = []
+    missed: list[str] = []
+    start = (yield steps.OnMain(build.funds)) or 0
+    try:
+        cursor = _SpotCursor(*_spots(room))
+        for key in keys:
+            if (yield from _choose_item(key)) is None:
+                missed.append(ITEMS[key][0].lower())
+                continue
+            ok = yield from _place_item(place, room, key, cursor)
+            if ok:
+                yield steps.OnMain(_face_into_room, place, room)
+            (bought if ok else missed).append(ITEMS[key][0].lower())
+            core.log('furnish {} {}: {}'.format(room.name, key, 'ok' if ok else 'missed'))
+        spent = start - ((yield steps.OnMain(build.funds)) or 0)
+        _say(_furnish_text(room, bought, missed, spent))
+    except Exception:
+        core.log_exc('furnish')
+        _say('Sorry, furnishing failed.')
+    finally:
+        build.busy[0] = False
+
+
 def _furnish(room: Any, item_set: tuple[str, Sequence[str]]) -> None:
+    import simsight_place as place  # here: never imported first on a worker thread
+
     (label, keys) = item_set
     if build.busy[0]:
         core.speak('Still working on the last build step.')
         return
     build.busy[0] = True
     core.speak(f'Furnishing the {room.name} as a {label.lower()}. Please wait.')
-
-    def work() -> None:
-        import simsight_place as place
-
-        bought: list[str] = []
-        missed: list[str] = []
-        start = build.on_main(build.funds) or 0
-        try:
-            cursor = _SpotCursor(*_spots(room))
-            for key in keys:
-                if _choose_item(key) is None:
-                    missed.append(ITEMS[key][0].lower())
-                    continue
-                ok = _place_item(place, room, key, cursor)
-                if ok:
-                    build.on_main(_face_into_room, place, room)
-                (bought if ok else missed).append(ITEMS[key][0].lower())
-                core.log('furnish {} {}: {}'.format(room.name, key, 'ok' if ok else 'missed'))
-            spent = start - (build.on_main(build.funds) or 0)
-            _say(_furnish_text(room, bought, missed, spent))
-        except Exception:
-            core.log_exc('furnish')
-            _say('Sorry, furnishing failed.')
-        finally:
-            build.busy[0] = False
-
-    threading.Thread(target=work, name='simsight_plus_furnish', daemon=True).start()
+    steps.start('simsight_plus_furnish', _furnish_steps(place, room, keys))

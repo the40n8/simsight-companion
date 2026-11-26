@@ -18,7 +18,6 @@ logs anything they raise.
 
 from __future__ import annotations
 
-import threading
 from typing import TYPE_CHECKING, Any, Callable
 from urllib.parse import quote
 
@@ -165,7 +164,9 @@ def _request(
             arrived.done = True
             _core().speak('The catalog did not answer. Open Build mode with F2 and try again.')
 
-    threading.Timer(_TIMEOUT, lambda: _core().post(timeout)).start()
+    import simsight_steps as steps
+
+    steps.after(_TIMEOUT, _core().post, timeout, daemon=False)
 
 
 def _browse(sub: Subcategory, back: Callable[[], object]) -> None:
