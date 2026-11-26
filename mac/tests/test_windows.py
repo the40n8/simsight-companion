@@ -83,17 +83,17 @@ class WindowsCompanion(unittest.TestCase):
         sent = []
         # The Mac's own subprocess cannot load as Windows: a stand-in.
         fake = types.SimpleNamespace(Popen=popen, PIPE=-1, DEVNULL=-3)
-        old = (bridge._find, bridge.subprocess, bridge.send, bridge._proc)
+        old = (bridge._find, bridge.subprocess, bridge.send, bridge._state.proc)
         try:
             bridge._find = lambda name: (
                 'C:\\Mods\\SimSight\\' + name if name == bridge.BRIDGE else None
             )
             bridge.subprocess = fake
             bridge.send = sent.append
-            bridge._proc = None
+            bridge._state.proc = None
             self.assertTrue(bridge.start())
         finally:
-            bridge._find, bridge.subprocess, bridge.send, bridge._proc = old
+            bridge._find, bridge.subprocess, bridge.send, bridge._state.proc = old
         args, kw = calls[0]
         self.assertEqual(args[1:], ['--speaker', 'none'])
         self.assertEqual(kw.get('creationflags'), bridge.CREATE_NO_WINDOW)
@@ -102,11 +102,11 @@ class WindowsCompanion(unittest.TestCase):
     def test_reads_commands_without_blocking(self):
         r, w = os.pipe()
         sent = []
-        old = (bridge._proc, bridge.send, bridge._read_buf)
+        old = (bridge._state.proc, bridge.send, bridge._state.read_buf)
         try:
-            bridge._proc = FakeProc(r)
+            bridge._state.proc = FakeProc(r)
             bridge.send = sent.append
-            bridge._read_buf = b''
+            bridge._state.read_buf = b''
             WAITING['bytes'] = 0
             bridge._read_commands()  # nothing waiting: returns at once
             self.assertEqual(sent, [])
@@ -115,7 +115,7 @@ class WindowsCompanion(unittest.TestCase):
             WAITING['bytes'] = len(line)
             bridge._read_commands()
         finally:
-            bridge._proc, bridge.send, bridge._read_buf = old
+            bridge._state.proc, bridge.send, bridge._state.read_buf = old
             os.close(r)
             os.close(w)
         self.assertEqual(SPOKEN[0][0], 'Pairing code: 1 2 3')
