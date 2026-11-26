@@ -219,6 +219,8 @@ travel list = {travel_list}
 object names = {object_names}
 # Say what the active Sim starts doing (on/off)
 sim actions = {sim_actions}
+# Show what is spoken as a caption on screen (on/off)
+captions = {captions}
 # Speech and keyboard at the main menu and in Create a Sim (on/off)
 startup speech = {startup}
 # Numpad 4 and 6 move, 5 activates, 8 repeats, decimal goes back (on/off)
@@ -394,17 +396,40 @@ def _read_cfg() -> configparser.ConfigParser | None:
     )
     try:
         with open(PATH, encoding='utf-8') as handle:
-            try:
-                parser.read_file(handle)
-            except configparser.ParsingError as ex:
-                for lineno, line in getattr(ex, 'errors', []):
-                    load_errors.append(
-                        f'line {lineno} is not "option = value" and was skipped: {line}'
-                    )
-    except Exception as ex:
+            text = handle.read()
+    except (OSError, UnicodeDecodeError) as ex:
         load_errors.append(f'settings file unreadable ({ex!r}); using defaults')
         return None
+    _parse_into(parser, _from_first_section(text))
     return parser
+
+
+def _from_first_section(text: str) -> str:
+    """configparser stops at a line before the first [section]; skip such
+    lines (noting them) so the rest of the file still counts."""
+    lines = text.splitlines(keepends=True)
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith('['):
+            break
+        if stripped and not stripped.startswith(('#', ';')):
+            load_errors.append(
+                f'line {index + 1} is before any [section] and was skipped: {stripped}'
+            )
+    else:
+        return text
+    return '\n' * index + ''.join(lines[index:])  # same line numbers in later messages
+
+
+def _parse_into(parser: configparser.ConfigParser, text: str) -> None:
+    """Parse, keeping everything that did parse; bad lines are noted."""
+    try:
+        parser.read_string(text, source=PATH)
+    except configparser.ParsingError as ex:
+        for lineno, line in getattr(ex, 'errors', []):
+            load_errors.append(f'line {lineno} is not "option = value" and was skipped: {line}')
+    except configparser.Error as ex:
+        load_errors.append(f'settings file not understood ({ex}); using defaults')
 
 
 def _load_cfg() -> None:

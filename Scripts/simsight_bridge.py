@@ -248,6 +248,10 @@ class SpeechPipe:
     def kill(self) -> None:
         """The bridge keeps running: it serves the phone too."""
 
+    def wait(self, timeout: float | None = None) -> int | None:
+        """Nothing to wait for (kill() leaves the bridge running)."""
+        return self.poll()
+
 
 def _game_version() -> str:
     try:

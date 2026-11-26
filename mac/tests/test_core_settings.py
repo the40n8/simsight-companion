@@ -94,6 +94,24 @@ class SettingsFileTest(unittest.TestCase):
         self.assertEqual(settings.get('tooltip_delay'), 2.0)
         self.assertIs(settings.get('scanner'), True)
 
+    def test_captions_survive_a_save(self) -> None:
+        self.load('[features]\ncaptions = on\n')
+        self.assertIs(settings.get('captions'), True)
+        settings.set('keyboard', False)  # any save rewrites the whole file
+        settings.reload()
+        self.assertIs(settings.get('captions'), True)
+
+    def test_a_line_before_the_first_section_does_not_lose_the_file(self) -> None:
+        self.load('oops\n# a comment\n[features]\nsim actions = off\nnot an option\n')
+        self.assertIs(settings.get('sim_actions'), False)
+        self.assertEqual(
+            settings.load_errors,
+            [
+                'line 1 is before any [section] and was skipped: oops',
+                'line 5 is not "option = value" and was skipped: \'not an option\\n\'',
+            ],
+        )
+
     def test_get_fallback_only_when_unset(self) -> None:
         self.load('[speech]\nlogging = on\n')
         self.assertIs(settings.get('logging', False), True)
