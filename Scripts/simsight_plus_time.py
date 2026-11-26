@@ -1,12 +1,35 @@
-# SimSight Plus - time, day, game speed, work/school times, money and bills.
+"""SimSight Plus time: day, game speed, work/school times, money and bills.
+
+Also says every game speed change (P, 1, 2, 3), Build and Live mode, and an
+action queued while the game is paused.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import time
+from typing import Any
+
+import simsight_log
 import simsight_plus_core as core
 
 DAYS = ('Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday')
-_reminded = {}  # (sim_id, career uid) -> start ticks already announced
-_bills_announced = [False]
 
 
-def clock_text(dt):
+class _State:
+    def __init__(self) -> None:
+        # (sim_id, career uid) -> start ticks already announced
+        self.reminded: dict[tuple[Any, Any], int] = {}
+        self.bills_announced = False
+        self.last_spoken: tuple[str, int] | None = None  # (speed text, 2-second slot)
+        self.last_mode: bool | None = None  # True in Build mode
+        self.queued_seen: set[Any] | None = None  # ids in the active Sim's queue
+
+
+_state = _State()
+
+
+def clock_text(dt: Any) -> str:
     h, m = dt.hour(), dt.minute()
     suffix = 'AM' if h < 12 else 'PM'
     h12 = h % 12 or 12
@@ -15,86 +38,117 @@ def clock_text(dt):
     return f'{h12}:{m:02d} {suffix}'
 
 
-def day_text(dt):
+def day_text(dt: Any) -> str:
     return DAYS[dt.day() % 7]
 
 
-def speed_text():
+def _speed_names() -> dict[Any, str]:
+    from clock import ClockSpeedMode
+
+    return {
+        ClockSpeedMode.PAUSED: 'Paused',
+        ClockSpeedMode.NORMAL: 'Normal speed',
+        ClockSpeedMode.SPEED2: 'Fast speed',
+        ClockSpeedMode.SPEED3: 'Ultra fast speed',
+        ClockSpeedMode.SUPER_SPEED3: 'Super speed, everyone is asleep or away',
+        ClockSpeedMode.INTERACTION_STARTUP_SPEED: 'Normal speed',
+    }
+
+
+def speed_text() -> str:
     try:
         import services
-        from clock import ClockSpeedMode
 
         speed = services.game_clock_service().clock_speed
-        return {
-            ClockSpeedMode.PAUSED: 'Paused',
-            ClockSpeedMode.NORMAL: 'Normal speed',
-            ClockSpeedMode.SPEED2: 'Fast speed',
-            ClockSpeedMode.SPEED3: 'Ultra fast speed',
-            ClockSpeedMode.SUPER_SPEED3: 'Super speed, everyone is asleep or away',
-            ClockSpeedMode.INTERACTION_STARTUP_SPEED: 'Normal speed',
-        }.get(speed, f'Speed {int(speed)}')
-    except Exception:
-        core.log_exc('speed')
+        return _speed_names().get(speed, f'Speed {int(speed)}')
+    except Exception:  # said without the speed
+        simsight_log.error('plus time: speed')
         return ''
 
 
-def _span_text(span):
-    minutes = int(round(span.in_minutes()))
+def _count(n: int, unit: str) -> str:
+    return '{} {}{}'.format(n, unit, '' if n == 1 else 's')
+
+
+def span_words(minutes: int) -> str:
+    """'45 minutes', '2 hours 5 minutes', '1 day 3 hours'."""
     if minutes < 60:
         return f'{minutes} minutes'
     hours, mins = divmod(minutes, 60)
     if hours >= 24:
-        days = hours // 24
-        hours = hours % 24
-        text = '{} day{}'.format(days, '' if days == 1 else 's')
+        days, hours = divmod(hours, 24)
+        text = _count(days, 'day')
         if hours:
-            text += ' {} hour{}'.format(hours, '' if hours == 1 else 's')
+            text += ' ' + _count(hours, 'hour')
         return text
-    text = '{} hour{}'.format(hours, '' if hours == 1 else 's')
+    text = _count(hours, 'hour')
     if mins:
         text += f' {mins} minutes'
     return text
 
 
-def _career_word(career):
+def _span_text(span: Any) -> str:
+    return span_words(int(round(span.in_minutes())))
+
+
+def _career_word(career: Any) -> str:
+    """'school' or 'work' (read by simsight_bridge too)."""
     try:
         from careers.career_enums import CareerCategory
-
-        cat = getattr(career, 'career_category', None)
-        if cat == CareerCategory.School:
-            return 'school'
-    except Exception:
-        pass
+    except ImportError:  # no career categories: everything is work
+        return 'work'
+    if getattr(career, 'career_category', None) == CareerCategory.School:
+        return 'school'
     return 'work'
 
 
-def work_lines(sim_info, include_none=False):
-    lines = []
+def _work_line(sim_info: Any, career: Any) -> str | None:
+    word = _career_word(career)
+    if career.currently_at_work:
+        return f'{sim_info.first_name} is at {word} now'
+    if career.is_work_time:
+        return f'{sim_info.first_name} should be at {word} now'
+    (span, start, _end) = career.get_next_work_time()
+    if span is None or start is None:
+        return None
+    return f'{sim_info.first_name} {word} in {_span_text(span)}, {day_text(start)} at {clock_text(start)}'
+
+
+def work_lines(sim_info: Any) -> list[str]:
+    lines: list[str] = []
     tracker = getattr(sim_info, 'career_tracker', None)
     if tracker is None:
         return lines
     for career in list(tracker.careers.values()):
-        word = _career_word(career)
         try:
-            if career.currently_at_work:
-                lines.append(f'{sim_info.first_name} is at {word} now')
-                continue
-            if career.is_work_time:
-                lines.append(f'{sim_info.first_name} should be at {word} now')
-                continue
-            (span, start, end) = career.get_next_work_time()
-            if span is None or start is None:
-                continue
-            lines.append(
-                f'{sim_info.first_name} {word} in {_span_text(span)}, {day_text(start)} at {clock_text(start)}'
-            )
-        except Exception:
-            core.log_exc('work lines')
+            line = _work_line(sim_info, career)
+        except Exception:  # that career is left out
+            simsight_log.error('plus time: work lines')
+            continue
+        if line is not None:
+            lines.append(line)
     return lines
 
 
+def _owed(household: Any) -> int:
+    return int(household.bills_manager.current_payment_owed or 0)
+
+
+def _money_parts(household: Any) -> list[str]:
+    parts = []
+    with contextlib.suppress(AttributeError, TypeError, ValueError):  # no funds: left out
+        parts.append(f'Household money {int(household.funds.money):,} simoleons')
+    try:
+        owed = _owed(household)
+    except (AttributeError, TypeError, ValueError):  # no bills to read: left out
+        owed = 0
+    if owed > 0:
+        parts.append(f'Unpaid bills {owed:,} simoleons. Pay them at the mailbox')
+    return parts
+
+
 @core.hotkey(ord('T'), 'time and day')
-def read_time():
+def read_time() -> None:
     import services
 
     now = services.time_service().sim_now
@@ -103,59 +157,70 @@ def read_time():
         parts.extend(work_lines(info))
     hh = services.active_household()
     if hh is not None:
-        try:
-            parts.append(f'Household money {int(hh.funds.money):,} simoleons')
-        except Exception:
-            pass
-        try:
-            owed = int(hh.bills_manager.current_payment_owed or 0)
-            if owed > 0:
-                parts.append(f'Unpaid bills {owed:,} simoleons. Pay them at the mailbox')
-        except Exception:
-            pass
+        parts.extend(_money_parts(hh))
     core.speak('. '.join(p for p in parts if p) + '.')
 
 
-def _check():
+def _work_reminder(info: Any, uid: Any, career: Any) -> str | None:
+    if career.currently_at_work or career.is_work_time:
+        return None
+    (span, start, _end) = career.get_next_work_time()
+    if span is None or start is None:
+        return None
+    mins = span.in_minutes()
+    key = (info.sim_id, uid)
+    stamp = int(start.absolute_ticks())
+    if not (0 < mins <= 60) or _state.reminded.get(key) == stamp:
+        return None
+    _state.reminded[key] = stamp
+    return f'{info.first_name} has {_career_word(career)} in {_span_text(span)}, at {clock_text(start)}'
+
+
+def _work_reminders() -> list[str]:
+    msgs = []
+    for info in core.household_sims(instanced_only=False):
+        tracker = getattr(info, 'career_tracker', None)
+        if tracker is None:
+            continue
+        for uid, career in list(tracker.careers.items()):
+            try:
+                msg = _work_reminder(info, uid, career)
+            except Exception:  # that career is left out
+                simsight_log.error('plus time: work reminder')
+                continue
+            if msg is not None:
+                msgs.append(msg)
+    return msgs
+
+
+def _bill_reminder() -> str | None:
     import services
 
-    sim = core.active_sim()
-    if sim is None:
+    try:
+        hh = services.active_household()
+        owed = _owed(hh) if hh is not None else 0
+    except Exception:
+        simsight_log.error('plus time: bill reminder')
+        return None
+    if owed <= 0:
+        _state.bills_announced = False
+        return None
+    if _state.bills_announced:
+        return None
+    _state.bills_announced = True
+    return f'Bills have arrived: {owed:,} simoleons. Pay them at the mailbox'
+
+
+def _check() -> None:
+    if core.active_sim() is None:
         return
     msgs = []
     if core.setting_on('work reminders'):
-        for info in core.household_sims(instanced_only=False):
-            tracker = getattr(info, 'career_tracker', None)
-            if tracker is None:
-                continue
-            for uid, career in list(tracker.careers.items()):
-                try:
-                    if career.currently_at_work or career.is_work_time:
-                        continue
-                    (span, start, end) = career.get_next_work_time()
-                    if span is None or start is None:
-                        continue
-                    mins = span.in_minutes()
-                    key = (info.sim_id, uid)
-                    stamp = int(start.absolute_ticks())
-                    if 0 < mins <= 60 and _reminded.get(key) != stamp:
-                        _reminded[key] = stamp
-                        msgs.append(
-                            f'{info.first_name} has {_career_word(career)} in {_span_text(span)}, at {clock_text(start)}'
-                        )
-                except Exception:
-                    core.log_exc('work reminder')
+        msgs.extend(_work_reminders())
     if core.setting_on('bill reminders'):
-        try:
-            hh = services.active_household()
-            owed = int(hh.bills_manager.current_payment_owed or 0) if hh is not None else 0
-            if owed > 0 and not _bills_announced[0]:
-                _bills_announced[0] = True
-                msgs.append(f'Bills have arrived: {owed:,} simoleons. Pay them at the mailbox')
-            elif owed <= 0:
-                _bills_announced[0] = False
-        except Exception:
-            core.log_exc('bill reminder')
+        bill = _bill_reminder()
+        if bill is not None:
+            msgs.append(bill)
     if msgs:
         core.speak('. '.join(msgs) + '.', interrupt=False)
 
@@ -164,17 +229,16 @@ core.add_ticker(3.0, _check)
 
 
 @core.on_zone_started
-def _start():
-    _bills_announced[0] = False  # unpaid bills are mentioned once after loading
+def _start() -> None:
+    _state.bills_announced = False  # unpaid bills are mentioned once after loading
 
 
 # ---------------------------------------------------------------- say every speed change (P, 1, 2, 3)
 # Only changes the player or the game makes count. Pauses while a game window or list is
 # open (UI_MODAL) are left out, so opening a menu does not say "Paused".
-_last_spoken = [None]
 
 
-def _effective(speed):
+def _effective(speed: Any) -> Any:
     from clock import ClockSpeedMode
 
     if speed == ClockSpeedMode.INTERACTION_STARTUP_SPEED:
@@ -182,48 +246,60 @@ def _effective(speed):
     return speed
 
 
-def _announce_speed(before):
+def _zone_running(default: bool) -> Any:
+    """The current zone when it is running, else None."""
+    import services
+
+    zone = services.current_zone()
+    if zone is None or not getattr(zone, 'is_zone_running', default):
+        return None
+    return zone
+
+
+def _announce_speed(before: Any) -> None:
     try:
         import services
 
         if not core.setting_on('speak game speed'):
             return
-        zone = services.current_zone()
-        if zone is None or not getattr(zone, 'is_zone_running', False):
+        if _zone_running(False) is None:
             return
         now = _effective(services.game_clock_service().clock_speed)
         if now == before:
             return
-        import time
-
         text = speed_text()
-        if _last_spoken[0] == (text, int(time.monotonic() // 2)):
+        spoken = (text, int(time.monotonic() // 2))
+        if _state.last_spoken == spoken:
             return  # the same change reported twice in a row
-        _last_spoken[0] = (text, int(time.monotonic() // 2))
+        _state.last_spoken = spoken
         core.speak(text)
     except Exception:
-        core.log_exc('announce speed')
+        simsight_log.error('plus time: announce speed')
 
 
-def _wrap_clock(name):
+_HOOK_MARK = '_a11yplus'
+
+
+def _wrap_clock(name: str) -> None:
     from clock import GameClock, GameSpeedChangeSource
 
     original = getattr(GameClock, name)
-    if getattr(original, '_a11yplus', False):
+    if getattr(original, _HOOK_MARK, False):
         return
 
-    def wrapper(self, *args, **kwargs):
+    def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
         source = kwargs.get('source', args[1] if len(args) > 1 else GameSpeedChangeSource.GAMEPLAY)
         try:
             before = _effective(self.clock_speed)
-        except Exception:
+        except Exception:  # no announcement for this change
+            simsight_log.error('plus time: speed before change')
             before = None
         result = original(self, *args, **kwargs)
         if source != GameSpeedChangeSource.UI_MODAL and before is not None:
             core.post(_announce_speed, before)
         return result
 
-    wrapper._a11yplus = True
+    setattr(wrapper, _HOOK_MARK, True)
     setattr(GameClock, name, wrapper)
 
 
@@ -232,30 +308,34 @@ try:
         _wrap_clock(_name)
     core.log('speed announcements hooked')
 except Exception:
-    core.log_exc('hook clock')
+    simsight_log.error('plus time: hook clock')
 
 
 # ---------------------------------------------------------------- spoken Build / Live mode
 
-_last_mode = [None]
+
+def _in_build_mode() -> bool | None:
+    """True in Build mode, False in Live mode, None while no zone is running."""
+    zone = _zone_running(True)
+    if zone is None:
+        return None
+    return bool(zone.is_in_build_buy)
 
 
-def _mode_check():
+def _mode_check() -> None:
     try:
-        import services
-
-        zone = services.current_zone()
-        if zone is None or not getattr(zone, 'is_zone_running', True):
-            _last_mode[0] = None
-            return
-        build = bool(zone.is_in_build_buy)
+        build = _in_build_mode()
     except Exception:
+        simsight_log.error('plus time: mode check')
         return
-    if _last_mode[0] is None:
-        _last_mode[0] = build
+    if build is None:
+        _state.last_mode = None
         return
-    if build != _last_mode[0]:
-        _last_mode[0] = build
+    if _state.last_mode is None:
+        _state.last_mode = build
+        return
+    if build != _state.last_mode:
+        _state.last_mode = build
         core.log('mode: ' + ('build' if build else 'live'))
         if build:
             core.speak(
@@ -265,40 +345,37 @@ def _mode_check():
             core.speak('Live mode.' + _paused_hint())
 
 
-def _is_paused():
+def _is_paused() -> bool:
     try:
         import services
         from clock import ClockSpeedMode
 
-        return services.game_clock_service().clock_speed == ClockSpeedMode.PAUSED
-    except Exception:
+        return bool(services.game_clock_service().clock_speed == ClockSpeedMode.PAUSED)
+    except Exception:  # said as not paused
+        simsight_log.error('plus time: paused')
         return False
 
 
-def _paused_hint():
+def _paused_hint() -> str:
     return ' The game is paused. Press 1 to play.' if _is_paused() else ''
 
 
-_queued_seen = [None]
-
-
-def _paused_queue_check():
+def _paused_queue_check() -> None:
     """Say so when the player gives the Sim an action while the game is paused (it waits in the queue)."""
     try:
-        import services
-
-        zone = services.current_zone()
-        if zone is None or not getattr(zone, 'is_zone_running', True) or zone.is_in_build_buy:
-            _queued_seen[0] = None
+        zone = _zone_running(True)
+        if zone is None or zone.is_in_build_buy:
+            _state.queued_seen = None
             return
         sim = core.active_sim()
         if sim is None:
             return
-        ids = set(si.id for si in sim.queue)
+        ids = {si.id for si in sim.queue}
     except Exception:
+        simsight_log.error('plus time: queue check')
         return
-    old = _queued_seen[0]
-    _queued_seen[0] = ids
+    old = _state.queued_seen
+    _state.queued_seen = ids
     if old is None or not _is_paused():
         return
     if ids - old:

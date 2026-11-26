@@ -1,42 +1,48 @@
 """Bridge SimSight Plus room names into the standard Build grid."""
 
+from __future__ import annotations
+
 import time
-import simsight_speech as speech
+from typing import Any
 
-_cache_at = 0.0
-_cache = {}
-_cache_zone = None
+import simsight_log
 
-
-def _log(message):
-    try:
-        speech.log_line('room bridge: ' + message)
-    except Exception:
-        pass
+_REFRESH_SECONDS = 2.0
 
 
-def _room_map(refresh=False):
-    global _cache_at, _cache, _cache_zone
+class _Cache:
+    """Room names by (room id, level) for one lot, scanned at most every 2 seconds."""
+
+    def __init__(self) -> None:
+        self.names: dict[tuple[int, int], str] = {}
+        self.at = 0.0
+        self.zone: object = None
+
+
+_cache = _Cache()
+
+
+def _room_map() -> dict[tuple[int, int], str]:
     import services
 
     zone = services.current_zone_id()
-    if zone != _cache_zone:
-        _cache, _cache_at, _cache_zone = {}, 0.0, zone
+    if zone != _cache.zone:
+        _cache.names, _cache.at, _cache.zone = {}, 0.0, zone
     now = time.monotonic()
-    if refresh or now - _cache_at > 2.0:
+    if now - _cache.at > _REFRESH_SECONDS:
         try:
             import simsight_plus_rooms as plus_rooms
 
-            _cache = {
+            _cache.names = {
                 (int(room.rid), int(room.level)): room.name for room in plus_rooms.scan_rooms()
             }
-            _cache_at = now
-        except Exception as ex:
-            _log(f'lookup failed: {ex!r}')
-    return _cache
+            _cache.at = now
+        except Exception:  # keep the last names; the next call tries again
+            simsight_log.error('room bridge: lookup failed')
+    return _cache.names
 
 
-def inferred_name(room_id, level):
+def inferred_name(room_id: Any, level: Any) -> str | None:
     """Passive fallback to Plus room names; custom native labels take priority."""
     try:
         return _room_map().get((int(room_id), int(level)))

@@ -1,6 +1,19 @@
-# SimSight Plus - make and edit Sims without Create a Sim (Alt+C).
-# New Sims join the active household with a random look made by the game.
+"""SimSight Plus: make and edit Sims without Create a Sim (Alt+C).
+
+New Sims join the active household with a random look made by the game.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
+
+import simsight_log
 import simsight_plus_core as core
+
+if TYPE_CHECKING:
+    from typing import Callable
+
+    Row = tuple[Any, ...]  # (label, description, value[, selected]) for core.choose
 
 TRAIT_LIMITS = {'TODDLER': 1, 'CHILD': 1, 'TEEN': 2, 'YOUNGADULT': 3, 'ADULT': 3, 'ELDER': 3}
 AGE_CHOICES = (
@@ -11,22 +24,30 @@ AGE_CHOICES = (
     ('Child', 'CHILD', 'Goes to grade school. Needs a grown up in the household.'),
     ('Toddler', 'TODDLER', 'Very young. Needs lots of care from a grown up.'),
 )
+GENDER_ROWS = (('Female', None, 'FEMALE'), ('Male', None, 'MALE'))
 MAX_HOUSEHOLD = 8
 
 
+def plural(n: int, word: str) -> str:
+    """'1 trait', '2 traits'."""
+    return '{} {}{}'.format(n, word, '' if n == 1 else 's')
+
+
 class _Draft:
-    def __init__(self):
-        self.age = None
-        self.gender = None
+    """The new Sim being made, step by step."""
+
+    def __init__(self) -> None:
+        self.age: Any = None
+        self.gender: Any = None
         self.first = ''
         self.last = ''
-        self.traits = []
+        self.traits: list[Any] = []
 
 
 class _Fake:
     """Stands in for a Sim when checking which traits fit an age and gender."""
 
-    def __init__(self, age, gender):
+    def __init__(self, age: Any, gender: Any) -> None:
         from sims.sim_info_types import Species
 
         self.age = age
@@ -34,103 +55,145 @@ class _Fake:
         self.species = Species.HUMAN
 
 
-_draft = [None]
+class _State:
+    def __init__(self) -> None:
+        self.draft = _Draft()
 
 
-def _age_enum(name):
+_state = _State()
+
+
+def _age_enum(name: str) -> Any:
     from sims.sim_info_types import Age
 
     return getattr(Age, name)
 
 
-def _age_name(age):
+def _age_name(age: Any) -> str:
     for label, key, _ in AGE_CHOICES:
         if _age_enum(key) == age:
             return label
     return str(age)
 
 
-def personality_traits(age, gender):
+def _gender_enum(name: str) -> Any:
+    from sims.sim_info_types import Gender
+
+    return getattr(Gender, name)
+
+
+def age_rows(keys: tuple[str, ...] | None = None) -> list[Row]:
+    """AGE_CHOICES as list rows (all ages, or only those in keys)."""
+    return [(label, desc, key) for (label, key, desc) in AGE_CHOICES if keys is None or key in keys]
+
+
+def _is_personality_trait(trait: Any, fake: _Fake) -> bool:
+    try:
+        if not trait.is_personality_trait:
+            return False
+        if getattr(trait, 'is_npc_only', False):
+            return False
+        if trait.display_name is None:
+            return False
+        if not trait.is_valid_trait(fake):
+            return False
+        name = trait.__name__.lower()
+    except Exception:  # a trait of an odd shape is left out
+        simsight_log.error('plus sims: trait')
+        return False
+    return 'reward' not in name and 'hos_' not in name
+
+
+def personality_traits(age: Any, gender: Any) -> list[Any]:
     import services
     import sims4.resources
 
     fake = _Fake(age, gender)
-    out = []
-    for trait in services.get_instance_manager(sims4.resources.Types.TRAIT).types.values():
-        try:
-            if not trait.is_personality_trait:
-                continue
-            if getattr(trait, 'is_npc_only', False):
-                continue
-            if trait.display_name is None:
-                continue
-            if not trait.is_valid_trait(fake):
-                continue
-            if 'reward' in trait.__name__.lower() or 'hos_' in trait.__name__.lower():
-                continue
-            out.append(trait)
-        except Exception:
-            continue
+    manager = services.get_instance_manager(sims4.resources.Types.TRAIT)
+    out = [trait for trait in manager.types.values() if _is_personality_trait(trait, fake)]
     out.sort(key=lambda t: t.__name__.lower().replace('trait_', ''))
     return out
 
 
-def pick_traits(title, age, gender, limit, token_sim, on_done, chosen=None):
+class TraitPick:
+    """What pick_traits asks for: list title, the Sim's age and gender, how
+    many traits, a Sim for the game text, and what to do with the choice."""
+
+    def __init__(
+        self,
+        title: str,
+        age: Any,
+        gender: Any,
+        limit: int,
+        token_sim: Any,
+        on_done: Callable[[list[Any]], object],
+    ) -> None:
+        self.title = title
+        self.age = age
+        self.gender = gender
+        self.limit = limit
+        self.token_sim = token_sim
+        self.on_done = on_done
+
+
+def pick_traits(pick: TraitPick, chosen: list[Any] | None = None) -> None:
     """Choose traits one at a time with Enter (no Done button needed).
     Traits that clash with ones already chosen are left out."""
     chosen = list(chosen or [])
-    if len(chosen) >= limit:
-        on_done(chosen)
+    if len(chosen) >= pick.limit:
+        pick.on_done(chosen)
         return
     available = [
         t
-        for t in personality_traits(age, gender)
-        if t not in chosen and not _conflict(chosen + [t])
+        for t in personality_traits(pick.age, pick.gender)
+        if t not in chosen and not _conflict([*chosen, t])
     ]
-    rows = _trait_rows(available, token_sim)
+    rows = _trait_rows(available, pick.token_sim)
     if chosen:
         # At the end, so pressing Enter on the first row never finishes by accident.
         rows.append(
             (
-                'Done, keep {} trait{}'.format(len(chosen), '' if len(chosen) == 1 else 's'),
+                'Done, keep ' + plural(len(chosen), 'trait'),
                 'Finish without choosing more traits.',
                 'done',
             )
         )
 
-    def picked(value):
+    def picked(value: Any) -> None:
         if value == 'done':
-            on_done(chosen)
+            pick.on_done(chosen)
             return
         chosen.append(value)
-        if len(chosen) >= limit:
-            on_done(chosen)
+        if len(chosen) >= pick.limit:
+            pick.on_done(chosen)
         else:
-            core.post(pick_traits, title, age, gender, limit, token_sim, on_done, chosen)
+            core.post(pick_traits, pick, chosen)
 
     if chosen:
         hint = 'To stop here, choose Done at the end of the list.'
     else:
         hint = 'Press Enter on a trait to choose it. Traits that clash with ones already chosen are left out.'
-    core.choose(title, f'Trait {len(chosen) + 1} of {limit}. {hint}', rows, picked, tag='sims')
+    core.choose(
+        pick.title, f'Trait {len(chosen) + 1} of {pick.limit}. {hint}', rows, picked, tag='sims'
+    )
 
 
-def _trait_rows(traits, token_sim, selected=()):
-    rows = []
+def _trait_rows(traits: list[Any], token_sim: Any) -> list[Row]:
+    rows: list[Row] = []
     for t in traits:
         try:
             name = t.display_name(token_sim)
-        except Exception:
+        except Exception:  # no game text: the tuning name
             name = core.raw(t.__name__)
         try:
             desc = t.trait_description(token_sim) if t.trait_description is not None else None
-        except Exception:
+        except Exception:  # no description
             desc = None
-        rows.append((name, desc, t, t in selected))
+        rows.append((name, desc, t, False))
     return rows
 
 
-def set_exact_traits(info, chosen):
+def set_exact_traits(info: Any, chosen: list[Any]) -> None:
     """The game fills new Sims up with random traits. Keep exactly the chosen ones."""
     chosen = list(chosen)
     try:
@@ -141,10 +204,10 @@ def set_exact_traits(info, chosen):
             if not info.has_trait(t):
                 info.add_trait(t)
     except Exception:
-        core.log_exc('set traits')
+        simsight_log.error('plus sims: set traits')
 
 
-def _conflict(traits):
+def _conflict(traits: list[Any]) -> bool:
     for a in traits:
         for b in traits:
             if a is not b and (a.is_conflicting(b) or b.is_conflicting(a)):
@@ -156,7 +219,7 @@ def _conflict(traits):
 
 
 @core.hotkey(ord('C'), 'create and edit Sims')
-def open_menu():
+def open_menu() -> None:
     sim = core.active_sim()
     if sim is None:
         core.speak('No active Sim.')
@@ -188,73 +251,91 @@ def open_menu():
     core.choose('Create and edit Sims', 'Choose what to do.', rows, _menu_pick, tag='sims')
 
 
-def _menu_pick(value):
+def _resume_family(_sim: Any) -> None:
+    import simsight_plus_family as family
+
+    family.resume()
+
+
+def _open_cas(sim: Any) -> None:
+    try:
+        import sims4.commands
+
+        client = core.client()
+        sims4.commands.client_cheat(
+            f'sims.exit2cas {sim.id} {sim.sim_info.household_id} {sim.id}', client.id
+        )
+    except Exception:
+        simsight_log.error('plus sims: open cas')
+        core.speak('Could not open Create a Sim.')
+
+
+_MENU: dict[str, Callable[[Any], None]] = {
+    'family': _resume_family,
+    'new': lambda sim: start_new(),
+    'name': lambda sim: _rename(sim.sim_info),
+    'traits': lambda sim: _edit_traits(sim.sim_info),
+    'aspiration': lambda sim: choose_aspiration(sim.sim_info),
+    'describe': lambda sim: describe(sim.sim_info),
+    'cas': _open_cas,
+}
+
+
+def _menu_pick(value: str) -> None:
     sim = core.active_sim()
     if sim is None:
         return
-    info = sim.sim_info
-    if value == 'family':
-        import simsight_plus_family as family
-
-        family.resume()
-    elif value == 'new':
-        start_new()
-    elif value == 'name':
-        _rename(info)
-    elif value == 'traits':
-        _edit_traits(info)
-    elif value == 'aspiration':
-        choose_aspiration(info)
-    elif value == 'describe':
-        describe(info)
-    elif value == 'cas':
-        try:
-            import sims4.commands
-
-            client = core.client()
-            sims4.commands.client_cheat(
-                f'sims.exit2cas {sim.id} {info.household_id} {sim.id}', client.id
-            )
-        except Exception:
-            core.log_exc('open cas')
-            core.speak('Could not open Create a Sim.')
+    action = _MENU.get(value)
+    if action is not None:
+        action(sim)
 
 
 # ---------------------------------------------------------------- describe
 
 
-def describe(info):
-    parts = [core.sim_name(info), _age_name(info.age)]
-    try:
-        from sims.sim_info_types import Gender
+def _gender_word(gender: Any) -> str:
+    return 'female' if gender == _gender_enum('FEMALE') else 'male'
 
-        parts.append('female' if info.gender == Gender.FEMALE else 'male')
-    except Exception:
-        pass
-    core.speak(', '.join(parts) + '.')
-    # Traits, aspiration and career names are game text, so show them as a list the reader can read.
-    rows = []
+
+def _add_career_rows(info: Any, rows: list[Row]) -> None:
+    for career in info.career_tracker.careers.values():
+        try:
+            title = career.current_level_tuning.get_title(info)
+        except Exception:  # no level title: the career's name
+            title = None
+        rows.append((title if title is not None else career.display_name(info), 'Career', None))
+
+
+def _about_rows(info: Any) -> list[Row]:
+    """Traits, aspiration and career: game text, shown as a list the reader can read."""
+    rows: list[Row] = []
     try:
-        for t in info.trait_tracker.personality_traits:
-            rows.append((t.display_name(info), 'Trait', None))
+        rows.extend(
+            (t.display_name(info), 'Trait', None) for t in info.trait_tracker.personality_traits
+        )
     except Exception:
-        core.log_exc('describe traits')
+        simsight_log.error('plus sims: describe traits')
     try:
         asp = info.primary_aspiration
         if asp is not None:
             rows.append((asp.display_text, 'Aspiration', None))
     except Exception:
-        core.log_exc('describe aspiration')
+        simsight_log.error('plus sims: describe aspiration')
     try:
-        for career in info.career_tracker.careers.values():
-            title = None
-            try:
-                title = career.current_level_tuning.get_title(info)
-            except Exception:
-                title = None
-            rows.append((title if title is not None else career.display_name(info), 'Career', None))
+        _add_career_rows(info, rows)
     except Exception:
-        core.log_exc('describe career')
+        simsight_log.error('plus sims: describe career')
+    return rows
+
+
+def describe(info: Any) -> None:
+    parts = [core.sim_name(info), _age_name(info.age)]
+    try:
+        parts.append(_gender_word(info.gender))
+    except Exception:  # said without the gender
+        simsight_log.error('plus sims: describe gender')
+    core.speak(', '.join(parts) + '.')
+    rows = _about_rows(info)
     if rows:
         core.choose(
             f'About {info.first_name}',
@@ -268,20 +349,20 @@ def describe(info):
 # ---------------------------------------------------------------- rename
 
 
-def _rename(info):
-    def got_first(first):
+def _rename(info: Any) -> None:
+    def got_first(first: str) -> None:
         if not first:
             core.speak('Name not changed.')
             return
 
-        def got_last(last):
+        def got_last(last: str) -> None:
             info.first_name = first
             if last:
                 info.last_name = last
             try:
                 info.resend_full_name()
-            except Exception:
-                pass
+            except Exception:  # the name is set; the interface shows it later
+                simsight_log.error('plus sims: resend name')
             core.speak(f'Renamed to {core.sim_name(info)}.')
 
         core.ask_text('Last name', 'Type the last name.', info.last_name, got_last)
@@ -292,27 +373,29 @@ def _rename(info):
 # ---------------------------------------------------------------- traits
 
 
-def _edit_traits(info):
+def _replace_traits(info: Any, current: list[Any], chosen: list[Any]) -> None:
+    for t in current:
+        if t not in chosen and info.has_trait(t):
+            info.remove_trait(t)
+    for t in chosen:
+        if not info.has_trait(t):
+            info.add_trait(t)
+    core.speak(
+        'Traits changed. {} has {} new {}.'.format(
+            info.first_name, len(chosen), 'trait' if len(chosen) == 1 else 'traits'
+        )
+    )
+
+
+def _edit_traits(info: Any) -> None:
     limit = TRAIT_LIMITS.get(info.age.name, 3)
     try:
         current = list(info.trait_tracker.personality_traits)
-    except Exception:
+    except Exception:  # no trait tracker: no current traits
+        simsight_log.error('plus sims: current traits')
         current = []
 
-    def done(chosen):
-        for t in current:
-            if t not in chosen and info.has_trait(t):
-                info.remove_trait(t)
-        for t in chosen:
-            if not info.has_trait(t):
-                info.add_trait(t)
-        core.speak(
-            'Traits changed. {} has {} new trait{}.'.format(
-                info.first_name, len(chosen), '' if len(chosen) == 1 else 's'
-            )
-        )
-
-    rows = [
+    rows: list[Row] = [
         (
             'Choose new traits',
             f"Replaces all of {info.first_name}'s current traits. You choose them one at a time.",
@@ -321,15 +404,17 @@ def _edit_traits(info):
     ]
     rows.extend((t.display_name(info), 'Current trait', None) for t in current)
 
-    def start(value):
+    def start(value: Any) -> None:
         if value == 'new':
             pick_traits(
-                f'New traits for {info.first_name}',
-                info.age,
-                info.gender,
-                limit,
-                info,
-                done,
+                TraitPick(
+                    f'New traits for {info.first_name}',
+                    info.age,
+                    info.gender,
+                    limit,
+                    info,
+                    lambda chosen: _replace_traits(info, current, chosen),
+                )
             )
 
     core.choose(
@@ -344,66 +429,64 @@ def _edit_traits(info):
 # ---------------------------------------------------------------- aspiration
 
 
-def aspiration_tracks(info):
+def _is_offered(track: Any, info: Any) -> bool:
+    try:
+        if getattr(track, 'is_hidden_unlockable', False):
+            return False
+        if track.__name__.lower().startswith('ftue'):
+            return False  # the tutorial's own aspirations
+        return bool(track.is_available() and track.is_valid_for_sim(info))
+    except Exception:  # an aspiration of an odd shape is left out
+        simsight_log.error('plus sims: aspiration track')
+        return False
+
+
+def aspiration_tracks(info: Any) -> list[Any]:
+    """The aspirations a Sim (or a _Fake) can choose, sorted as the game sorts them."""
     import services
     import sims4.resources
 
-    out = []
-    for track in services.get_instance_manager(
-        sims4.resources.Types.ASPIRATION_TRACK
-    ).types.values():
-        try:
-            if getattr(track, 'is_hidden_unlockable', False):
-                continue
-            if track.__name__.lower().startswith('ftue'):
-                continue  # the tutorial's own aspirations
-            if not track.is_available():
-                continue
-            if not track.is_valid_for_sim(info):
-                continue
-            out.append(track)
-        except Exception:
-            continue
+    manager = services.get_instance_manager(sims4.resources.Types.ASPIRATION_TRACK)
+    out = [track for track in manager.types.values() if _is_offered(track, info)]
+    out.sort(key=lambda t: (getattr(t.category, 'ui_sort_order', 0), t.__name__))
     return out
 
 
-def choose_aspiration(info, then=None):
+def _set_aspiration(info: Any, track: Any) -> None:
+    old = info.primary_aspiration
+    old_trait = getattr(old, 'primary_trait', None) if old is not None else None
+    if old_trait is not None and info.has_trait(old_trait):
+        info.remove_trait(old_trait)
+    info.primary_aspiration = track
+    trait = getattr(track, 'primary_trait', None)
+    if trait is not None and not info.has_trait(trait):
+        info.add_trait(trait)
+
+
+def choose_aspiration(info: Any, then: Callable[[], object] | None = None) -> None:
     tracks = aspiration_tracks(info)
     if not tracks:
         core.speak('There are no aspirations for this age.')
         if then:
             core.post(then)
         return
-    rows = []
     current = getattr(info, 'primary_aspiration', None)
-    tracks.sort(key=lambda t: (getattr(t.category, 'ui_sort_order', 0), t.__name__))
-    for track in tracks:
-        rows.append(
-            (
-                track.display_text,
-                core.with_sim(track.description_text, info),
-                track,
-                track is current,
-            )
+    rows = [
+        (
+            track.display_text,
+            core.with_sim(track.description_text, info),
+            track,
+            track is current,
         )
+        for track in tracks
+    ]
 
-    def picked(track):
+    def picked(track: Any) -> None:
         try:
-            old = info.primary_aspiration
-            if (
-                old is not None
-                and getattr(old, 'primary_trait', None) is not None
-                and info.has_trait(old.primary_trait)
-            ):
-                info.remove_trait(old.primary_trait)
-            info.primary_aspiration = track
-            if getattr(track, 'primary_trait', None) is not None and not info.has_trait(
-                track.primary_trait
-            ):
-                info.add_trait(track.primary_trait)
+            _set_aspiration(info, track)
             core.speak('Aspiration set.')
         except Exception:
-            core.log_exc('set aspiration')
+            simsight_log.error('plus sims: set aspiration')
             core.speak('Could not set the aspiration.')
         if then:
             core.post(then)
@@ -421,7 +504,7 @@ def choose_aspiration(info, then=None):
 # ---------------------------------------------------------------- new Sim
 
 
-def start_new():
+def start_new() -> None:
     import services
 
     hh = services.active_household()
@@ -431,39 +514,46 @@ def start_new():
     if hh.household_size >= MAX_HOUSEHOLD:
         core.speak('This household already has 8 Sims, the most the game allows.')
         return
-    _draft[0] = _Draft()
-    rows = [(label, desc, key) for (label, key, desc) in AGE_CHOICES]
-    core.choose('New Sim: age', 'Step 1 of 5. Choose an age.', rows, _got_age, tag='sims')
+    _state.draft = _Draft()
+    core.choose('New Sim: age', 'Step 1 of 5. Choose an age.', age_rows(), _got_age, tag='sims')
 
 
-def _got_age(key):
-    _draft[0].age = _age_enum(key)
-    rows = [('Female', None, 'FEMALE'), ('Male', None, 'MALE')]
-    core.choose('New Sim: gender', 'Step 2 of 5. Choose a gender.', rows, _got_gender, tag='sims')
+def _got_age(key: str) -> None:
+    _state.draft.age = _age_enum(key)
+    core.choose(
+        'New Sim: gender',
+        'Step 2 of 5. Choose a gender.',
+        list(GENDER_ROWS),
+        _got_gender,
+        tag='sims',
+    )
 
 
-def _got_gender(key):
-    from sims.sim_info_types import Gender
+def _default_last_name() -> str:
+    """The active Sim's last name, else the household's name."""
+    import services
 
-    _draft[0].gender = getattr(Gender, key)
+    hh = services.active_household()
+    try:
+        sim = core.active_sim()
+        return str(sim.sim_info.last_name if sim is not None else (hh.name or ''))
+    except Exception:  # no name to offer
+        simsight_log.error('plus sims: default last name')
+        return ''
 
-    def got_first(first):
+
+def _got_gender(key: str) -> None:
+    _state.draft.gender = _gender_enum(key)
+
+    def got_first(first: str) -> None:
         if not first:
             core.speak('A first name is needed. Cancelled.')
             return
-        _draft[0].first = first
-        import services
+        _state.draft.first = first
+        default_last = _default_last_name()
 
-        hh = services.active_household()
-        default_last = ''
-        try:
-            sim = core.active_sim()
-            default_last = sim.sim_info.last_name if sim is not None else (hh.name or '')
-        except Exception:
-            pass
-
-        def got_last(last):
-            _draft[0].last = last or default_last
+        def got_last(last: str) -> None:
+            _state.draft.last = last or default_last
             _choose_new_traits()
 
         core.ask_text('New Sim: last name', 'Step 4 of 5. Last name.', default_last, got_last)
@@ -471,23 +561,23 @@ def _got_gender(key):
     core.ask_text('New Sim: first name', 'Step 3 of 5. Type the first name.', '', got_first)
 
 
-def _choose_new_traits():
-    d = _draft[0]
+def _choose_new_traits() -> None:
+    d = _state.draft
     limit = TRAIT_LIMITS.get(d.age.name, 3)
     token = core.active_sim().sim_info
 
-    def done(chosen):
+    def done(chosen: list[Any]) -> None:
         d.traits = list(chosen)
         core.post(_create)
 
-    pick_traits('New Sim: traits, step 5 of 5', d.age, d.gender, limit, token, done)
+    pick_traits(TraitPick('New Sim: traits, step 5 of 5', d.age, d.gender, limit, token, done))
 
 
-def _create():
+def _create() -> None:
     import services
-    from sims.sim_spawner import SimSpawner, SimCreator
+    from sims.sim_spawner import SimCreator, SimSpawner
 
-    d = _draft[0]
+    d = _state.draft
     hh = services.active_household()
     client = core.client()
     sim = core.active_sim()
@@ -511,7 +601,7 @@ def _create():
         core.log(f'created sim {core.sim_name(info)} ({info.sim_id})')
         core.speak(f'{core.sim_name(info)} has joined the household.')
     except Exception:
-        core.log_exc('create sim')
+        simsight_log.error('plus sims: create sim')
         core.speak('Sorry, the game could not create the Sim.')
         return
     if d.age.name not in ('TODDLER', 'INFANT', 'BABY'):

@@ -1,7 +1,26 @@
-# SimSight Plus - rooms: Alt+R lists the rooms of the house with their contents,
-# Alt+W says which room the active Sim is in. Rooms are named from what is inside them.
+"""SimSight Plus rooms: Alt+R lists the rooms of the house with their contents,
+Alt+W says which room the active Sim is in. Rooms are named from what is
+inside them, or by the player (simsight_plus_house)."""
+
+from __future__ import annotations
+
 import math
+import os
+from typing import TYPE_CHECKING, Any
+
+import simsight_log
 import simsight_plus_core as core
+
+if TYPE_CHECKING:
+    from typing import Protocol
+
+    class Boxed(Protocol):
+        """A room as the names file knows it: its floor and tile centres."""
+
+        level: Any
+        tiles: list[tuple[float, float]]
+
+    BoxKey = tuple[int, int, int, int, int, int]  # zone, level, x0, z0, x1, z1
 
 COMPASS = ('north', 'north east', 'east', 'south east', 'south', 'south west', 'west', 'north west')
 # (room name, tags that make a room that kind, weight)
@@ -28,81 +47,93 @@ KINDS = (
     ),
     ('Study', ('BuyCatSS_Desk', 'BuyCatEE_Computer', 'BuyCatSS_Bookshelf'), 1),
 )
+_UPPER_FLOORS = {1: 'first floor up', 2: 'second floor up', 3: 'third floor up'}
 
 
-def floor_name(level):
+def floor_name(level: int) -> str:
     if level == 0:
         return 'ground floor'
     if level < 0:
         return 'basement' if level == -1 else f'basement level {-level}'
-    return {1: 'first floor up', 2: 'second floor up', 3: 'third floor up'}.get(
-        level, f'floor {level}'
-    )
+    return _UPPER_FLOORS.get(level, f'floor {level}')
 
 
-def bearing(dx, dz):
+def bearing(dx: float, dz: float) -> str:
+    """Compass word for a step of (dx, dz); north is +z."""
     angle = math.degrees(math.atan2(dx, dz)) % 360.0
     return COMPASS[int((angle + 22.5) % 360.0 // 45) % 8]
 
 
-def tag_names(obj):
-    names = set()
+def _tag_name(tag_type: Any, value: Any) -> str | None:
+    try:
+        return str(tag_type(value).name)
+    except (AttributeError, KeyError, TypeError, ValueError):  # a tag the game does not name
+        return None
+
+
+def tag_names(obj: Any) -> set[str]:
+    """The names of an object's catalog tags (empty for objects without any)."""
+    names: set[str] = set()
     try:
         from tag import Tag
 
         for t in obj.definition.get_tags() or ():
-            try:
-                names.add(str(Tag(t).name))
-            except Exception:
-                pass
-    except Exception:
+            name = _tag_name(Tag, t)
+            if name is not None:
+                names.add(name)
+    except (AttributeError, TypeError):  # no definition or tags: not furniture
         pass
+    except Exception:
+        simsight_log.error('plus rooms: tags')
     return names
 
 
-def room_id_at(x, z, level, y=None):
+def room_id_at(x: float, z: float, level: Any, y: float | None = None) -> int:
+    """The game's room id at a point (0 outside any room)."""
     import build_buy
     import services
-    import terrain
     import sims4.math
+    import terrain
 
     if y is None:
         try:
             y = terrain.get_terrain_height(x, z)
-        except Exception:
+        except Exception:  # off the terrain: height 0
             y = 0.0
     pos = sims4.math.Vector3(float(x), float(y), float(z))
     try:
         rid = build_buy.get_room_id(services.current_zone_id(), pos, int(level))
     except Exception:
-        core.log_exc('get_room_id')
+        simsight_log.error('plus rooms: get_room_id')
         return 0
     return int(rid or 0)
 
 
-def _obj_room(obj):
+def _obj_room(obj: Any) -> int:
     try:
         return room_id_at(obj.position.x, obj.position.z, int(obj.level), obj.position.y)
-    except Exception:
+    except (AttributeError, TypeError, ValueError):  # no position or level: in no room
         return 0
 
 
 class Room:
-    def __init__(self, rid, level):
+    """One room on one floor: its tile centres, furniture and Sims."""
+
+    def __init__(self, rid: int, level: int) -> None:
         self.rid = rid
         self.level = level
-        self.tiles = []
-        self.objects = []
-        self.sims = []
+        self.tiles: list[tuple[float, float]] = []  # (x, z) world tile centres
+        self.objects: list[Any] = []
+        self.sims: list[Any] = []
         self.name = 'Room'
 
     @property
-    def center(self):
+    def center(self) -> tuple[float, float]:
         xs = [t[0] for t in self.tiles] or [0]
         zs = [t[1] for t in self.tiles] or [0]
         return (sum(xs) / len(xs), sum(zs) / len(zs))
 
-    def size_text(self):
+    def size_text(self) -> str:
         n = len(self.tiles)
         if not n:
             return ''
@@ -115,70 +146,92 @@ class Room:
         return f'about {n} square meters'
 
 
-def _scan_rooms_base():
-    """Return list of Room, indoor rooms only, on every floor of the active lot."""
-    import services
+class LotGrid:
+    """The lot's 1 meter tiles: nu by nv, tile (i, j) centred at world()."""
 
-    lot = services.active_lot()
-    if lot is None:
-        return []
-    corners = list(lot.corners)
-    c0, c1, c3 = corners[0], corners[1], corners[3]
-    ux, uz = c1.x - c0.x, c1.z - c0.z
-    vx, vz = c3.x - c0.x, c3.z - c0.z
-    nu = max(1, int(round(math.hypot(ux, uz))))
-    nv = max(1, int(round(math.hypot(vx, vz))))
-    try:
-        levels = range(int(lot.min_level), int(lot.max_level) + 1)
-    except Exception:
-        levels = range(3)
-    rooms = {}
-    for level in levels:
-        for i in range(nu):
-            for j in range(nv):
-                fu, fv = (i + 0.5) / nu, (j + 0.5) / nv
-                x = c0.x + ux * fu + vx * fv
-                z = c0.z + uz * fu + vz * fv
+    def __init__(self, lot: Any) -> None:
+        corners = list(lot.corners)
+        c0, c1, c3 = corners[0], corners[1], corners[3]
+        self.x0, self.z0 = c0.x, c0.z
+        self.ux, self.uz = c1.x - c0.x, c1.z - c0.z
+        self.vx, self.vz = c3.x - c0.x, c3.z - c0.z
+        self.nu = max(1, int(round(math.hypot(self.ux, self.uz))))
+        self.nv = max(1, int(round(math.hypot(self.vx, self.vz))))
+        try:
+            self.levels = range(int(lot.min_level), int(lot.max_level) + 1)
+        except Exception:  # no floor range on this lot: the usual three floors
+            self.levels = range(3)
+
+    def world(self, i: int, j: int) -> tuple[float, float]:
+        fu, fv = (i + 0.5) / self.nu, (j + 0.5) / self.nv
+        return (self.x0 + self.ux * fu + self.vx * fv, self.z0 + self.uz * fu + self.vz * fv)
+
+
+def _rooms_on_grid(grid: LotGrid) -> dict[tuple[int, int], Room]:
+    rooms: dict[tuple[int, int], Room] = {}
+    for level in grid.levels:
+        for i in range(grid.nu):
+            for j in range(grid.nv):
+                x, z = grid.world(i, j)
                 rid = room_id_at(x, z, level)
                 if rid:
                     room = rooms.get((rid, level))
                     if room is None:
                         room = rooms[(rid, level)] = Room(rid, level)
                     room.tiles.append((x, z))
-    # The biggest "room" on the ground floor that touches the lot edge is the yard, not a room.
-    for key in list(rooms):
-        room = rooms[key]
-        if len(room.tiles) > 0.5 * nu * nv:
-            del rooms[key]
-    by_id = {}
-    for room in rooms.values():
-        by_id.setdefault(room.rid, room)
-    for obj in services.object_manager().values():
-        try:
-            if obj.is_sim or not getattr(obj, 'is_on_active_lot', lambda: True)():
-                continue
-            if getattr(obj, 'is_in_inventory', lambda: False)():
-                continue
-            if not any(n.startswith('BuyCat') for n in tag_names(obj)):
-                continue  # helpers and hidden game objects, not furniture
-            rid = _obj_room(obj)
-            room = rooms.get((rid, int(obj.level)))
-            if room is not None:
-                room.objects.append(obj)
-        except Exception:
-            continue
+    return rooms
+
+
+def _is_furniture(obj: Any) -> bool:
+    if obj.is_sim or not getattr(obj, 'is_on_active_lot', lambda: True)():
+        return False
+    if getattr(obj, 'is_in_inventory', lambda: False)():
+        return False
+    # helpers and hidden game objects have no catalog (BuyCat) tag
+    return any(n.startswith('BuyCat') for n in tag_names(obj))
+
+
+def _add_object(rooms: dict[tuple[int, int], Room], obj: Any) -> None:
+    try:
+        if not _is_furniture(obj):
+            return
+        room = rooms.get((_obj_room(obj), int(obj.level)))
+    except Exception:  # an object of an odd shape is left out
+        simsight_log.error('plus rooms: room object')
+        return
+    if room is not None:
+        room.objects.append(obj)
+
+
+def _add_sims(rooms: dict[tuple[int, int], Room]) -> None:
     for info in core.household_sims():
         sim = info.get_sim_instance()
-        rid = _obj_room(sim)
-        room = rooms.get((rid, int(sim.level)))
+        room = rooms.get((_obj_room(sim), int(sim.level)))
         if room is not None:
             room.sims.append(sim)
+
+
+def _scan_rooms_base() -> list[Room]:
+    """Return list of Room, indoor rooms only, on every floor of the active lot."""
+    import services
+
+    lot = services.active_lot()
+    if lot is None:
+        return []
+    grid = LotGrid(lot)
+    rooms = _rooms_on_grid(grid)
+    # A "room" covering more than half the lot is the yard, not a room.
+    for key in [k for k, room in rooms.items() if len(room.tiles) > 0.5 * grid.nu * grid.nv]:
+        del rooms[key]
+    for obj in services.object_manager().values():
+        _add_object(rooms, obj)
+    _add_sims(rooms)
     _name_rooms(list(rooms.values()))
     out = sorted(rooms.values(), key=lambda r: (r.level, r.name, -len(r.tiles)))
     core.log(
         'rooms: lot {}x{}, {} rooms: {}'.format(
-            nu,
-            nv,
+            grid.nu,
+            grid.nv,
             len(out),
             ', '.join(
                 f'{r.name}({len(r.tiles)} tiles, {len(r.objects)} objs, level {r.level})'
@@ -191,14 +244,20 @@ def _scan_rooms_base():
 
 # ---------------------------------------------------------------- names given by the player
 # Saved per lot in Mods\SimSight_Plus_rooms.txt: zone, level, room box (world tile centers), name.
-import os
 
 NAMES_PATH = os.path.join(core.MODS_FOLDER, 'SimSight_Plus_rooms.txt')
-_names = {}  # (zone, level, x0, z0, x1, z1) -> name
-_names_loaded = [False]
 
 
-def _box_key(room):
+class _Names:
+    def __init__(self) -> None:
+        self.by_box: dict[BoxKey, str] = {}
+        self.loaded = False
+
+
+_names = _Names()
+
+
+def _box_key(room: Boxed) -> BoxKey:
     import services
 
     xs = [t[0] for t in room.tiles] or [0]
@@ -213,80 +272,97 @@ def _box_key(room):
     )
 
 
-def _load_names():
-    if _names_loaded[0]:
+def parse_name_line(line: str) -> tuple[BoxKey, str] | None:
+    """One line of the names file: six whole numbers and the name, tab separated."""
+    parts = line.rstrip('\n').split('\t')
+    if len(parts) != 7:
+        return None
+    (zone, level, x0, z0, x1, z1) = (int(v) for v in parts[:6])
+    return (zone, level, x0, z0, x1, z1), parts[6]
+
+
+def name_line(key: BoxKey, name: str) -> str:
+    return '\t'.join(str(v) for v in key) + '\t' + name + '\n'
+
+
+def _load_names() -> None:
+    if _names.loaded:
         return
-    _names_loaded[0] = True
+    _names.loaded = True
     try:
         if os.path.isfile(NAMES_PATH):
             with open(NAMES_PATH, encoding='utf-8') as f:
                 for line in f:
-                    parts = line.rstrip('\n').split('\t')
-                    if len(parts) == 7:
-                        _names[tuple(int(v) for v in parts[:6])] = parts[6]
-    except Exception:
-        core.log_exc('load room names')
+                    entry = parse_name_line(line)
+                    if entry is not None:
+                        _names.by_box[entry[0]] = entry[1]
+    except (OSError, ValueError):  # names read so far are kept
+        simsight_log.error('plus rooms: load room names')
 
 
-def _save_names():
+def _save_names() -> None:
     if not core.IN_GAME:
         return
     try:
         with open(NAMES_PATH, 'w', encoding='utf-8') as f:
-            for key, name in _names.items():
-                f.write('\t'.join(str(v) for v in key) + '\t' + name + '\n')
-    except Exception:
-        core.log_exc('save room names')
+            for key, name in _names.by_box.items():
+                f.write(name_line(key, name))
+    except OSError:
+        simsight_log.error('plus rooms: save room names')
 
 
-def set_room_name(room, name):
+def set_room_name(room: Room, name: str) -> None:
     _load_names()
     key = _box_key(room)
     if name:
-        _names[key] = name
+        _names.by_box[key] = name
     else:
-        _names.pop(key, None)
+        _names.by_box.pop(key, None)
     _save_names()
     room.name = name or room.name
 
 
-def given_name(room):
+def given_name(room: Boxed) -> str | None:
     _load_names()
     try:
-        return _names.get(_box_key(room))
-    except Exception:
+        return _names.by_box.get(_box_key(room))
+    except Exception:  # no zone to look up: the room keeps its own name
+        simsight_log.error('plus rooms: given name')
         return None
 
 
-def _name_rooms(rooms):
+def _kind_name(room: Room) -> str:
+    """The room's kind from its furniture: the kind with most weight, first in KINDS on a tie."""
+    score: dict[str, int] = {}
+    for obj in room.objects:
+        names = tag_names(obj)
+        for kind, tags, weight in KINDS:
+            if names.intersection(tags):
+                score[kind] = score.get(kind, 0) + weight
+    if score:
+        return max(score.items(), key=lambda kv: kv[1])[0]
+    return 'Room' if room.objects else 'Empty room'
+
+
+def _name_rooms(rooms: list[Room]) -> None:
     given = [(room, given_name(room)) for room in rooms]
-    rooms = [room for (room, name) in given if not name]
+    unnamed = [room for (room, name) in given if not name]
     for room, name in given:
         if name:
             room.name = name
-    counts = {}
-    for room in rooms:
-        score = {}
-        for obj in room.objects:
-            names = tag_names(obj)
-            for kind, tags, weight in KINDS:
-                if names.intersection(tags):
-                    score[kind] = score.get(kind, 0) + weight
-        if score:
-            room.name = max(score.items(), key=lambda kv: kv[1])[0]
-        elif not room.objects:
-            room.name = 'Empty room'
-        else:
-            room.name = 'Room'
+    counts: dict[str, int] = {}
+    for room in unnamed:
+        room.name = _kind_name(room)
         counts[room.name] = counts.get(room.name, 0) + 1
-    numbered = {}
-    for room in sorted(rooms, key=lambda r: (r.level, -len(r.tiles))):
+    # Two bedrooms are 'Bedroom 1' and 'Bedroom 2': lowest floor, biggest first.
+    numbered: dict[str, int] = {}
+    for room in sorted(unnamed, key=lambda r: (r.level, -len(r.tiles))):
         if counts[room.name] > 1:
             numbered[room.name] = numbered.get(room.name, 0) + 1
             room.name = f'{room.name} {numbered[room.name]}'
 
 
-def _where_text(room, sim):
+def _where_text(room: Room, sim: Any) -> str:
     (cx, cz) = room.center
     dx, dz = cx - sim.position.x, cz - sim.position.z
     dist = int(round(math.hypot(dx, dz)))
@@ -296,8 +372,19 @@ def _where_text(room, sim):
     return f'{dist} meters {bearing(dx, dz)}, {text}'
 
 
+def _room_row(room: Room, sim: Any) -> tuple[str, str, Room]:
+    who = ', '.join(s.sim_info.first_name for s in room.sims)
+    desc = '{}. {}. {} objects{}.'.format(
+        room.size_text(),
+        _where_text(room, sim),
+        len(room.objects),
+        ('. ' + who + ' here') if who else '',
+    )
+    return (room.name, desc, room)
+
+
 @core.hotkey(ord('R'), 'rooms')
-def open_rooms():
+def open_rooms() -> None:
     sim = core.active_sim()
     if sim is None:
         core.speak('No active Sim.')
@@ -306,50 +393,42 @@ def open_rooms():
     if not rooms:
         core.speak('No rooms found on this lot.')
         return
-    rows = []
-    for room in rooms:
-        who = ', '.join(s.sim_info.first_name for s in room.sims)
-        desc = '{}. {}. {} objects{}.'.format(
-            room.size_text(),
-            _where_text(room, sim),
-            len(room.objects),
-            ('. ' + who + ' here') if who else '',
-        )
-        rows.append((room.name, desc, room))
     core.choose(
         'Rooms',
         f'{len(rooms)} rooms in this house. Choose a room to hear what is in it.',
-        rows,
+        [_room_row(room, sim) for room in rooms],
         _open_room,
         tag='rooms',
     )
 
 
-def _open_room(room):
+def _object_label(obj: Any) -> Any:
+    """The object's catalog name as a LocalizedString, or 'Object'."""
+    try:
+        label = obj.catalog_name
+        from protocolbuffers.Localization_pb2 import LocalizedString
+
+        if not isinstance(label, LocalizedString):
+            from sims4.localization import _create_localized_string
+
+            label = _create_localized_string(int(getattr(label, 'hash', label)))
+    except Exception:  # no catalog name to read: a plain word
+        return 'Object'
+    return label
+
+
+def _open_room(room: Room) -> None:
     sim = core.active_sim()
     if sim is None:
         return
+    entries = [(s, s.sim_info.first_name) for s in room.sims]
+    entries += [(obj, None) for obj in room.objects]
     rows = []
-    entries = []
-    for s in room.sims:
-        entries.append((s, s.sim_info.first_name))
-    for obj in room.objects:
-        entries.append((obj, None))
-    for obj, label in entries:
+    for obj, name in entries:
         dx, dz = obj.position.x - sim.position.x, obj.position.z - sim.position.z
         dist = int(round(math.hypot(dx, dz)))
         desc = 'here' if dist < 1 else f'{dist} meters {bearing(dx, dz)}'
-        if label is None:
-            try:
-                label = obj.catalog_name
-                from protocolbuffers.Localization_pb2 import LocalizedString
-
-                if not isinstance(label, LocalizedString):
-                    from sims4.localization import _create_localized_string
-
-                    label = _create_localized_string(int(getattr(label, 'hash', label)))
-            except Exception:
-                label = 'Object'
+        label = _object_label(obj) if name is None else name
         rows.append((label, desc + '. Choose to see its actions.', obj, False, obj))
     if not rows:
         core.speak(f'{room.name} is empty.')
@@ -364,7 +443,7 @@ def _open_room(room):
 
 
 @core.hotkey(ord('W'), 'where am I')
-def where_am_i():
+def where_am_i() -> None:
     import build_buy
 
     sim = core.active_sim()
@@ -374,23 +453,19 @@ def where_am_i():
     rid = _obj_room(sim)
     name = None
     if rid:
-        for room in scan_rooms():
-            if room.rid == rid:
-                name = room.name
-                break
+        name = next((room.name for room in scan_rooms() if room.rid == rid), None)
     try:
         outside = build_buy.is_location_outside(sim.position, int(sim.level))
-    except Exception:
+    except Exception:  # not known: said as inside
         outside = None
-    where = name or ('outside' if outside else 'inside')
-    core.speak(
-        f'{sim.sim_info.first_name} is in the {where}, {floor_name(int(sim.level))}.'
-        if name
-        else f'{sim.sim_info.first_name} is {where}, {floor_name(int(sim.level))}.'
-    )
+    first, floor = sim.sim_info.first_name, floor_name(int(sim.level))
+    if name:
+        core.speak(f'{first} is in the {name}, {floor}.')
+    else:
+        core.speak(f'{first} is {"outside" if outside else "inside"}, {floor}.')
 
 
-def scan_rooms():
+def scan_rooms() -> list[Room]:
     """Rooms of the lot, always scanned on the simulation thread and with
     fresh floor ranges (DaRainbowGirlXX, merged 2026-11-14)."""
     import simsight_house_workflow as workflow
