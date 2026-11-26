@@ -132,8 +132,18 @@ runs only the first three. The rules in short:
 
 GitHub builds and tests every push to `main` the same way (Actions >
 Release). To publish without a Mac at hand: **Actions > Release > Run
-workflow**, tick **Publish**. It runs `mac/release.sh --publish` on a GitHub
-Mac; players are then offered the update in the game.
+workflow**, then choose:
+
+- **testing**: a GitHub pre-release (`mac/release.sh --testing`). Only
+  computers whose setup page is on the **Testing** channel are offered it;
+  everyone else and the one-line installers keep the stable release.
+- **promote**, with the tag: the tested build becomes the stable release,
+  the same files (`mac/release.sh --promote <tag>`).
+- **stable**: build and publish a stable release directly
+  (`mac/release.sh --publish`).
+
+The usual path: publish **testing**, play it on your own computer, then
+**promote** it.
 
 Start the game, accept the mod list, load a household. Player notes:
 [`mac/PLAYERS.md`](../mac/PLAYERS.md). Remove with `mac/uninstall.sh`

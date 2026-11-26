@@ -53,8 +53,9 @@ var version = "dev"
 
 // updater is this build's update checker, for the setup page. The Sims 4
 // user folder holds this program's folder: <user>/Mods/SimSight/simsight-bridge.
-func updater(dataDir string) *update.Updater {
+func updater(dataDir, channel string) *update.Updater {
 	u := update.New(version, dataDir)
+	u.SetChannel(channel)
 	u.UserDir = filepath.Dir(filepath.Dir(filepath.Dir(osutil.NextToMe("simsight-bridge"))))
 	return u
 }
@@ -231,7 +232,7 @@ func run() error {
 	if runtime.GOOS == "windows" && tun != nil {
 		listen = "127.0.0.1:" + strconv.Itoa(cfg.Port)
 	}
-	upd := updater(*dataDir)
+	upd := updater(*dataDir, cfg.UpdateChannel)
 	update.Cleanup()
 	setup := server.NewSetup(*dataDir, cfg.Port, links)
 	setup.Updates = upd
@@ -559,7 +560,7 @@ func runSetup(args []string) error {
 	defer cancel()
 
 	setup := server.NewSetup(*dataDir, cfg.Port, nil)
-	setup.Updates = updater(*dataDir)
+	setup.Updates = updater(*dataDir, cfg.UpdateChannel)
 	update.Cleanup()
 	var once atomic.Bool
 	setup.OnDone = func() {

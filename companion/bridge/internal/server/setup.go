@@ -113,6 +113,8 @@ func (s *Setup) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			s.reset(w, r, cfg)
 		case "update-check", "update-get", "update-install":
 			s.updateAction(w, r, r.PostForm.Get("action"))
+		case "update-channel":
+			s.channelAction(w, r, cfg)
 		case "done":
 			d := s.data(cfg)
 			d.Finished = true
@@ -421,7 +423,7 @@ code{font-size:.9em;word-break:break-all}
 {{with .Update}}{{if .Shown}}
 <h2 id="update">SimSight version</h2>
 <section>
-<p>{{if .Released}}Installed: SimSight {{.Version}}.{{else}}Installed: built from the source code ({{.Version}}).{{end}}{{if .Latest}} Latest release: {{.Latest}}.{{end}}</p>
+<p>{{if .Released}}Installed: SimSight {{.Version}}.{{else}}Installed: built from the source code ({{.Version}}).{{end}}{{if .Latest}} Latest {{if eq .Channel "testing"}}version (testing){{else}}release{{end}}: {{.Latest}}.{{end}}</p>
 {{if .Ready}}
 {{if $.Running}}<p>Update {{.Ready}} is downloaded. It is installed when you quit the game; the next game start uses it.</p>
 {{else}}{{if .LastProblem}}<p class="error">The last install did not finish: {{.LastProblem}}</p>{{end}}
@@ -436,6 +438,21 @@ code{font-size:.9em;word-break:break-all}
 <form method="post" action="/setup"><input type="hidden" name="csrf" value="{{$.CSRF}}">
 <p><button type="submit" name="action" value="update-check" class="secondary">Check for updates</button></p></form>
 {{end}}
+<form method="post" action="/setup"><input type="hidden" name="csrf" value="{{$.CSRF}}">
+<fieldset>
+<legend>Versions offered</legend>
+<div class="choice">
+<input type="radio" id="channel-stable" name="channel" value="stable" aria-describedby="hint-stable"{{if eq .Channel "stable"}} checked{{end}}>
+<label for="channel-stable">Stable (default)</label>
+<p class="hint" id="hint-stable">The versions everyone gets, once they were tried.</p>
+</div>
+<div class="choice">
+<input type="radio" id="channel-testing" name="channel" value="testing" aria-describedby="hint-testing"{{if eq .Channel "testing"}} checked{{end}}>
+<label for="channel-testing">Testing</label>
+<p class="hint" id="hint-testing">New versions before everyone else, to try them first. They can have problems; your saves are backed up before each install, as always.</p>
+</div>
+</fieldset>
+<p><button type="submit" name="action" value="update-channel" class="secondary">Save the versions offered</button></p></form>
 </section>
 {{end}}{{end}}
 

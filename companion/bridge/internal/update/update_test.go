@@ -157,3 +157,40 @@ func TestSourceBuildIsNotUpdated(t *testing.T) {
 		t.Fatal("nothing to install")
 	}
 }
+
+func TestChannels(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/repos/"+Repo+"/releases/latest", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"tag_name": "v2026.12.01"})
+	})
+	mux.HandleFunc("/repos/"+Repo+"/releases", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode([]map[string]any{
+			{"tag_name": "v2026.12.09", "draft": true},
+			{"tag_name": "v2026.12.03", "prerelease": true},
+			{"tag_name": "v2026.12.01"},
+			{"tag_name": "not-a-release", "prerelease": true},
+		})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	u := New("v2026.11.25", t.TempDir())
+	u.API = srv.URL
+	ctx := context.Background()
+
+	rel, err := u.Check(ctx)
+	if err != nil || rel.Tag != "v2026.12.01" || rel.Testing || u.ChannelName() != Stable {
+		t.Fatalf("stable: %v %+v", err, rel)
+	}
+	u.SetChannel(Testing)
+	rel, err = u.Check(ctx)
+	if err != nil || rel.Tag != "v2026.12.03" || !rel.Testing {
+		t.Fatalf("testing: %v %+v", err, rel)
+	}
+	u.SetChannel("nonsense")
+	if u.ChannelName() != Stable {
+		t.Fatal("an unknown channel must be stable")
+	}
+	if rel, _ = u.Check(ctx); rel.Tag != "v2026.12.01" {
+		t.Fatalf("back on stable: %+v", rel)
+	}
+}

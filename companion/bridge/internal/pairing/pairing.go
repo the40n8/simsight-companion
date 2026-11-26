@@ -38,6 +38,9 @@ type Config struct {
 	MacSecret string `json:"mac_secret,omitempty"`
 	// No Cloudflare tunnel: the phone app on the home Wi-Fi only.
 	LocalOnly bool `json:"local_only,omitempty"`
+	// Which versions the setup page offers: "stable" (empty: everyone's
+	// releases) or "testing" (also builds published for trying first).
+	UpdateChannel string `json:"update_channel,omitempty"`
 }
 
 // Load reads dir/config.json, creating it with a fresh token if missing.

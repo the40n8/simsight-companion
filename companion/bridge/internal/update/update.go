@@ -42,9 +42,26 @@ var ErrNoRelease = errors.New("no SimSight release is published yet")
 
 // Release is a published version.
 type Release struct {
-	Tag    string            // "v2026.11.25"
-	Page   string            // its GitHub page
-	Assets map[string]string // file name -> download address
+	Tag     string            // "v2026.11.25"
+	Page    string            // its GitHub page
+	Assets  map[string]string // file name -> download address
+	Testing bool              // a testing build (GitHub pre-release), not yet for everyone
+}
+
+// Update channels. Stable releases go to everyone (GitHub's latest release,
+// which never includes pre-releases); testing builds are GitHub pre-releases,
+// offered only to computers that chose the testing channel.
+const (
+	Stable  = "stable"
+	Testing = "testing"
+)
+
+// Channel returns a known channel name: anything else is Stable.
+func Channel(name string) string {
+	if name == Testing {
+		return Testing
+	}
+	return Stable
 }
 
 // Asset is this computer's release zip.
@@ -66,8 +83,25 @@ type Updater struct {
 	UserDir string
 
 	mu      sync.Mutex
+	channel string // Stable or Testing (SetChannel)
 	latest  *Release
 	checked time.Time
+}
+
+// SetChannel chooses which releases are offered (see Channel).
+func (u *Updater) SetChannel(name string) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if c := Channel(name); c != u.channel {
+		u.channel, u.latest = c, nil
+	}
+}
+
+// ChannelName is the channel in use.
+func (u *Updater) ChannelName() string {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return Channel(u.channel)
 }
 
 // New checks GitHub (SIMSIGHT_UPDATE_API: another server, for testing).
@@ -113,50 +147,101 @@ func (u *Updater) Released() bool {
 	return ok
 }
 
-// Check asks GitHub for the latest release (at most once a minute).
+// Check asks GitHub for the newest release of the channel (at most once a
+// minute).
 func (u *Updater) Check(ctx context.Context) (*Release, error) {
 	u.mu.Lock()
+	channel := Channel(u.channel)
 	if u.latest != nil && time.Since(u.checked) < time.Minute {
 		defer u.mu.Unlock()
 		return u.latest, nil
 	}
 	u.mu.Unlock()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.API+"/repos/"+Repo+"/releases/latest", nil)
+	var (
+		rel *Release
+		err error
+	)
+	if channel == Testing {
+		rel, err = u.newestOfAll(ctx)
+	} else {
+		var one ghRelease
+		if err = u.get(ctx, "/releases/latest", &one); err == nil {
+			rel = one.release()
+		}
+	}
 	if err != nil {
 		return nil, err
+	}
+	u.mu.Lock()
+	if Channel(u.channel) == channel {
+		u.latest, u.checked = rel, time.Now()
+	}
+	u.mu.Unlock()
+	return rel, nil
+}
+
+type ghRelease struct {
+	Tag        string `json:"tag_name"`
+	Page       string `json:"html_url"`
+	Draft      bool   `json:"draft"`
+	Prerelease bool   `json:"prerelease"`
+	Assets     []struct {
+		Name string `json:"name"`
+		URL  string `json:"browser_download_url"`
+	} `json:"assets"`
+}
+
+func (g ghRelease) release() *Release {
+	rel := &Release{Tag: g.Tag, Page: g.Page, Assets: map[string]string{}, Testing: g.Prerelease}
+	for _, a := range g.Assets {
+		rel.Assets[a.Name] = a.URL
+	}
+	return rel
+}
+
+// newestOfAll is the newest stable release or testing build: the testing
+// channel also gets stable releases made after its last testing build.
+func (u *Updater) newestOfAll(ctx context.Context) (*Release, error) {
+	var all []ghRelease
+	if err := u.get(ctx, "/releases?per_page=30", &all); err != nil {
+		return nil, err
+	}
+	var best *ghRelease
+	for i := range all {
+		r := &all[i]
+		if _, ok := parseTag(r.Tag); !ok || r.Draft {
+			continue
+		}
+		if best == nil || Newer(best.Tag, r.Tag) {
+			best = r
+		}
+	}
+	if best == nil {
+		return nil, ErrNoRelease
+	}
+	return best.release(), nil
+}
+
+// get reads one GitHub API answer (path under /repos/<Repo>) into v.
+func (u *Updater) get(ctx context.Context, path string, v any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.API+"/repos/"+Repo+path, nil)
+	if err != nil {
+		return err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "SimSight-Companion")
 	res, err := u.Client.Do(req)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer res.Body.Close()
 	if res.StatusCode == http.StatusNotFound {
-		return nil, ErrNoRelease
+		return ErrNoRelease
 	}
 	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GitHub answered %s", res.Status)
+		return fmt.Errorf("GitHub answered %s", res.Status)
 	}
-	var body struct {
-		Tag    string `json:"tag_name"`
-		Page   string `json:"html_url"`
-		Assets []struct {
-			Name string `json:"name"`
-			URL  string `json:"browser_download_url"`
-		} `json:"assets"`
-	}
-	if err := json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(&body); err != nil {
-		return nil, err
-	}
-	rel := &Release{Tag: body.Tag, Page: body.Page, Assets: map[string]string{}}
-	for _, a := range body.Assets {
-		rel.Assets[a.Name] = a.URL
-	}
-	u.mu.Lock()
-	u.latest, u.checked = rel, time.Now()
-	u.mu.Unlock()
-	return rel, nil
+	return json.NewDecoder(io.LimitReader(res.Body, 4<<20)).Decode(v)
 }
 
 type staged struct {

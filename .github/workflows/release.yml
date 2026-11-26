@@ -1,7 +1,9 @@
 # Builds and tests SimSight on every push to main and every pull request.
-# Publishing a release is one click: Actions > Release > Run workflow, with
-# "Publish" ticked. It runs mac/release.sh --publish on a GitHub Mac, the
-# same script as by hand; players get it from the in-game update check.
+# Publishing is one click: Actions > Release > Run workflow, then
+#   testing: a pre-release, offered only to computers on the testing channel
+#   stable:  a release, offered to everyone
+#   promote: makes a tested testing build stable (give its tag)
+# It runs mac/release.sh on a GitHub Mac, the same script as by hand.
 name: Release
 
 on:
@@ -12,9 +14,18 @@ on:
   workflow_dispatch:
     inputs:
       publish:
-        description: "Publish the release (players will be offered it)"
-        type: boolean
-        default: false
+        description: "What to do"
+        type: choice
+        default: build only
+        options:
+          - build only
+          - testing   # a pre-release: only computers on the testing channel get it
+          - stable    # a release: everyone gets it
+          - promote   # make a testing build stable, the same files
+      tag:
+        description: "For promote: the testing build's tag (e.g. v2026.11.27)"
+        type: string
+        default: ""
 
 concurrency:
   group: release-${{ github.ref }}
@@ -75,12 +86,22 @@ jobs:
           key: pinned-${{ hashFiles('mac/ui-package.json', 'mac/cloudflared.json', 'windows/pins.json') }}
 
       - name: Build and test
-        if: ${{ !inputs.publish }}
+        if: ${{ !contains(fromJSON('["testing","stable","promote"]'), inputs.publish) }}
         run: ./mac/release.sh
 
-      - name: Build, test and publish
-        if: ${{ inputs.publish }}
+      - name: Build, test and publish a testing build
+        if: ${{ inputs.publish == 'testing' }}
+        run: ./mac/release.sh --testing
+
+      - name: Build, test and publish a stable release
+        if: ${{ inputs.publish == 'stable' }}
         run: ./mac/release.sh --publish
+
+      - name: Make a testing build stable
+        if: ${{ inputs.publish == 'promote' }}
+        env:
+          TAG: ${{ inputs.tag }}
+        run: ./mac/release.sh --promote "$TAG"
 
       - uses: actions/upload-artifact@v4
         with:

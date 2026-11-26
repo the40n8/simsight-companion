@@ -4,20 +4,38 @@
 # (mac/get.sh) and install.ps1 (windows/get.ps1), and SHA256SUMS. Nothing is published
 # unless --publish is given (then: a GitHub release on the40n8/simsight-companion).
 #
-#   mac/release.sh             build and check the files only
-#   mac/release.sh --publish   also create the GitHub release (public)
+#   mac/release.sh                 build and check the files only
+#   mac/release.sh --publish       publish a stable release (everyone gets it)
+#   mac/release.sh --testing       publish a testing build: a GitHub
+#                                  pre-release, offered only to computers on
+#                                  the testing channel (setup page)
+#   mac/release.sh --promote <tag> make a tested build stable, the same files
 set -euo pipefail
 ROOT="${0:A:h:h}"
 cd "$ROOT"
-PUBLISH=0
-[[ "${1:-}" == --publish ]] && PUBLISH=1
+REPO=the40n8/simsight-companion
+PUBLISH=0 TESTING=0
+case "${1:-}" in
+  --publish) PUBLISH=1 ;;
+  --testing) PUBLISH=1 TESTING=1 ;;
+  --promote)
+    TAG="${2:?--promote needs the tag of a testing build}"
+    [[ "$(gh release view "$TAG" --repo $REPO --json isPrerelease -q .isPrerelease)" == true ]] \
+      || { echo "$TAG is not a testing build."; exit 1; }
+    gh release edit "$TAG" --repo $REPO --prerelease=false --latest \
+      --title "SimSight Companion $TAG (alpha)"
+    echo "$TAG is now the stable release: everyone is offered it."
+    exit 0 ;;
+  "") ;;
+  *) echo "Unknown option ${1}. See the top of this script."; exit 1 ;;
+esac
 
 if [[ -n "$(git status --porcelain)" ]]; then
   echo "Uncommitted changes: commit them first, a release is built from a commit."; exit 1
 fi
 TAG="v$(date +%Y.%m.%d)"
 n=2
-while git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || gh release view "$TAG" >/dev/null 2>&1; do
+while git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || gh release view "$TAG" --repo $REPO >/dev/null 2>&1; do
   TAG="v$(date +%Y.%m.%d)-$n"; n=$((n + 1))
 done
 GAME=$(python3 -c 'import json;print(json.load(open("mac/ui-package.json"))["game_version"])')
@@ -143,7 +161,16 @@ the mod inside the game on Windows not yet. Please report what works and what do
 Guides: [docs/windows](https://github.com/the40n8/simsight-companion/tree/main/docs/windows).
 MD
   git tag "$TAG" && git push -q origin "$TAG"
+  if (( TESTING )); then
+    # Stable computers and the one-line installers never see a pre-release.
+    { echo "**Testing build**, offered only to computers on the testing channel"
+      echo "(companion setup > SimSight version > Versions offered). Not yet for everyone."
+      echo; cat "$NOTES"; } > "$NOTES.t" && mv "$NOTES.t" "$NOTES"
+    CHANNEL=(--prerelease --latest=false) TITLE="SimSight Companion $TAG (testing)"
+  else
+    CHANNEL=(--latest) TITLE="SimSight Companion $TAG (alpha)"
+  fi
   gh release create "$TAG" "$OUT/SimSight-Companion-mac.zip" "$OUT/install.sh" \
     "$OUT/SimSight-Companion-windows.zip" "$OUT/install.ps1" "$OUT/SHA256SUMS" \
-    --repo the40n8/simsight-companion --title "SimSight Companion $TAG (alpha)" --notes-file "$NOTES" --latest
+    --repo $REPO --title "$TITLE" --notes-file "$NOTES" "${CHANNEL[@]}"
 fi

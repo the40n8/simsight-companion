@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/the40n8/simsight-companion/companion/bridge/internal/pairing"
 	"github.com/the40n8/simsight-companion/companion/bridge/internal/update"
 )
 
@@ -22,6 +23,7 @@ type updateView struct {
 	Newer       bool
 	Ready       string // a downloaded update waiting to be installed
 	LastProblem string // the end of a failed installer run
+	Channel     string // update.Stable or update.Testing
 }
 
 func (s *Setup) updateData() updateView {
@@ -29,7 +31,8 @@ func (s *Setup) updateData() updateView {
 	if u == nil {
 		return updateView{}
 	}
-	v := updateView{Shown: true, Version: u.Version, Released: u.Released(), Ready: u.Ready()}
+	v := updateView{Shown: true, Version: u.Version, Released: u.Released(), Ready: u.Ready(),
+		Channel: u.ChannelName()}
 	s.mu.Lock()
 	v.Latest = s.latest
 	s.mu.Unlock()
@@ -114,4 +117,33 @@ func (s *Setup) updateAction(w http.ResponseWriter, r *http.Request, action stri
 		}
 	}
 	install()
+}
+
+// channelAction saves which versions are offered (stable or testing).
+func (s *Setup) channelAction(w http.ResponseWriter, r *http.Request, cfg *pairing.Config) {
+	u := s.Updates
+	if u == nil {
+		http.NotFound(w, r)
+		return
+	}
+	defer http.Redirect(w, r, "/setup?update=1", http.StatusSeeOther)
+	channel := update.Channel(r.PostForm.Get("channel"))
+	stored := channel
+	if stored == update.Stable {
+		stored = "" // the default is not written
+	}
+	cfg.UpdateChannel = stored
+	if err := cfg.Save(s.dir); err != nil {
+		s.note("Not saved: "+err.Error(), true)
+		return
+	}
+	u.SetChannel(channel)
+	s.mu.Lock()
+	s.latest = ""
+	s.mu.Unlock()
+	if channel == update.Testing {
+		s.note("Saved: testing versions are offered too. Check for updates to see the newest.", false)
+	} else {
+		s.note("Saved: only stable releases are offered. A testing version already installed stays until the next stable release.", false)
+	}
 }

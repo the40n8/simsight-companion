@@ -54,6 +54,13 @@ once. The game also tells you when a new version is out.
 
 Or quit the game and run the install line again.
 
+**Testing versions.** New versions can be published for testing first.
+Under **Versions offered** on the same page, choose **Testing** to be
+offered them as well, before everyone else. They can have problems; your
+saves are backed up before each install, as always. Choose **Stable** again
+to go back to the versions everyone gets: a testing version stays installed
+until the next stable release.
+
 ## Remove
 
 - **Mac:** run the install line with `-s uninstall` at the end, or
