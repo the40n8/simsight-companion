@@ -12,6 +12,7 @@ import simsight_log
 import simsight_plus_core as core
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
     from typing import Protocol
 
     class Boxed(Protocol):
@@ -147,7 +148,8 @@ class Room:
 
 
 class LotGrid:
-    """The lot's 1 meter tiles: nu by nv, tile (i, j) centred at world()."""
+    """The lot's 1 meter tiles: nu by nv along its corners 0 to 1 (u) and 0 to 3
+    (v), tile (i, j) centred at world(); levels is its floor range."""
 
     def __init__(self, lot: Any) -> None:
         corners = list(lot.corners)
@@ -331,16 +333,23 @@ def given_name(room: Boxed) -> str | None:
         return None
 
 
-def _kind_name(room: Room) -> str:
-    """The room's kind from its furniture: the kind with most weight, first in KINDS on a tie."""
+def kind_scores(objects: Iterable[Any]) -> list[tuple[str, int]]:
+    """Room kinds (KINDS) by the weight of these objects' furniture, highest
+    first; on a tie, the kind of the object that comes first."""
     score: dict[str, int] = {}
-    for obj in room.objects:
+    for obj in objects:
         names = tag_names(obj)
         for kind, tags, weight in KINDS:
             if names.intersection(tags):
                 score[kind] = score.get(kind, 0) + weight
-    if score:
-        return max(score.items(), key=lambda kv: kv[1])[0]
+    return sorted(score.items(), key=lambda kv: -kv[1])
+
+
+def _kind_name(room: Room) -> str:
+    """The room's kind from its furniture (kind_scores' first)."""
+    ranked = kind_scores(room.objects)
+    if ranked:
+        return ranked[0][0]
     return 'Room' if room.objects else 'Empty room'
 
 

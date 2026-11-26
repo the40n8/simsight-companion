@@ -2,6 +2,7 @@
 Ground floor: kitchen (x 2-6) and living room (x 6-12), z 2-8; yard around;
 a pool at x<2, z<3; upstairs a room above the living room; stairs in it."""
 
+import tempfile
 import types
 import unittest
 
@@ -57,11 +58,10 @@ LOT = types.SimpleNamespace(
 )
 
 module(
-    'simsight_plus_rooms',
-    room_id_at=room_id,
-    tag_names=lambda o: o.tags,
-    given_name=lambda r: '',
-    KINDS=(('Kitchen', ('Func_Fridge',), 5),),
+    'simsight_plus_core',
+    hotkey=lambda vk, description: lambda fn: fn,
+    MODS_FOLDER=tempfile.mkdtemp(),
+    IN_GAME=False,
 )
 module(
     'services',
@@ -79,6 +79,13 @@ module(
 )
 
 import simsight_housemap as housemap  # noqa: E402
+import simsight_plus_rooms as rooms  # noqa: E402
+
+# The real lot grid and room kind scoring, on this lot's rooms and tags.
+rooms.room_id_at = room_id
+rooms.tag_names = lambda o: o.tags
+rooms.given_name = lambda r: ''
+rooms.KINDS = (('Kitchen', ('Func_Fridge',), 5),)
 
 
 class HouseMapTest(unittest.TestCase):

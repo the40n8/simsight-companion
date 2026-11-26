@@ -244,24 +244,13 @@ def _areas(room: _Room, kinds: list[str]) -> list[tuple[str, str]]:
     return out
 
 
-def _kind_scores(room: _Room) -> list[tuple[str, int]]:
-    """Room kinds by furniture weight, highest first (KINDS order on a tie)."""
-    score: dict[str, int] = {}
-    for obj in room.objects:
-        names = rooms.tag_names(obj)
-        for kind, tags, weight in rooms.KINDS:
-            if names.intersection(tags):
-                score[kind] = score.get(kind, 0) + weight
-    return sorted(score.items(), key=lambda kv: -kv[1])
-
-
 def _name_one(room: _Room) -> None:
     try:
         room.custom = rooms.given_name(room) or ''
     except Exception:  # the room is shown without a custom name
         simsight_log.error('housemap: given name')
         room.custom = ''
-    ranked = _kind_scores(room)
+    ranked = rooms.kind_scores(room.objects)
     if not ranked:
         room.kind = 'ROOM' if room.objects else 'EMPTY'
         return
@@ -284,22 +273,12 @@ def _name(found: list[_Room]) -> None:
             room.number = numbered[room.kind]
 
 
-class _HouseMap:
-    """One scan of the active lot: its rooms, the garden and pool around them,
-    doors, stairs, furniture and Sims."""
+class _HouseMap(rooms.LotGrid):
+    """One scan of the active lot on its tile grid: its rooms, the garden and
+    pool around them, doors, stairs, furniture and Sims."""
 
     def __init__(self, lot: Any) -> None:
-        corners = list(lot.corners)
-        c0, c1, c3 = corners[0], corners[1], corners[3]
-        self.x0, self.z0 = c0.x, c0.z
-        self.ux, self.uz = c1.x - c0.x, c1.z - c0.z
-        self.vx, self.vz = c3.x - c0.x, c3.z - c0.z
-        self.nu = max(1, int(round(math.hypot(self.ux, self.uz))))
-        self.nv = max(1, int(round(math.hypot(self.vx, self.vz))))
-        try:
-            self.levels = range(int(lot.min_level), int(lot.max_level) + 1)
-        except Exception:  # no floor range on this lot: the usual three floors
-            self.levels = range(3)
+        super().__init__(lot)
         self.grid: dict[tuple[int, int, int], _Room] = {}  # (level, i, j) -> room
         self.found: dict[tuple[Any, int], _Room] = {}  # (room id, level) -> indoor room
         # Around the rooms: the garden ("outside", also beyond walls upstairs)
@@ -309,10 +288,6 @@ class _HouseMap:
         self.pool = _Room('pool', 0)
         self.pool.kind = 'POOL'
         self.outdoor: dict[tuple[int, int], _Room] = {}  # ground floor (i, j) -> garden or pool
-
-    def world(self, i: int, j: int) -> tuple[float, float]:
-        fu, fv = (i + 0.5) / self.nu, (j + 0.5) / self.nv
-        return (self.x0 + self.ux * fu + self.vx * fv, self.z0 + self.uz * fu + self.vz * fv)
 
     def _cells(self) -> Iterable[tuple[int, int]]:
         for i in range(self.nu):
