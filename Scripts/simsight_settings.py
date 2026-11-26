@@ -7,20 +7,29 @@ immediately; simsight.reload applies a hand-edit while the game runs; deleting
 the file resets everything. The file is fully regenerated on every write,
 so user-added comments are not preserved.
 
-This module deliberately imports nothing from the rest of the mod so any
-module can import it without cycles. Load problems are collected in
+This module deliberately imports nothing from the rest of the mod but
+simsight_log (which imports nothing), so any module can import it without
+cycles. Load problems are collected in
 `load_errors` for the narrator to surface instead of raising: a broken
 settings file must never take down the mod.
 
 Adding an option: default in DEFAULTS, a line + mapping in _TEMPLATE and
-_FILE_MAP, read it at the apply site (get()), persist from its command
-(set()), and a line in simsight.settings' readout.
+_FILE_MAP (and a parser in _PARSERS unless it is on/off or free text), read
+it at the apply site (get()), persist from its command (set()), and a line
+in simsight.settings' readout.
 """
+
+from __future__ import annotations
 
 import configparser
 import os
+import sys
+from typing import Any, Callable
 
-DEFAULTS = {
+import simsight_log
+
+
+DEFAULTS: dict[str, Any] = {
     'sim_actions': True,  # announce what the active Sim starts doing
     'object_names': True,  # name tooltips on gameplay objects
     'numpad_navigation': False,  # optional alternate keyboard layout
@@ -60,9 +69,7 @@ DEFAULTS = {
 # drives with the mouse. The Windows keyboard hooks do not exist on macOS, so
 # keyboard-driven features start off; spoken events stay on. A stored
 # SimSight.cfg still wins over these.
-import sys as _sys
-
-if _sys.platform == 'darwin':
+if sys.platform == 'darwin':
     DEFAULTS.update(
         {
             'keyboard': False,
@@ -79,7 +86,7 @@ if _sys.platform == 'darwin':
 
 # Friendly key names for the cfg file and simsight.keybind (single source; the
 # keyboard module imports this).
-KEY_NAMES = {
+KEY_NAMES: dict[str, int] = {
     'numpad0': 0x60,
     'numpad1': 0x61,
     'numpad2': 0x62,
@@ -116,7 +123,7 @@ KEY_NAMES = {
     'space': 0x20,
 }
 # file (section, option) -> internal key, for plain values
-_FILE_MAP = {
+_FILE_MAP: dict[tuple[str, str], str] = {
     ('features', 'sim actions'): 'sim_actions',
     ('features', 'object names'): 'object_names',
     ('features', 'keyboard'): 'keyboard',
@@ -261,37 +268,23 @@ name = {sapi_voice}
 """
 
 
-def _mods_folder():
-    # __file__ lives inside the ts4script zip: <Mods>/.../<name>.ts4script/...
-    # The TS4 user folder name is localized, so never hardcode it; derive from
-    # our own load path.
-    path = os.path.normpath(__file__)
-    lower = path.lower()
-    marker = '.ts4script'
-    if marker in lower:
-        zip_path = path[: lower.index(marker) + len(marker)]
-        return os.path.dirname(zip_path)
-    return os.path.dirname(path)
-
-
-MODS_FOLDER = _mods_folder()
+MODS_FOLDER = simsight_log.MODS_FOLDER
 PATH = os.path.join(MODS_FOLDER, 'SimSight.cfg')
 # Only auto-create the file when actually running from inside the game's
 # ts4script zip; importing this module from plain source (the build script)
 # must stay side-effect free.
 _IN_GAME = '.ts4script' in os.path.normpath(__file__).lower()
 
-_stored = {}
-load_errors = []
-# True when no settings file existed at launch (first install, or reset).
-# Retained for future onboarding; the automatic settings popup is deferred.
-first_run = False
+_stored: dict[str, Any] = {}
+load_errors: list[str] = []
 
 _TRUE_WORDS = ('on', 'true', 'yes', '1')
 _FALSE_WORDS = ('off', 'false', 'no', '0')
+# Earlier builds' speech mode names.
+_LEGACY_SPEECH_MODES = {'talk': 'hover', 'ondemand': 'manual', 'on_demand': 'manual'}
 
 
-def _parse_bool(raw, option):
+def _parse_bool(raw: str, option: str) -> bool | None:
     low = raw.strip().lower()
     if low in _TRUE_WORDS:
         return True
@@ -301,7 +294,74 @@ def _parse_bool(raw, option):
     return None
 
 
-def _apply_value(key, raw):
+def _parse_scanner_range(raw: str) -> str | None:
+    name = ' '.join(raw.lower().split()).replace('metres', 'meters')
+    if name in SCANNER_RANGES:
+        return name
+    load_errors.append(f'unknown scanner range "{raw}"; keeping default')
+    return None
+
+
+def _parse_speech_mode(raw: str) -> str | None:
+    mode = raw.lower().replace('-', '_').replace(' ', '_')
+    mode = _LEGACY_SPEECH_MODES.get(mode, mode)
+    if mode in ('hover', 'manual', 'beeps', 'off'):
+        return mode
+    load_errors.append(f'unknown speech mode "{raw}"; keeping default')
+    return None
+
+
+def _parse_braille_mode(raw: str) -> str | None:
+    mode = raw.lower()
+    if mode in ('concise', 'full', 'only', 'off'):
+        return mode
+    load_errors.append(f'unknown braille mode "{raw}"; keeping default')
+    return None
+
+
+def _parse_verbosity(raw: str) -> str | None:
+    level = raw.lower()
+    if level in ('full', 'brief'):
+        return level
+    load_errors.append(f'unknown verbosity "{raw}"; keeping default')
+    return None
+
+
+def _parse_tooltip_delay(raw: str) -> float | None:
+    try:
+        value = float(raw)
+    except ValueError:
+        load_errors.append(f'tooltip delay must be a number of seconds, not "{raw}"')
+        return None
+    return max(0.0, min(10.0, value))
+
+
+def _int_parser(key: str, low: int, high: int) -> Callable[[str], int | None]:
+    def parse(raw: str) -> int | None:
+        try:
+            value = int(raw)
+        except ValueError:
+            load_errors.append(f'{key} must be a number, not "{raw}"')
+            return None
+        return max(low, min(high, value))
+
+    return parse
+
+
+# Key -> parser for values that are neither on/off nor free text (sapi_voice).
+# A parser returns None, after noting why in load_errors, to keep the default.
+_PARSERS: dict[str, Callable[[str], Any]] = {
+    'scanner_range': _parse_scanner_range,
+    'speech_mode': _parse_speech_mode,
+    'braille_mode': _parse_braille_mode,
+    'verbosity': _parse_verbosity,
+    'tooltip_delay': _parse_tooltip_delay,
+    'sapi_rate': _int_parser('sapi_rate', -10, 10),
+    'sapi_volume': _int_parser('sapi_volume', 0, 100),
+}
+
+
+def _apply_value(key: str, raw: str) -> None:
     """Parse one cfg value into _stored; empty means 'leave unset'."""
     raw = raw.strip()
     if '\n' in raw or '\r' in raw:
@@ -312,71 +372,20 @@ def _apply_value(key, raw):
         raw = first
     if not raw:
         return
+    value: Any
     if key in _BOOL_KEYS:
         value = _parse_bool(raw, key)
-        if value is not None:
-            _stored[key] = value
-        return
-    if key == 'scanner_range':
-        name = ' '.join(raw.lower().split()).replace('metres', 'meters')
-        if name in SCANNER_RANGES:
-            _stored[key] = name
-        else:
-            load_errors.append(f'unknown scanner range "{raw}"; keeping default')
-        return
-    if key == 'speech_mode':
-        mode = raw.lower().replace('-', '_').replace(' ', '_')
-        # legacy names from earlier builds
-        if mode == 'talk':
-            mode = 'hover'
-        elif mode in ('ondemand', 'on_demand'):
-            mode = 'manual'
-        if mode in ('hover', 'manual', 'beeps', 'off'):
-            _stored[key] = mode
-        else:
-            load_errors.append(f'unknown speech mode "{raw}"; keeping default')
-        return
-    if key == 'braille_mode':
-        mode = raw.lower()
-        if mode in ('concise', 'full', 'only', 'off'):
-            _stored[key] = mode
-        else:
-            load_errors.append(f'unknown braille mode "{raw}"; keeping default')
-        return
-    if key == 'verbosity':
-        level = raw.lower()
-        if level in ('full', 'brief'):
-            _stored[key] = level
-        else:
-            load_errors.append(f'unknown verbosity "{raw}"; keeping default')
-        return
-    if key == 'tooltip_delay':
-        try:
-            value = float(raw)
-        except ValueError:
-            load_errors.append(f'tooltip delay must be a number of seconds, not "{raw}"')
-            return
-        _stored[key] = max(0.0, min(10.0, value))
-        return
-    if key in ('sapi_rate', 'sapi_volume'):
-        try:
-            value = int(raw)
-        except ValueError:
-            load_errors.append(f'{key} must be a number, not "{raw}"')
-            return
-        if key == 'sapi_rate':
-            _stored[key] = max(-10, min(10, value))
-        else:
-            _stored[key] = max(0, min(100, value))
-        return
-    _stored[key] = raw  # sapi_voice: free text
+    else:
+        parser = _PARSERS.get(key)
+        value = parser(raw) if parser is not None else raw  # sapi_voice: free text
+    if value is not None:
+        _stored[key] = value
 
 
-def _load_cfg():
+def _read_cfg() -> configparser.ConfigParser | None:
     """Forgiving parse: strict=False tolerates duplicate lines (last wins), a
     ParsingError keeps everything that DID parse and only skips the bad lines
-    (reported with line numbers), and section/option names are matched after
-    collapsing case and stray spaces."""
+    (reported with line numbers). None when the file cannot be read."""
     parser = configparser.ConfigParser(
         inline_comment_prefixes=(';', '#'),
         interpolation=None,
@@ -394,6 +403,14 @@ def _load_cfg():
                     )
     except Exception as ex:
         load_errors.append(f'settings file unreadable ({ex!r}); using defaults')
+        return None
+    return parser
+
+
+def _load_cfg() -> None:
+    """Section/option names are matched after collapsing case and stray spaces."""
+    parser = _read_cfg()
+    if parser is None:
         return
     normalized = {}
     for section in parser.sections():
@@ -406,7 +423,7 @@ def _load_cfg():
             _apply_value(key, normalized[(section, option)])
 
 
-def _load():
+def _load() -> None:
     if os.path.isfile(PATH):
         _load_cfg()
         return
@@ -414,12 +431,10 @@ def _load():
     # dev build never had one), materialize it on launch so there is always
     # a file to edit in the mod folder.
     if _IN_GAME:
-        global first_run
-        first_run = True
         _save()
 
 
-def _fmt_seconds(value):
+def _fmt_seconds(value: Any) -> str:
     """Render a seconds value without a trailing .0 (the file is meant to be
     read and hand-edited)."""
     try:
@@ -431,51 +446,29 @@ def _fmt_seconds(value):
     return f'{number:g}'
 
 
-def _render(stored):
-    """Render the cfg content for a given stored-values dict (pure; the
-    build script uses render_default() to ship a pristine copy in the zip)."""
+def _render(stored: dict[str, Any]) -> str:
+    """The cfg content for these stored values (defaults for the rest)."""
 
-    def sget(name):
+    def sget(name: str) -> Any:
         return stored[name] if name in stored else DEFAULTS.get(name)
 
-    fields = {
-        'sim_actions': 'on' if sget('sim_actions') else 'off',
-        'object_names': 'on' if sget('object_names') else 'off',
-        'numpad_navigation': 'on' if sget('numpad_navigation') else 'off',
-        'keyboard': 'on' if sget('keyboard') else 'off',
-        'simplified_menus': 'on' if sget('simplified_menus') else 'off',
-        'scanner': 'on' if sget('scanner') else 'off',
-        'captions': 'on' if sget('captions') else 'off',
-        'startup': 'on' if sget('startup') else 'off',
-        'travel_list': 'on' if sget('travel_list') else 'off',
-        'build_controls': 'on' if sget('build_controls') else 'off',
-        'scanner_mode': 'on' if sget('scanner_mode') else 'off',
-        'scanner_range': sget('scanner_range'),
-        'surface_layer_focus': 'on' if sget('surface_layer_focus') else 'off',
-        'chair_alignment_hints': 'on' if sget('chair_alignment_hints') else 'off',
-        'chair_snapping': 'on' if sget('chair_snapping') else 'off',
-        'experimental_basement': 'on' if sget('experimental_basement') else 'off',
-        'experimental_bare_ground': 'on' if sget('experimental_bare_ground') else 'off',
-        'experimental_water': 'on' if sget('experimental_water') else 'off',
-        'experimental_ceiling': 'on' if sget('experimental_ceiling') else 'off',
-        'experimental_fence': 'on' if sget('experimental_fence') else 'off',
-        'speech_mode': str(sget('speech_mode')),
-        'braille_mode': sget('braille_mode'),
-        'verbosity': sget('verbosity'),
-        'logging': 'on' if sget('logging') else 'off',
-        'sapi_rate': sget('sapi_rate'),
-        'sapi_volume': sget('sapi_volume'),
-        'sapi_voice': sget('sapi_voice') or '',
-        'tooltip_delay': _fmt_seconds(sget('tooltip_delay')),
-    }
+    fields: dict[str, Any] = {key: 'on' if sget(key) else 'off' for key in _BOOL_KEYS}
+    fields.update(
+        {
+            'scanner_range': sget('scanner_range'),
+            'speech_mode': str(sget('speech_mode')),
+            'braille_mode': sget('braille_mode'),
+            'verbosity': sget('verbosity'),
+            'sapi_rate': sget('sapi_rate'),
+            'sapi_volume': sget('sapi_volume'),
+            'sapi_voice': sget('sapi_voice') or '',
+            'tooltip_delay': _fmt_seconds(sget('tooltip_delay')),
+        }
+    )
     return _TEMPLATE.format(**fields)
 
 
-def render_default():
-    return _render({})
-
-
-def _save():
+def _save() -> bool:
     try:
         content = _render(_stored)
         # Temp name ends in .cfg (ModGuard whitelist) rather than .tmp, so
@@ -490,16 +483,11 @@ def _save():
         # Log only (per user decision, no audible warning). MCCC's most-
         # reported settings failure is this exact class: OneDrive write-
         # permission errors on the Mods folder.
-        try:
-            import simsight_speech as speech
-
-            speech.log_line(f'settings: save failed: {ex!r}')
-        except Exception:
-            pass
+        simsight_log.line(f'settings: save failed: {ex!r}')
         return False
 
 
-def get(name, fallback=None):
+def get(name: str, fallback: Any = None) -> Any:
     """Stored value if present, else the given fallback (lets a build supply
     its own default, e.g. release logging), else the DEFAULTS entry."""
     if name in _stored:
@@ -509,21 +497,21 @@ def get(name, fallback=None):
     return DEFAULTS.get(name)
 
 
-def brief():
+def brief() -> bool:
     """Verbosity brief: leave out the kind of thing before its name."""
     return get('verbosity') == 'brief'
 
 
-def set(name, value):
+def set(name: str, value: Any) -> bool:
+    """Store a value and rewrite the file; False when the file could not be written."""
     _stored[name] = value
     return _save()
 
 
-def reload():
+def reload() -> bool:
     """Re-read the cfg (for simsight.reload after a hand-edit)."""
-    global _stored
     del load_errors[:]
-    _stored = {}
+    _stored.clear()
     _load()
     return True
 

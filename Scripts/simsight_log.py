@@ -34,7 +34,8 @@ def _mods_folder() -> str:
     return os.path.dirname(path)
 
 
-PATH = os.path.join(_mods_folder(), 'SimSight.log')
+MODS_FOLDER = _mods_folder()  # the folder that holds SimSight.ts4script
+PATH = os.path.join(MODS_FOLDER, 'SimSight.log')
 
 
 def _write(text: str) -> None:

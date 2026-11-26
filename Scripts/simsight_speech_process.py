@@ -4,7 +4,15 @@ The kernel ends the child when its owner exits, including crashes. No named
 job or inheritable handle is used, so another program cannot keep it alive.
 """
 
+from __future__ import annotations
+
 import ctypes
+from typing import Any
+
+# Windows only (mac/build.py leaves it out of the Mac build). WinDLL, WinError
+# and get_last_error exist only in Windows' ctypes, unknown to a type check
+# made on another system.
+_win: Any = ctypes
 
 
 class _IO_COUNTERS(ctypes.Structure):
@@ -47,9 +55,11 @@ class _EXTENDED_LIMITS(ctypes.Structure):
 
 
 class SpeechJob:
-    def __init__(self):
-        self._handle = None
-        api = ctypes.WinDLL('kernel32', use_last_error=True)
+    """A kill-on-close job; assign() puts a child process in it."""
+
+    def __init__(self) -> None:
+        self._handle: int | None = None
+        api: Any = _win.WinDLL('kernel32', use_last_error=True)
         api.CreateJobObjectW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p]
         api.CreateJobObjectW.restype = ctypes.c_void_p
         api.SetInformationJobObject.argtypes = [
@@ -66,20 +76,22 @@ class SpeechJob:
         self._api = api
         handle = api.CreateJobObjectW(None, None)
         if not handle:
-            raise ctypes.WinError(ctypes.get_last_error())
+            raise _win.WinError(_win.get_last_error())
         self._handle = handle
         limits = _EXTENDED_LIMITS()
         limits.BasicLimitInformation.LimitFlags = 0x2000  # KILL_ON_JOB_CLOSE
         if not api.SetInformationJobObject(handle, 9, ctypes.byref(limits), ctypes.sizeof(limits)):
-            error = ctypes.get_last_error()
+            error = _win.get_last_error()
             self.close()
-            raise ctypes.WinError(error)
+            raise _win.WinError(error)
 
-    def assign(self, proc):
-        if not self._api.AssignProcessToJobObject(self._handle, ctypes.c_void_p(int(proc._handle))):
-            raise ctypes.WinError(ctypes.get_last_error())
+    def assign(self, proc: Any) -> None:
+        """Put the child (a subprocess.Popen) in the job; OSError when refused."""
+        process = int(proc._handle)  # Popen's Windows process handle
+        if not self._api.AssignProcessToJobObject(self._handle, ctypes.c_void_p(process)):
+            raise _win.WinError(_win.get_last_error())
 
-    def close(self):
+    def close(self) -> None:
         handle, self._handle = self._handle, None
         if handle is not None:
             self._api.CloseHandle(handle)
