@@ -20,14 +20,31 @@ Ported from glaroc's a11yscan build 3 placement engine (a11yscan_build.py,
     presses.
 
 Simulation thread only (the key poller reaches it through the pump).
+
+EA's own operations here (creating, moving, registering and destroying an
+object, moving money, finding a location) can fail in many ways; each such
+call catches Exception, logs it and refuses or gives the money back, so a
+purchase is never left half done.
 """
+
+from __future__ import annotations
 
 import math
 import time
+from typing import TYPE_CHECKING, Any, Callable, NamedTuple, TypeVar
 
 import sims4.commands
 import simsight_lang as lang
+import simsight_log
 import simsight_speech as speech
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator, Sequence
+
+    from simsight_chair_snap import ChairRequest
+
+    _TileKey = tuple[int, int, int]  # x, z, level
+    _Area = tuple[Any, 'LotArea', str | None]  # centre, area, room name
 
 SEARCH_RADIUS = 2.5  # metres: "place here" means near here
 SLOT_SEARCH = 1.2  # metres around the cursor to look for surfaces
@@ -43,6 +60,14 @@ FLAG_FENCE = 128
 FLAG_SLOT = 1024
 FLAG_TERRAIN = 65536
 FLAG_WATER = 2097152
+_REQUIREMENTS = (
+    (FLAG_SLOT, 'slot'),
+    (FLAG_WALL, 'wall'),
+    (FLAG_CEILING, 'ceiling'),
+    (FLAG_FENCE, 'fence'),
+    (FLAG_WATER, 'water'),
+    (FLAG_TERRAIN, 'terrain'),
+)
 
 # Surfaces ranked as in glaroc's build: a computer on a desk works, the same
 # computer on a decorative island slot has no usable posture.
@@ -53,59 +78,116 @@ SURFACE_RANK = (
     (('shelf', 'bookcase', 'dresser', 'endtable', 'nightstand'), 4),
     (('lamp', 'light'), 9),
 )
-
-_product = None  # {'id', 'name', 'zone'} from the native catalog
-_history = []  # [(obj_id, charged, name, household id, zone id)]
-_last = {'obj_id': None, 'position': None, 'household': None, 'zone': None}
-_repeat = [(), 0.0]  # (aimed and landed tile keys, time) of the last placement
-_sell = [None, 0.0]  # (obj_id, time) awaiting confirmation
-_pending = {'serial': 0, 'at': 0.0, 'args': None, 'zone': None, 'product': None}
-_owed = {}  # household id -> refunds that failed and are still due
+_DEFAULT_RANK = 2
 
 
-def _text(en, pl):
+class _Placement(NamedTuple):
+    """One placement request: where, and how to find the exact spot."""
+
+    position: Any
+    level: int
+    routing_surface: Any
+    angle: float
+    key: _TileKey
+    exact: bool
+    area: LotArea | None = None
+
+
+class _Purchase(NamedTuple):
+    obj_id: int
+    price: int
+    name: str
+    household: Any
+    zone: Any
+
+
+class _Request:
+    """The placement waiting for the client to put down EA's held product."""
+
+    def __init__(self) -> None:
+        self.serial = 0
+        self.at = 0.0
+        self.placement: _Placement | None = None  # None: nothing waiting
+        self.zone: Any = None
+        self.product: dict[str, Any] | None = None
+        self.household: Any = None
+        self.surface_id: Any = None  # the focused surface to put it on
+        self.chair_request: ChairRequest | None = None  # the chair seat to snap to
+
+
+class _State:
+    def __init__(self) -> None:
+        self.product: dict[str, Any] | None = None  # {'id', 'name', 'zone'} from the catalog
+        self.history: list[_Purchase] = []
+        self.repeat_keys: tuple[_TileKey, ...] = ()  # aimed and landed tiles of the last one
+        self.repeat_time = 0.0
+        self.sell_id: Any = None  # the object awaiting a second sell press
+        self.sell_time = 0.0
+        self.owed: dict[Any, int] = {}  # household id -> refunds that failed and are still due
+
+
+_state = _State()
+_pending = _Request()
+# Read and written by simsight_plus_decor and simsight_plus_furnish too.
+_last: dict[str, Any] = {'obj_id': None, 'position': None, 'household': None, 'zone': None}
+
+_F = TypeVar('_F', bound=Callable[..., Any])
+_ARG_TYPES = {'str': str, 'int': int, 'float': float, 'bool': bool}
+
+
+def _command_arg_types(func: _F) -> _F:
+    """The game converts console arguments by their annotations, which the
+    __future__ import keeps as strings: give it the real types back."""
+    func.__annotations__ = {
+        name: _ARG_TYPES[hint]
+        for name, hint in func.__annotations__.items()
+        if name != 'return' and hint in _ARG_TYPES
+    }
+    return func
+
+
+def _text(en: str, pl: str) -> str:
     return pl if lang._detect_lang() == 'pl' else en
 
 
-def _say(parts):
+def _say(parts: list[Any]) -> None:
     import simsight_scanner as scanner
 
     scanner._speak_parts(parts)
 
 
-def _say_text(en, pl):
+def _say_text(en: str, pl: str) -> None:
     speech.speak(_text(en, pl), explicit=True)
 
 
-def _zone_id():
+def _zone_id() -> Any:
     try:
         import services
 
         return services.current_zone_id()
-    except Exception:
+    except Exception:  # no zone while the game loads
         return None
 
 
-def in_build_mode():
+def in_build_mode() -> bool:
     try:
         import services
 
         zone = services.current_zone()
         return zone is not None and bool(zone.is_in_build_buy)
-    except Exception:
+    except Exception:  # no zone while the game loads
         return False
 
 
 # ---------------------------------------------------------------- the product
 
 
-def set_product(instance_text, name):
+def set_product(instance_text: Any, name: Any) -> bool:
     """The native catalog selected (or dropped) a product."""
-    global _product
     text = str(instance_text or '').strip()
     if not text.isdigit() or int(text) == 0:
-        _product = None
-        _pending['args'] = None
+        _state.product = None
+        _pending.placement = None
         return True
     def_id = int(text)
     try:
@@ -113,35 +195,34 @@ def set_product(instance_text, name):
 
         definition = services.definition_manager().get(def_id, get_fallback_definition_id=False)
     except Exception as ex:
-        speech.log_line(f'place: definition lookup failed for {def_id}: {ex!r}')
+        simsight_log.line(f'place: definition lookup failed for {def_id}: {ex!r}')
         definition = None
     if definition is None or getattr(definition, 'id', None) != def_id:
-        speech.log_line(f'place: catalog product {def_id} is not an object definition')
-        _product = None
+        simsight_log.line(f'place: catalog product {def_id} is not an object definition')
+        _state.product = None
         return False
-    _product = {'id': def_id, 'name': str(name or '').strip()[:200], 'zone': _zone_id()}
-    _pending['args'] = None
-    speech.log_line('place: product {} {!r}'.format(def_id, _product['name']))
+    item = {'id': def_id, 'name': str(name or '').strip()[:200], 'zone': _zone_id()}
+    _state.product = item
+    _pending.placement = None
+    simsight_log.line('place: product {} {!r}'.format(def_id, item['name']))
     return True
 
 
-def product():
+def product() -> dict[str, Any] | None:
     """The remembered product, if it still belongs to this zone."""
-    global _product
-    if _product is not None and _product['zone'] != _zone_id():
-        _product = None
-    return _product
+    if _state.product is not None and _state.product['zone'] != _zone_id():
+        _state.product = None
+    return _state.product
 
 
-def forget():
-    global _product
-    _product = None
-    _repeat[0] = ()
-    _sell[0] = None
-    _pending['args'] = None
+def forget() -> None:
+    _state.product = None
+    _state.repeat_keys = ()
+    _state.sell_id = None
+    _pending.placement = None
 
 
-def _product_name():
+def _product_name() -> str:
     item = product()
     if item and item['name']:
         return item['name']
@@ -151,40 +232,40 @@ def _product_name():
 # ------------------------------------------------------------------- the funds
 
 
-def _household():
+def _household() -> Any:
     try:
         import services
 
         return services.active_household()
-    except Exception:
+    except Exception:  # no household while the game loads
         return None
 
 
-def _household_id():
+def _household_id() -> Any:
     household = _household()
     return getattr(household, 'id', None) if household is not None else None
 
 
-def funds():
+def funds() -> int | None:
     household = _household()
     try:
         return int(household.funds.money)
-    except Exception:
+    except Exception:  # no household or no funds yet: unknown, never guessed
         return None
 
 
-def _reason(name):
+def _reason(name: str) -> int | None:
     try:
         from protocolbuffers import Consts_pb2
 
         value = getattr(Consts_pb2, name, None)
         return None if value is None else int(value)
     except Exception as ex:
-        speech.log_line(f'place: no funds reason {name} ({ex!r})')
+        simsight_log.line(f'place: no funds reason {name} ({ex!r})')
         return None
 
 
-def _charge(amount):
+def _charge(amount: Any) -> bool:
     """Take exactly amount. True only when the balance fell by exactly that.
     A partial change (an exception half way) is given back; a change we
     cannot see is treated as not charged only when the balance is unknown
@@ -205,20 +286,17 @@ def _charge(amount):
     after = funds()
     if before is not None and after is not None:
         taken_now = before - after
-        if taken_now == amount:
-            ok = True
-        else:
-            ok = False
-            if taken_now > 0:
-                speech.log_line(f'place: partial charge {taken_now} of {amount}; giving it back')
-                _refund(taken_now)
+        ok = taken_now == amount
+        if not ok and taken_now > 0:
+            simsight_log.line(f'place: partial charge {taken_now} of {amount}; giving it back')
+            _refund(taken_now)
     else:
         ok = taken and error is None
-    speech.log_line(f'place: charge {amount} -> {ok} ({before} to {after}, error {error!r})')
+    simsight_log.line(f'place: charge {amount} -> {ok} ({before} to {after}, error {error!r})')
     return ok
 
 
-def _refund(amount):
+def _refund(amount: Any) -> bool:
     """Give amount back. Whatever could not be paid is kept as a debt of
     this household that its next build action pays first (settle_owed)."""
     amount = int(amount or 0)
@@ -242,35 +320,32 @@ def _refund(amount):
     else:
         after = before
     owner = _household_id()
+    owed = _state.owed
     if paid < amount and owner is not None:
-        _owed[owner] = _owed.get(owner, 0) + amount - paid
-    speech.log_line(
-        f'place: refund {amount} paid {paid} ({before} to {after}, error {error!r}, owed {_owed.get(owner, 0)})'
+        owed[owner] = owed.get(owner, 0) + amount - paid
+    simsight_log.line(
+        f'place: refund {amount} paid {paid} ({before} to {after}, error {error!r}, owed {owed.get(owner, 0)})'
     )
     return paid == amount
 
 
-def settle_owed():
+def settle_owed() -> int:
     """Pay this household any refund that failed earlier. Returns the
     amount paid now. Another household's debt is never touched."""
     owner = _household_id()
-    owed = _owed.pop(owner, 0) if owner is not None else 0
+    owed = _state.owed.pop(owner, 0) if owner is not None else 0
     if owed <= 0:
         return 0
     if _refund(owed):
-        speech.log_line(f'place: settled {owed} owed to household {owner}')
+        simsight_log.line(f'place: settled {owed} owed to household {owner}')
         return owed
     return 0
-
-
-def owed():
-    return _owed.get(_household_id(), 0)
 
 
 # ------------------------------------------------------------ what it needs
 
 
-def requirement(def_id):
+def requirement(def_id: Any) -> str | None:
     """'slot', 'wall', 'ceiling', 'fence', 'terrain', 'water', None (the floor
     will do) or 'unknown' when the game would not say."""
     try:
@@ -278,16 +353,9 @@ def requirement(def_id):
 
         flags = int(build_buy.get_object_placement_flags(def_id))
     except Exception as ex:
-        speech.log_line(f'place: no placement flags for {def_id} ({ex!r})')
+        simsight_log.line(f'place: no placement flags for {def_id} ({ex!r})')
         return 'unknown'
-    for mask, need in (
-        (FLAG_SLOT, 'slot'),
-        (FLAG_WALL, 'wall'),
-        (FLAG_CEILING, 'ceiling'),
-        (FLAG_FENCE, 'fence'),
-        (FLAG_WATER, 'water'),
-        (FLAG_TERRAIN, 'terrain'),
-    ):
+    for mask, need in _REQUIREMENTS:
         if flags & mask:
             return need
     return None
@@ -318,63 +386,76 @@ _NEEDS = {
 # ------------------------------------------------------------------- surfaces
 
 
-def _surface_rank(obj):
+def _surface_rank(obj: Any) -> int:
     try:
         name = str(obj.definition.name or '').lower()
-    except Exception:
+    except AttributeError:  # no definition: rank by its class
         name = type(obj).__name__.lower()
     for words, rank in SURFACE_RANK:
         if any(word in name for word in words):
             return rank
-    return 2
+    return _DEFAULT_RANK
 
 
-def _free_slot(obj, position, level, accepts=None):
+def _accepts_object(slot: Any, obj: Any) -> bool:
+    try:
+        return not slot.is_deco_slot() and slot.empty and bool(slot.is_valid_for_placement(obj=obj))
+    except Exception:  # EA's native slot check can raise anything: not this slot
+        return False
+
+
+def _free_slot_on(surface: Any, obj: Any) -> Any:
+    try:
+        slots = list(surface.get_runtime_slots_gen())
+    except Exception:  # a surface without slots
+        return None
+    for slot in slots:
+        if _accepts_object(slot, obj):
+            return slot
+    return None
+
+
+def _free_slot(
+    obj: Any, position: Any, level: int, accepts: Callable[[Any], bool] | None = None
+) -> tuple[Any, Any] | None:
     """(surface, slot) near the cursor that the game accepts for this object."""
     import services
 
-    nearby = []
     lot = services.active_lot()
     household = _household_id()
-    for surface in list(services.object_manager().values()):
+
+    def entry(surface: Any) -> tuple[int, float, Any] | None:
+        """(rank, distance squared, surface) when surface may take obj."""
         try:
             if surface is obj or getattr(surface, 'is_sim', False) or surface.is_in_inventory():
-                continue
+                return None
             if surface.is_hidden() or not lot.is_position_on_lot(surface.position):
-                continue
+                return None
             owner = surface.get_household_owner_id()
             if owner and owner != household:
-                continue
+                return None
             if int(surface.level) != int(level):
-                continue
+                return None
             dx = float(surface.position.x) - float(position.x)
             dz = float(surface.position.z) - float(position.z)
             if accepts is None and (abs(dx) > SLOT_SEARCH or abs(dz) > SLOT_SEARCH):
-                continue
+                return None
             if accepts is not None and not accepts(surface.position):
-                continue
-            nearby.append((_surface_rank(surface), dx * dx + dz * dz, surface))
-        except Exception:
-            continue
+                return None
+            return _surface_rank(surface), dx * dx + dz * dz, surface
+        except Exception:  # an object in an odd state is simply not a candidate
+            return None
+
+    nearby = [row for row in map(entry, list(services.object_manager().values())) if row]
     nearby.sort(key=lambda item: (item[0], item[1]))
     for _rank, _distance, surface in nearby:
-        try:
-            slots = list(surface.get_runtime_slots_gen())
-        except Exception:
-            continue
-        for slot in slots:
-            try:
-                if slot.is_deco_slot() or not slot.empty:
-                    continue
-                if not slot.is_valid_for_placement(obj=obj):
-                    continue
-            except Exception:
-                continue
+        slot = _free_slot_on(surface, obj)
+        if slot is not None:
             return surface, slot
     return None
 
 
-def _put_in_slot(obj, surface, slot):
+def _put_in_slot(obj: Any, surface: Any, slot: Any) -> bool:
     for label, call in (
         ('add_child', lambda: slot.add_child(obj)),
         ('slot_object', lambda: surface.slot_object(parent_slot=slot, slotting_object=obj)),
@@ -382,7 +463,7 @@ def _put_in_slot(obj, surface, slot):
         try:
             call()
         except Exception as ex:
-            speech.log_line(f'place: {label} failed ({ex!r})')
+            simsight_log.line(f'place: {label} failed ({ex!r})')
             continue
         if getattr(obj, 'parent', None) is not None:
             return True
@@ -392,7 +473,9 @@ def _put_in_slot(obj, surface, slot):
 # ------------------------------------------------------------------ the spot
 
 
-def _good_location(obj, position, orientation, routing_surface, ignore=()):
+def _good_location(
+    obj: Any, position: Any, orientation: Any, routing_surface: Any, ignore: Sequence[Any] = ()
+) -> tuple[Any, Any] | None:
     """(translation, orientation) found by the game near position, or None."""
     try:
         import placement
@@ -409,44 +492,44 @@ def _good_location(obj, position, orientation, routing_surface, ignore=()):
         )
         result = placement.find_good_location(context)
     except Exception as ex:
-        speech.log_line(f'place: fgl raised {ex!r}')
+        simsight_log.line(f'place: fgl raised {ex!r}')
         return None
     if result and result[0] is not None:
-        speech.log_line(f'place: fgl chose {result[0]}')
+        simsight_log.line(f'place: fgl chose {result[0]}')
         return result[0], result[1]
-    speech.log_line(
+    simsight_log.line(
         f'place: fgl found nothing: {result[2] if result and len(result) > 2 else result}'
     )
     return None
 
 
-def _yaw(angle):
+def _yaw(angle: float) -> Any:
     import sims4.math
 
     return sims4.math.angle_to_yaw_quaternion(angle)
 
 
-def _destroy(obj):
+def _destroy(obj: Any) -> bool:
     try:
         obj.destroy(source=obj, cause='SimSight placement undo')
         return True
     except Exception as ex:
-        speech.log_line(f'place: destroy failed ({ex!r})')
+        simsight_log.line(f'place: destroy failed ({ex!r})')
         return False
 
 
-def _register(obj):
+def _register(obj: Any) -> bool:
     try:
         import build_buy
 
         build_buy.add_object_to_buildbuy_system(obj.id)
         return True
     except Exception as ex:
-        speech.log_line(f'place: add_object_to_buildbuy_system failed ({ex!r})')
+        simsight_log.line(f'place: add_object_to_buildbuy_system failed ({ex!r})')
         return False
 
 
-def _drop_native_hand(serial):
+def _drop_native_hand(serial: int) -> bool:
     """Ask the client to put down whatever EA's own placement tool holds, so
     the same product is never bought twice (here, and by a later native
     click). The object is created only after the client answers."""
@@ -459,38 +542,45 @@ def _drop_native_hand(serial):
         )
         return True
     except Exception as ex:
-        speech.log_line(f'place: could not ask the client to drop its tool ({ex!r})')
+        simsight_log.line(f'place: could not ask the client to drop its tool ({ex!r})')
         return False
 
 
-def _where(obj, cursor_position, level):
+def _where(obj: Any, cursor_position: Any, level: int) -> str:
     import simsight_scanner as scanner
 
     try:
         entry = scanner._entry_for(obj, cursor_position, level, False, '', '')
         return scanner._place_part(entry)
-    except Exception:
+    except Exception:  # a detail of the report: never stops it
         return ''
 
 
-def _name_parts(obj):
+def _name_parts(obj: Any) -> Any:
     import simsight_scanner as scanner
 
     try:
         entry = scanner._entry_for(obj, obj.position, int(obj.level), False, '', '')
         return scanner._name_part(entry)
-    except Exception:
+    except Exception:  # a detail of the report: never stops it
         return _text('the object', 'obiekt')
 
 
-def tile_key(position, level):
+def tile_key(position: Any, level: int) -> _TileKey:
     return (int(math.floor(float(position.x))), int(math.floor(float(position.z))), int(level))
 
 
 class LotArea:
     """A room or a section of the unroomed lot on a particular floor."""
 
-    def __init__(self, index, centers, points, room_at, room_id):
+    def __init__(
+        self,
+        index: int | None,
+        centers: Sequence[Any],
+        points: list[Any],
+        room_at: Callable[[Any], Any],
+        room_id: Any,
+    ) -> None:
         self.index = index
         self.centers = centers
         self.points = points
@@ -498,10 +588,10 @@ class LotArea:
         self.room_id = room_id
 
     @staticmethod
-    def distance(point, center):
+    def distance(point: Any, center: Any) -> float:
         return (point.x - center.x) ** 2 + (point.z - center.z) ** 2
 
-    def contains(self, point):
+    def contains(self, point: Any) -> bool:
         room_id = self.room_at(point)
         if self.room_id or room_id:
             return room_id == self.room_id
@@ -511,21 +601,28 @@ class LotArea:
         )
 
 
-def _guided_areas(lot, level, routing_surface):
-    import build_buy
+def _floor_point(x: float, z: float, routing_surface: Any) -> Any:
+    """The terrain point at (x, z), or None where the height is unknown."""
     import terrain
     from sims4.math import Vector3
-    import simsight_plus_rooms as room_reader
 
-    centers = lot.get_uniform_sampling_of_points(3, 3)
-    zone_id = _zone_id()
-    named_rooms = {room.rid: room for room in room_reader.scan_rooms() if room.level == level}
+    height = terrain.get_terrain_height(x, z, routing_surface=routing_surface)
+    if height is None or not math.isfinite(height):
+        return None
+    return Vector3(x, height, z)
 
-    def room_at(point):
-        room_id = build_buy.get_room_id(zone_id, point, level)
-        return room_id if room_id in named_rooms else None
 
-    sections = {}
+def _sections(
+    lot: Any,
+    level: int,
+    routing_surface: Any,
+    centers: Sequence[Any],
+    room_at: Callable[[Any], Any],
+) -> dict[int, list[Any]]:
+    """Points outside the named rooms, grouped by the nearest of the 3x3 centres."""
+    import build_buy
+
+    sections: dict[int, list[Any]] = {}
     for sample in lot.get_uniform_sampling_of_points(
         min(33, max(9, math.ceil(lot.size_x / 2))), min(33, max(9, math.ceil(lot.size_z / 2)))
     ):
@@ -533,24 +630,45 @@ def _guided_areas(lot, level, routing_surface):
             continue
         if level != 0 and not build_buy.has_floor_at_location(sample, level):
             continue
-        height = terrain.get_terrain_height(sample.x, sample.z, routing_surface=routing_surface)
-        if height is None or not math.isfinite(height):
+        point = _floor_point(sample.x, sample.z, routing_surface)
+        if point is None:
             continue
-        point = Vector3(sample.x, height, sample.z)
-        room_id = room_at(point)
-        if room_id is None:
+        if room_at(point) is None:
             index = min(range(len(centers)), key=lambda i: LotArea.distance(point, centers[i]))
             sections.setdefault(index, []).append(point)
+    return sections
 
+
+def _room_points(lot: Any, level: int, routing_surface: Any, room: Any) -> list[Any]:
+    import build_buy
+
+    points = []
+    for x, z in room.tiles:
+        point = _floor_point(x, z, routing_surface)
+        if point is None:
+            continue
+        if lot.is_position_on_lot(point) and not build_buy.is_location_pool(point, level):
+            points.append(point)
+    return points
+
+
+def _guided_areas(lot: Any, level: int, routing_surface: Any) -> Iterator[_Area]:
+    """The floor's named rooms, then the rest of the lot in up to nine sections."""
+    import build_buy
+    import simsight_plus_rooms as room_reader
+    from sims4.math import Vector3
+
+    centers = lot.get_uniform_sampling_of_points(3, 3)
+    zone_id = _zone_id()
+    named_rooms = {room.rid: room for room in room_reader.scan_rooms() if room.level == level}
+
+    def room_at(point: Any) -> Any:
+        room_id = build_buy.get_room_id(zone_id, point, level)
+        return room_id if room_id in named_rooms else None
+
+    sections = _sections(lot, level, routing_surface, centers, room_at)
     for room_id, room in named_rooms.items():
-        points = []
-        for x, z in room.tiles:
-            height = terrain.get_terrain_height(x, z, routing_surface=routing_surface)
-            if height is None or not math.isfinite(height):
-                continue
-            point = Vector3(x, height, z)
-            if lot.is_position_on_lot(point) and not build_buy.is_location_pool(point, level):
-                points.append(point)
+        points = _room_points(lot, level, routing_surface, room)
         if not points:
             continue
         x, z = room.center
@@ -563,7 +681,7 @@ def _guided_areas(lot, level, routing_surface):
         yield center, LotArea(index, centers, points, room_at, None), None
 
 
-def guided_placement():
+def guided_placement() -> bool:
     """Choose a floor, then choose an area and confirm the purchase."""
     import services
     import simsight_build as build
@@ -599,13 +717,13 @@ def guided_placement():
     return hub._window('guided placement', 'choose a floor to search', rows)
 
 
-def _floor_name(level):
+def _floor_name(level: int) -> str:
     if level == 0:
         return _text('Ground floor', 'Parter')
     return _text(f'Floor {level}', f'Piętro {level}')
 
 
-def _guided_current(item, owner):
+def _guided_current(item: dict[str, Any], owner: Any) -> bool:
     import simsight_build as build
     import simsight_keys as keys
 
@@ -624,32 +742,10 @@ def _guided_current(item, owner):
     return False
 
 
-def _choose_area(item, owner, level):
-    import routing
-    import services
-    import simsight_hub as hub
-    import simsight_menu as menu
+def _area_labels(lot: Any, areas: list[_Area]) -> list[str]:
+    """Each area's compass direction from the lot centre, with its room."""
     import simsight_scanner as scanner
 
-    if not _guided_current(item, owner):
-        return False
-    lot = services.active_lot()
-    surface = routing.SurfaceIdentifier(_zone_id(), level, routing.SurfaceType.SURFACETYPE_WORLD)
-    try:
-        definition = services.definition_manager().get(item['id'], get_fallback_definition_id=False)
-        price = int(definition.price)
-        areas = list(_guided_areas(lot, level, surface))
-    except Exception as ex:
-        speech.log_line(f'place: could not sample the lot ({ex!r})')
-        areas = []
-    if not areas:
-        _say_text('No areas found on that floor.', 'Nie znaleziono obszarów na tym piętrze.')
-        return False
-
-    def buy(area):
-        return _guided_current(item, owner) and place(area.points[0], level, surface, area=area)
-
-    rows = []
     labels = []
     room_number = 0
     for center, area, room_name in areas:
@@ -665,22 +761,117 @@ def _choose_area(item, owner, level):
                 room_name or _text('Room {}', 'Pokój {}').format(room_number), label
             )
         labels.append(label)
+    return labels
+
+
+def _choose_area(item: dict[str, Any], owner: Any, level: int) -> bool:
+    import routing
+    import services
+    import simsight_hub as hub
+    import simsight_menu as menu
+
+    if not _guided_current(item, owner):
+        return False
+    lot = services.active_lot()
+    surface = routing.SurfaceIdentifier(_zone_id(), level, routing.SurfaceType.SURFACETYPE_WORLD)
+    try:
+        definition = services.definition_manager().get(item['id'], get_fallback_definition_id=False)
+        price = int(definition.price)
+        areas = list(_guided_areas(lot, level, surface))
+    except Exception as ex:
+        simsight_log.line(f'place: could not sample the lot ({ex!r})')
+        areas = []
+    if not areas:
+        _say_text('No areas found on that floor.', 'Nie znaleziono obszarów na tym piętrze.')
+        return False
+
+    def buy(area: LotArea) -> bool:
+        return _guided_current(item, owner) and place(area.points[0], level, surface, area=area)
+
+    labels = _area_labels(lot, areas)
     detail = _text(
         'Buy {} for {} simoleons if it fits.', 'Kup {} za {} simoleonów, jeśli się zmieści.'
     ).format(_product_name(), price)
+    rows = []
     for label, (center, area, _) in zip(labels, areas):
+        shown = label
         if labels.count(label) > 1:
-            label += _text(', {} metres from centre', ', {} metrów od środka').format(
+            shown += _text(', {} metres from centre', ', {} metrów od środka').format(
                 round(math.sqrt(LotArea.distance(center, lot.center)), 1)
             )
-        rows.append((menu._raw(label), menu._raw(detail), lambda value=area: buy(value)))
+        rows.append((menu._raw(shown), menu._raw(detail), lambda value=area: buy(value)))
     return hub._window('guided placement', 'choose an area to buy and place', rows)
 
 
 # -------------------------------------------------------------------- actions
 
 
-def _checks(position, level, key, guard, exact=False):
+def _repeated(item: dict[str, Any], key: _TileKey, guard: bool) -> bool:
+    """A second Enter on the tile just placed: asks for a third (spoken)."""
+    if not (
+        guard
+        and key in _state.repeat_keys
+        and time.monotonic() - _state.repeat_time < REPEAT_GUARD_SECONDS
+    ):
+        return False
+    _state.repeat_time = 0.0
+    _say(
+        [
+            _text(
+                'Already placed here. Press Enter again to place another ',
+                'Już umieszczono tutaj. Naciśnij Enter ponownie, aby umieścić kolejny: ',
+            ),
+            item['name'] or _product_name(),
+            '.',
+        ]
+    )
+    return True
+
+
+def _catalog_price(item: dict[str, Any]) -> int | None:
+    """The product's price, or None (spoken, product forgotten) when it is gone."""
+    try:
+        import services
+
+        definition = services.definition_manager().get(item['id'], get_fallback_definition_id=False)
+        price = int(getattr(definition, 'price', 0) or 0)
+    except Exception:  # treated as a product that is gone
+        definition, price = None, 0
+    if definition is None:
+        forget()
+        _say_text(
+            'That catalog object is no longer available.',
+            'Ten obiekt z katalogu nie jest już dostępny.',
+        )
+        return None
+    return price
+
+
+def _point_refused(position: Any, level: int, water: bool) -> bool:
+    """The point is off the lot or in a pool (unless water is wanted); spoken."""
+    try:
+        import build_buy
+        import services
+
+        if not services.active_lot().is_position_on_lot(position):
+            _say_text('That point is not on this lot.', 'Ten punkt nie należy do tej parceli.')
+            return True
+        if build_buy.is_location_pool(position, level) and not water:
+            _say_text('That point is in a pool.', 'Ten punkt jest w basenie.')
+            return True
+    except Exception as ex:
+        simsight_log.line(f'place: tile check failed ({ex!r})')
+        _say_text(
+            'This point could not be checked, so nothing was bought.',
+            'Nie udało się sprawdzić tego punktu, więc nic nie kupiono.',
+        )
+        return True
+    return False
+
+
+def _checks(
+    position: Any, level: int, key: _TileKey, guard: bool, exact: bool = False
+) -> tuple[dict[str, Any], int, str | None] | None:
     """Everything that can refuse before an object exists. Speaks the refusal;
     returns (item, price, need) or None."""
     item = product()
@@ -693,18 +884,7 @@ def _checks(position, level, key, guard, exact=False):
     if not in_build_mode():
         _say_text('Enter Build mode first.', 'Najpierw włącz tryb budowania.')
         return None
-    if guard and key in _repeat[0] and time.monotonic() - _repeat[1] < REPEAT_GUARD_SECONDS:
-        _repeat[1] = 0.0
-        _say(
-            [
-                _text(
-                    'Already placed here. Press Enter again to place another ',
-                    'Już umieszczono tutaj. Naciśnij Enter ponownie, aby umieścić kolejny: ',
-                ),
-                item['name'] or _product_name(),
-                '.',
-            ]
-        )
+    if _repeated(item, key, guard):
         return None
     need = requirement(item['id'])
     # Bare ground, water, ceiling and fence objects go through here only from
@@ -716,19 +896,8 @@ def _checks(position, level, key, guard, exact=False):
     if need in _NEEDS and not experimental:
         _say_text(*_NEEDS[need])
         return None
-    try:
-        import services
-
-        definition = services.definition_manager().get(item['id'], get_fallback_definition_id=False)
-        price = int(getattr(definition, 'price', 0) or 0)
-    except Exception:
-        definition, price = None, 0
-    if definition is None:
-        forget()
-        _say_text(
-            'That catalog object is no longer available.',
-            'Ten obiekt z katalogu nie jest już dostępny.',
-        )
+    price = _catalog_price(item)
+    if price is None:
         return None
     money = funds()
     if money is not None and price > money:
@@ -737,36 +906,34 @@ def _checks(position, level, key, guard, exact=False):
             f'Za mało pieniędzy. Kosztuje {price}, a masz {money}.',
         )
         return None
-    try:
-        import build_buy
-        import services
-
-        if not services.active_lot().is_position_on_lot(position):
-            _say_text('That point is not on this lot.', 'Ten punkt nie należy do tej parceli.')
-            return None
-        if build_buy.is_location_pool(position, level) and not (experimental and need == 'water'):
-            _say_text('That point is in a pool.', 'Ten punkt jest w basenie.')
-            return None
-    except Exception as ex:
-        speech.log_line(f'place: tile check failed ({ex!r})')
-        _say_text(
-            'This point could not be checked, so nothing was bought.',
-            'Nie udało się sprawdzić tego punktu, więc nic nie kupiono.',
-        )
+    if _point_refused(position, level, water=experimental and need == 'water'):
         return None
     return item, price, need
 
 
-def place(
-    position,
-    level,
-    routing_surface,
-    angle=0.0,
-    exact=False,
-    surface_id=None,
-    chair_request=None,
-    area=None,
-):
+def _start_ack_timer(serial: int) -> None:
+    try:
+        import threading
+
+        import simsight_pump as pump
+
+        timer = threading.Timer(ACK_SECONDS, lambda: pump.post(_ack_timeout, serial))
+        timer.daemon = True
+        timer.start()
+    except Exception as ex:
+        simsight_log.line(f'place: no acknowledgement timer ({ex!r})')
+
+
+def place(  # noqa: PLR0913, PLR0917 - its callers (grid, surfaces, chairs, furnishing) pass these
+    position: Any,
+    level: int,
+    routing_surface: Any,
+    angle: float = 0.0,
+    exact: bool = False,
+    surface_id: Any = None,
+    chair_request: ChairRequest | None = None,
+    area: LotArea | None = None,
+) -> bool:
     """Ctrl+Alt+Enter on the grid: ask the client to put down EA's held
     product; the object is bought and placed when it answers (simsight.buildhand).
     exact (the Build cursor): put it at position and angle as they are,
@@ -774,70 +941,58 @@ def place(
     True when the request went out."""
     key = tile_key(position, level)
     now = time.monotonic()
-    if _pending['args'] is not None and now - _pending['at'] < ACK_SECONDS:
+    if _pending.placement is not None and now - _pending.at < ACK_SECONDS:
         _say_text('Still placing the last one.', 'Trwa umieszczanie poprzedniego obiektu.')
         return False
     settle_owed()
     if _checks(position, level, key, guard=area is None, exact=exact) is None:
         return False
-    _pending['serial'] += 1
-    serial = _pending['serial']
-    args = (position, level, routing_surface, angle, key, exact)
-    if area is not None:
-        args += (area,)
-    _pending.update(
-        at=now,
-        args=args,
-        zone=_zone_id(),
-        product=product(),
-        household=_household_id(),
-        surface_id=surface_id,
-        chair_request=chair_request,
-    )
+    _pending.serial += 1
+    serial = _pending.serial
+    _pending.at = now
+    _pending.placement = _Placement(position, level, routing_surface, angle, key, exact, area)
+    _pending.zone = _zone_id()
+    _pending.product = product()
+    _pending.household = _household_id()
+    _pending.surface_id = surface_id
+    _pending.chair_request = chair_request
     if not _drop_native_hand(serial):
-        _pending['args'] = None
+        _pending.placement = None
         _say_text(
             'The Build tool is not answering. Nothing was bought.',
             'Narzędzie budowania nie odpowiada. Nic nie kupiono.',
         )
         return False
-    try:
-        import threading
-        import simsight_pump as pump
-
-        timer = threading.Timer(ACK_SECONDS, lambda: pump.post(_ack_timeout, serial))
-        timer.daemon = True
-        timer.start()
-    except Exception as ex:
-        speech.log_line(f'place: no acknowledgement timer ({ex!r})')
+    _start_ack_timer(serial)
     return True
 
 
-def _ack_timeout(serial):
-    if serial == _pending['serial'] and _pending['args'] is not None:
-        _pending['args'] = None
-        speech.log_line(f'place: no buildhand acknowledgement for {serial}')
+def _ack_timeout(serial: int) -> None:
+    if serial == _pending.serial and _pending.placement is not None:
+        _pending.placement = None
+        simsight_log.line(f'place: no buildhand acknowledgement for {serial}')
         _say_text(
             'The Build tool did not answer. Nothing was bought.',
             'Narzędzie budowania nie odpowiedziało. Nic nie kupiono.',
         )
 
 
-def cancel_pending():
+def cancel_pending() -> None:
     """A mode, product or grid change: an unanswered placement is dropped."""
-    _pending['args'] = None
+    _pending.placement = None
 
 
-def acknowledged(serial, ok):
+def acknowledged(serial: int, ok: bool) -> bool:
     """The client answered drop request serial. Place only when it put the
     product down (ok) and nothing changed meanwhile: same zone, still Build
     mode, same product."""
-    if serial != _pending['serial'] or _pending['args'] is None:
+    placement = _pending.placement
+    if serial != _pending.serial or placement is None:
         return False
-    args, _pending['args'] = _pending['args'], None
-    if time.monotonic() - _pending['at'] > ACK_SECONDS:
+    _pending.placement = None
+    if time.monotonic() - _pending.at > ACK_SECONDS:
         # A backlogged pump may run this before the timer's own turn.
-        speech.log_line(f'place: acknowledgement {serial} arrived too late')
+        simsight_log.line(f'place: acknowledgement {serial} arrived too late')
         _say_text(
             'The Build tool did not answer. Nothing was bought.',
             'Narzędzie budowania nie odpowiedziało. Nic nie kupiono.',
@@ -851,18 +1006,18 @@ def acknowledged(serial, ok):
         return False
     item = product()
     if (
-        _pending.get('zone') != _zone_id()
+        _pending.zone != _zone_id()
         or not in_build_mode()
-        or item is not _pending.get('product')
-        or _household_id() != _pending.get('household')
+        or item is not _pending.product
+        or _household_id() != _pending.household
     ):
-        speech.log_line(f'place: acknowledgement {serial} arrived after a change; dropped')
+        simsight_log.line(f'place: acknowledgement {serial} arrived after a change; dropped')
         return False
-    return _execute(*args)
+    return _execute(placement)
 
 
-def _execute(position, level, routing_surface, angle, key, exact=False, area=None):
-    checked = _checks(position, level, key, guard=False, exact=exact)
+def _execute(p: _Placement) -> bool:
+    checked = _checks(p.position, p.level, p.key, guard=False, exact=p.exact)
     if checked is None:
         return False
     item, price, need = checked
@@ -871,16 +1026,16 @@ def _execute(position, level, routing_surface, angle, key, exact=False, area=Non
 
         obj = create_object(item['id'])
     except Exception as ex:
-        speech.log_line(f'place: create_object raised {ex!r}')
+        simsight_log.line(f'place: create_object raised {ex!r}')
         obj = None
     if obj is None:
         _say_text('The game could not create that object.', 'Gra nie mogła utworzyć tego obiektu.')
         return False
     try:
-        args = (obj, item, price, need, position, level, routing_surface, angle, key, exact)
-        return _finish(*args) if area is None else _finish(*args, area=area)
+        return _finish(obj, item, price, need, p)
     except Exception as ex:
-        speech.log_line(f'place: placement raised {ex!r}; removing the object')
+        simsight_log.error('place: placement')
+        simsight_log.line(f'place: placement raised {ex!r}; removing the object')
         _destroy(obj)
         _say_text(
             'The game could not place that object, so nothing was bought.',
@@ -889,7 +1044,7 @@ def _execute(position, level, routing_surface, angle, key, exact=False, area=Non
         return False
 
 
-def _area_location(obj, area, level, routing_surface):
+def _area_location(obj: Any, area: LotArea, level: int, routing_surface: Any) -> Any:
     import build_buy
     import services
     import sims4.math
@@ -914,284 +1069,334 @@ def _area_location(obj, area, level, routing_surface):
     return None
 
 
-def _finish(
-    obj, item, price, need, position, level, routing_surface, angle, key, exact=False, area=None
-):
-    """Put a freshly created obj in place, then own, register and pay for
-    it. Any refusal removes it; an exception is handled by the caller."""
-    surface = None
-    surface_id = _pending.get('surface_id')
-    chair_request = _pending.get('chair_request')
+def _refuse(obj: Any, en: str, pl: str) -> None:
+    """Remove the unpaid object and say why."""
+    _destroy(obj)
+    _say_text(en, pl)
+
+
+def _chosen_slot(obj: Any, item: dict[str, Any], p: _Placement) -> tuple[Any, Any] | None:
+    """The chair seat or focused-surface slot the request named, rechecked."""
+    chair_request = _pending.chair_request
     if chair_request is not None:
         import simsight_chair_snap as chair_snap
 
-        found = chair_snap.validate(chair_request, obj, item, position, level)
+        found = chair_snap.validate(chair_request, obj, item, p.position, p.level)
         if found is None:
-            _destroy(obj)
-            _say_text(
+            _refuse(
+                obj,
                 'The chair seat changed or the game refused it. Nothing was bought.',
                 'Miejsce na krzesło zmieniło się albo gra je odrzuciła. Nic nie kupiono.',
             )
-            return False
-        need = 'slot'
-    elif surface_id is not None:
-        import simsight_layers as layers
+        return found
+    import simsight_layers as layers
 
-        found = layers.selected_surface_slot(surface_id, obj, level)
-        if found is None:
-            _destroy(obj)
-            _say_text(
-                'The focused surface changed or has no compatible free slot. Nothing was bought.',
-                'Wybrana powierzchnia zmieniła się albo nie ma zgodnego wolnego miejsca. Nic nie kupiono.',
+    found = layers.selected_surface_slot(_pending.surface_id, obj, p.level)
+    if found is None:
+        _refuse(
+            obj,
+            'The focused surface changed or has no compatible free slot. Nothing was bought.',
+            'Wybrana powierzchnia zmieniła się albo nie ma zgodnego wolnego miejsca. Nic nie kupiono.',
+        )
+    return found
+
+
+def _chair_attached(surface: Any, slot: Any, obj: Any) -> bool:
+    """No chair request, or the chair sits in its seat."""
+    if _pending.chair_request is None:
+        return True
+    import simsight_chair_snap as chair_snap
+
+    return chair_snap.attached(surface, slot, obj)
+
+
+def _into_slot(obj: Any, p: _Placement, found: tuple[Any, Any] | None) -> tuple[Any, Any] | None:
+    """Put obj into the named slot, or a free one nearby (in the area)."""
+    if found is None:
+        found = (
+            _free_slot(obj, p.position, p.level)
+            if p.area is None
+            else _free_slot(obj, p.position, p.level, accepts=p.area.contains)
+        )
+    if found is None or not _put_in_slot(obj, found[0], found[1]):
+        if p.area is None:
+            _refuse(
+                obj,
+                'It needs a free spot on a desk or table. Move the cursor onto one.',
+                'To wymaga wolnego miejsca na biurku lub stole. Przesuń kursor na taki mebel.',
             )
-            return False
+        else:
+            _refuse(
+                obj,
+                'No compatible free surface in that area. Nothing was bought.',
+                'Brak pasującej wolnej powierzchni w tym obszarze. Nic nie kupiono.',
+            )
+        return None
+    if not _chair_attached(found[0], found[1], obj):
+        _refuse(
+            obj,
+            'The chair did not attach to its seat. Nothing was bought.',
+            'Krzesło nie zostało przypięte do miejsca. Nic nie kupiono.',
+        )
+        return None
+    return found
+
+
+def _move(obj: Any, what: str, move: Callable[[], Any]) -> bool:
+    try:
+        move()
+        return True
+    except Exception as ex:
+        simsight_log.line(f'place: {what} raised {ex!r}')
+        _refuse(
+            obj, 'The game could not position that object.', 'Gra nie mogła ustawić tego obiektu.'
+        )
+        return False
+
+
+def _exactly(obj: Any, item: dict[str, Any], p: _Placement) -> bool:
+    """At the Build cursor's position and angle, if the game's test agrees."""
+    import simsight_tiles as tiles
+
+    ok, why = tiles.test_fit(obj, item['id'], p.position, p.angle, p.level)
+    if ok is False:
+        _refuse(
+            obj,
+            f'It no longer fits there ({why}), so nothing was bought.',
+            f'Już się tam nie mieści ({why}), więc nic nie kupiono.',
+        )
+        return False
+    return _move(
+        obj,
+        'exact move_to',
+        lambda: obj.move_to(
+            translation=p.position, orientation=_yaw(p.angle), routing_surface=p.routing_surface
+        ),
+    )
+
+
+def _searched(obj: Any, p: _Placement) -> bool:
+    """Where the game finds room near the cursor, or anywhere in the area."""
+    spot = (
+        _good_location(obj, p.position, _yaw(p.angle), p.routing_surface)
+        if p.area is None
+        else _area_location(obj, p.area, p.level, p.routing_surface)
+    )
+    if spot is None:
+        if p.area is None:
+            _refuse(
+                obj,
+                'No room for it here. Try another point.',
+                'Brak tu miejsca. Wybierz inny punkt.',
+            )
+        else:
+            _refuse(
+                obj,
+                'It could not fit in that area. Nothing was bought.',
+                'Obiekt nie mieści się w tym obszarze. Nic nie kupiono.',
+            )
+        return False
+    return _move(
+        obj,
+        'move_to',
+        lambda: obj.move_to(
+            translation=spot[0], orientation=spot[1], routing_surface=p.routing_surface
+        ),
+    )
+
+
+def _position(
+    obj: Any, item: dict[str, Any], need: str | None, p: _Placement
+) -> tuple[Any, Any] | None:
+    """Put obj in place: (surface, slot) for a slot, (None, None) elsewhere;
+    None when refused (obj removed, refusal spoken)."""
+    found = None
+    if _pending.chair_request is not None or _pending.surface_id is not None:
+        found = _chosen_slot(obj, item, p)
+        if found is None:
+            return None
         need = 'slot'
     if need == 'slot':
-        if surface_id is None and chair_request is None:
-            found = (
-                _free_slot(obj, position, level)
-                if area is None
-                else _free_slot(obj, position, level, accepts=area.contains)
-            )
-        if found is None or not _put_in_slot(obj, found[0], found[1]):
-            _destroy(obj)
-            if area is None:
-                _say_text(
-                    'It needs a free spot on a desk or table. Move the cursor onto one.',
-                    'To wymaga wolnego miejsca na biurku lub stole. Przesuń kursor na taki mebel.',
-                )
-            else:
-                _say_text(
-                    'No compatible free surface in that area. Nothing was bought.',
-                    'Brak pasującej wolnej powierzchni w tym obszarze. Nic nie kupiono.',
-                )
+        return _into_slot(obj, p, found)
+    placed = _exactly(obj, item, p) if p.exact else _searched(obj, p)
+    return (None, None) if placed else None
 
-            return False
-        surface = found[0]
-        if chair_request is not None and not chair_snap.attached(surface, found[1], obj):
-            _destroy(obj)
-            _say_text(
-                'The chair did not attach to its seat. Nothing was bought.',
-                'Krzesło nie zostało przypięte do miejsca. Nic nie kupiono.',
-            )
-            return False
-    elif exact:
-        import simsight_tiles as tiles
 
-        ok, why = tiles.test_fit(obj, item['id'], position, angle, level)
-        if ok is False:
-            _destroy(obj)
-            _say_text(
-                f'It no longer fits there ({why}), so nothing was bought.',
-                f'Już się tam nie mieści ({why}), więc nic nie kupiono.',
-            )
-            return False
-        try:
-            obj.move_to(
-                translation=position, orientation=_yaw(angle), routing_surface=routing_surface
-            )
-        except Exception as ex:
-            speech.log_line(f'place: exact move_to raised {ex!r}')
-            _destroy(obj)
-            _say_text(
-                'The game could not position that object.', 'Gra nie mogła ustawić tego obiektu.'
-            )
-            return False
-    else:
-        spot = (
-            _good_location(obj, position, _yaw(angle), routing_surface)
-            if area is None
-            else _area_location(obj, area, level, routing_surface)
-        )
-        if spot is None:
-            _destroy(obj)
-            if area is None:
-                _say_text(
-                    'No room for it here. Try another point.',
-                    'Brak tu miejsca. Wybierz inny punkt.',
-                )
-            else:
-                _say_text(
-                    'It could not fit in that area. Nothing was bought.',
-                    'Obiekt nie mieści się w tym obszarze. Nic nie kupiono.',
-                )
-
-            return False
-        try:
-            obj.move_to(translation=spot[0], orientation=spot[1], routing_surface=routing_surface)
-        except Exception as ex:
-            speech.log_line(f'place: move_to raised {ex!r}')
-            _destroy(obj)
-            _say_text(
-                'The game could not position that object.', 'Gra nie mogła ustawić tego obiektu.'
-            )
-            return False
+def _finish(obj: Any, item: dict[str, Any], price: int, need: str | None, p: _Placement) -> bool:
+    """Put a freshly created obj in place, then own, register and pay for
+    it. Any refusal removes it; an exception is handled by the caller."""
+    placed = _position(obj, item, need, p)
+    if placed is None:
+        return False
+    surface, slot = placed
     owner = _household_id()
     if owner is None:
-        _destroy(obj)
-        _say_text(
+        _refuse(
+            obj,
             'No active household to own it, so nothing was bought.',
             'Brak aktywnej rodziny, która mogłaby go posiadać, więc nic nie kupiono.',
         )
         return False
     obj.set_household_owner_id(owner)
     if not _register(obj):
-        _destroy(obj)
-        _say_text(
+        _refuse(
+            obj,
             'The lot would not accept it, so nothing was bought.',
             'Parcela go nie przyjęła, więc nic nie kupiono.',
         )
         return False
-    if chair_request is not None and not chair_snap.attached(surface, found[1], obj):
-        _destroy(obj)
-        _say_text(
+    if not _chair_attached(surface, slot, obj):
+        _refuse(
+            obj,
             'The game did not retain the chair attachment. Nothing was bought.',
             'Gra nie zachowała przypięcia krzesła. Nic nie kupiono.',
         )
         return False
     if price and not _charge(price):
-        _destroy(obj)
-        _say_text(
+        _refuse(
+            obj,
             'Payment failed, so nothing was bought.',
             'Płatność nie powiodła się, więc nic nie kupiono.',
         )
         return False
     # Paid: from here on the object is the household's. Nothing below may
     # raise to the caller, whose clean-up would remove a paid object.
-    _after_payment(
-        obj, item, price, owner, surface, position, level, key, exact, guided=area is not None
-    )
+    _after_payment(obj, item, price, owner, surface, p)
     return True
 
 
+def _record(obj: Any, item: dict[str, Any], price: int, owner: Any, key: _TileKey) -> None:
+    _state.history.append(_Purchase(obj.id, price, item['name'], owner, _zone_id()))
+    del _state.history[:-MAX_HISTORY]
+    _last.update(obj_id=obj.id, household=owner, zone=_zone_id(), position=None)
+    _state.repeat_keys, _state.repeat_time = (key,), time.monotonic()
+
+
 def _after_payment(
-    obj, item, price, owner, surface, position, level, key, exact=False, guided=False
-):
+    obj: Any, item: dict[str, Any], price: int, owner: Any, surface: Any, p: _Placement
+) -> None:
     try:
-        _history.append((obj.id, price, item['name'], owner, _zone_id()))
-        del _history[:-MAX_HISTORY]
-        _last.update(obj_id=obj.id, household=owner, zone=_zone_id(), position=None)
-        _repeat[0], _repeat[1] = (key,), time.monotonic()
-    except Exception as ex:
-        _quiet_log(f'place: placed, but recording it failed ({ex!r})')
-    _quiet_log(
+        _record(obj, item, price, owner, p.key)
+    except Exception as ex:  # paid: nothing may raise past this point
+        simsight_log.line(f'place: placed, but recording it failed ({ex!r})')
+    simsight_log.line(
         'place: placed {} {!r} for {}'.format(getattr(obj, 'id', '?'), item.get('name'), price)
     )
     try:
-        if _pending.get('chair_request') is not None and surface is not None:
+        if _pending.chair_request is not None and surface is not None:
             import simsight_chair_snap as chair_snap
 
             chair_snap.announce(obj, item, price, surface)
-        elif exact and surface is None:
-            _announce_exact(obj, item, price, level, key)
+        elif p.exact and surface is None:
+            _announce_exact(obj, item, price, p.level, p.key)
         else:
-            _announce_placed(obj, item, price, surface, position, level, key, guided=guided)
-    except Exception as ex:
-        _quiet_log(f'place: placed, but the announcement failed ({ex!r})')
+            _announce_placed(obj, item, price, surface, p)
+    except Exception as ex:  # paid: nothing may raise past this point
+        simsight_log.line(f'place: placed, but the announcement failed ({ex!r})')
         try:
             _say_text('Placed.', 'Umieszczono.')
         except Exception:
-            pass
+            simsight_log.error('place: placed announcement')
 
 
-def _quiet_log(line):
-    try:
-        speech.log_line(line)
-    except Exception:
-        pass
-
-
-def _announce_placed(obj, item, price, surface, position, level, key, guided=False):
+def _note_landed(obj: Any, level: int, key: _TileKey) -> None:
+    """Remember where it landed: the repeat guard covers that tile too."""
     try:
         _last['position'] = obj.position
-        landed = tile_key(obj.position, int(getattr(obj, 'level', level)))
-        _repeat[0] = (key, landed)
+        _state.repeat_keys = (key, tile_key(obj.position, int(getattr(obj, 'level', level))))
     except Exception as ex:
-        speech.log_line(f'place: landed position unavailable ({ex!r})')
-    parts = [item['name'] or _product_name()]
+        simsight_log.line(f'place: landed position unavailable ({ex!r})')
+
+
+def _placed_where(obj: Any, surface: Any, p: _Placement) -> list[Any]:
     if surface is not None:
-        parts += [_text(' placed on ', ' umieszczono na: '), _name_parts(surface)]
-    elif guided:
-        parts += [
+        return [_text(' placed on ', ' umieszczono na: '), _name_parts(surface)]
+    if p.area is not None:
+        return [
             _text(' placed in the chosen area, ', ' umieszczono w wybranym obszarze, '),
-            _floor_name(level),
+            _floor_name(p.level),
         ]
-    else:
-        where = _where(obj, position, level)
-        if not where or where == lang.t('here'):
-            parts.append(_text(' placed at the cursor', ' umieszczono przy kursorze'))
-        else:
-            parts += [
-                _text(' placed', ' umieszczono'),
-                ', ',
-                where,
-                _text(' from the cursor', ' od kursora'),
-            ]
+    where = _where(obj, p.position, p.level)
+    if not where or where == lang.t('here'):
+        return [_text(' placed at the cursor', ' umieszczono przy kursorze')]
+    return [_text(' placed', ' umieszczono'), ', ', where, _text(' from the cursor', ' od kursora')]
+
+
+def _announce_placed(
+    obj: Any, item: dict[str, Any], price: int, surface: Any, p: _Placement
+) -> None:
+    _note_landed(obj, p.level, p.key)
+    parts = [item['name'] or _product_name(), *_placed_where(obj, surface, p)]
     parts.append(_text(f', {price} simoleons.', f', {price} simoleonów.'))
-    if _follow(obj, level):
+    if _follow(obj, p.level):
         parts.append(_text(' The cursor moved to it.', ' Kursor przesunięto do niego.'))
     _say(parts)
 
 
-def _announce_exact(obj, item, price, level, key):
+def _facing_part(f: Any, obj: Any) -> str | None:
+    import simsight_tiles as tiles
+
+    try:
+        import sims4.math
+
+        facing = f.facing_of(sims4.math.yaw_quaternion_to_angle(obj.orientation))
+        return _text(
+            f', facing {tiles.direction_name(facing)}',
+            f', skierowany na {tiles.direction_name(facing)}',
+        )
+    except Exception:  # a detail of the report: never stops it
+        return None
+
+
+def _covered_part(f: Any, obj: Any, level: int) -> str | None:
+    import simsight_tiles as tiles
+
+    covered = tiles.covered_tiles(f, obj, level)
+    if len(covered) <= 1:
+        return None
+    base = f.tile_of(obj.position.x, obj.position.z)
+    others = [tiles.relative(ci - base[0], cj - base[1]) for ci, cj in covered if (ci, cj) != base][
+        :5
+    ]
+    return _text(
+        ', covering {} tiles: this one and {}'.format(len(covered), '; '.join(others)),
+        ', zajmuje pól: {}: to i {}'.format(len(covered), '; '.join(others)),
+    )
+
+
+def _announce_exact(obj: Any, item: dict[str, Any], price: int, level: int, key: _TileKey) -> None:
     """The Build cursor placed it exactly: facing and the tiles it covers,
     counted from its own tile; the cursor moves to it."""
     import simsight_tiles as tiles
 
-    try:
-        _last['position'] = obj.position
-        _repeat[0] = (key, tile_key(obj.position, int(getattr(obj, 'level', level))))
-    except Exception as ex:
-        speech.log_line(f'place: landed position unavailable ({ex!r})')
+    _note_landed(obj, level, key)
     parts = [item['name'] or _product_name(), _text(' placed', ' umieszczono')]
     f = tiles.frame()
     if f is not None:
-        try:
-            import sims4.math
-
-            facing = f.facing_of(sims4.math.yaw_quaternion_to_angle(obj.orientation))
-            parts.append(
-                _text(
-                    f', facing {tiles.direction_name(facing)}',
-                    f', skierowany na {tiles.direction_name(facing)}',
-                )
-            )
-        except Exception:
-            pass
-        covered = tiles.covered_tiles(f, obj, level)
-        if len(covered) > 1:
-            base = f.tile_of(obj.position.x, obj.position.z)
-            others = [
-                tiles.relative(ci - base[0], cj - base[1]) for ci, cj in covered if (ci, cj) != base
-            ][:5]
-            parts.append(
-                _text(
-                    ', covering {} tiles: this one and {}'.format(len(covered), '; '.join(others)),
-                    ', zajmuje pól: {}: to i {}'.format(len(covered), '; '.join(others)),
-                )
-            )
+        details = (_facing_part(f, obj), _covered_part(f, obj, level))
+        parts.extend(part for part in details if part is not None)
     parts.append(_text(f', {price} simoleons.', f', {price} simoleonów.'))
     if _follow(obj, level):
         parts.append(_text(' The cursor is on it.', ' Kursor jest na nim.'))
     _say(parts)
 
 
-def _follow(obj, level):
+def _follow(obj: Any, level: int) -> bool:
     """Put the grid cursor on the placed object, on its floor."""
     try:
         import simsight_grid as grid
 
         return bool(grid.focus_position(obj.position, int(getattr(obj, 'level', level))))
     except Exception as ex:
-        speech.log_line(f'place: cursor did not follow ({ex!r})')
+        simsight_log.line(f'place: cursor did not follow ({ex!r})')
         return False
 
 
-def last_position():
+def last_position() -> Any:
     return _last['position']
 
 
-def _last_object():
+def _last_object() -> Any:
     obj_id = _last['obj_id']
     if obj_id is None or _last['household'] != _household_id() or _last['zone'] != _zone_id():
         return None
@@ -1199,11 +1404,11 @@ def _last_object():
         import services
 
         return services.object_manager().get(obj_id)
-    except Exception:
+    except Exception:  # no object manager while the game loads
         return None
 
 
-def _build_only():
+def _build_only() -> bool:
     """Changing the lot's objects is a Build mode action, as in the game."""
     if in_build_mode():
         return True
@@ -1211,7 +1416,7 @@ def _build_only():
     return False
 
 
-def rotate(step):
+def rotate(step: int) -> bool:
     """Turn the last placed object a quarter turn (step -1 or 1), where it fits."""
     if not _build_only():
         return False
@@ -1238,7 +1443,7 @@ def rotate(step):
         obj.move_to(translation=spot[0], orientation=spot[1])
         _last['position'] = obj.position
     except Exception as ex:
-        speech.log_line(f'place: rotate failed ({ex!r})')
+        simsight_log.line(f'place: rotate failed ({ex!r})')
         _say_text('Could not rotate it.', 'Nie udało się go obrócić.')
         return False
     _say_text(
@@ -1248,7 +1453,48 @@ def rotate(step):
     return True
 
 
-def undo():
+def _say_removed(name: Any, price: int, paid: bool) -> None:
+    if price and not paid:
+        _say(
+            [
+                name,
+                _text(
+                    ' removed. The refund failed and will be retried with your next Build action.',
+                    ' usunięto. Zwrot pieniędzy nie powiódł się i zostanie ponowiony przy następnej akcji.',
+                ),
+            ]
+        )
+    else:
+        _say(
+            [
+                name,
+                _text(
+                    f' removed, {price} simoleons refunded.',
+                    f' usunięto, zwrócono {price} simoleonów.',
+                ),
+            ]
+        )
+
+
+def _undo_purchase(index: int, obj: Any) -> bool:
+    """Remove the purchase at history index and refund it."""
+    purchase = _state.history[index]
+    if _occupied(obj):
+        _say_text(*_CANNOT_SELL['occupied'])
+        return False
+    if not _destroy(obj):
+        _say_text('Could not remove it.', 'Nie udało się go usunąć.')
+        return False
+    del _state.history[index]
+    paid = _refund(purchase.price)
+    if _last['obj_id'] == purchase.obj_id:
+        _last['obj_id'] = None
+    _state.repeat_keys = ()
+    _say_removed(purchase.name, purchase.price, paid)
+    return True
+
+
+def undo() -> bool:
     """Remove the most recent placement and give the money back."""
     if not _build_only():
         return False
@@ -1256,64 +1502,34 @@ def undo():
 
     settle_owed()
     owner, zone = _household_id(), _zone_id()
-    for index in range(len(_history) - 1, -1, -1):
-        obj_id, price, name, household, placed_zone = _history[index]
-        if household != owner or placed_zone != zone:
+    history = _state.history
+    for index in range(len(history) - 1, -1, -1):
+        purchase = history[index]
+        if purchase.household != owner or purchase.zone != zone:
             continue  # another family's or another lot's purchase
-        obj = services.object_manager().get(obj_id)
+        obj = services.object_manager().get(purchase.obj_id)
         if obj is None:
-            del _history[index]  # sold or removed some other way
+            del history[index]  # sold or removed some other way
             continue
-        if _occupied(obj):
-            _say_text(*_CANNOT_SELL['occupied'])
-            return False
-        if not _destroy(obj):
-            _say_text('Could not remove it.', 'Nie udało się go usunąć.')
-            return False
-        del _history[index]
-        paid = _refund(price)
-        if _last['obj_id'] == obj_id:
-            _last['obj_id'] = None
-        _repeat[0] = ()
-        if price and not paid:
-            _say(
-                [
-                    name,
-                    _text(
-                        ' removed. The refund failed and will be retried with your next Build action.',
-                        ' usunięto. Zwrot pieniędzy nie powiódł się i zostanie ponowiony przy następnej akcji.',
-                    ),
-                ]
-            )
-        else:
-            _say(
-                [
-                    name,
-                    _text(
-                        f' removed, {price} simoleons refunded.',
-                        f' usunięto, zwrócono {price} simoleonów.',
-                    ),
-                ]
-            )
-        return True
+        return _undo_purchase(index, obj)
     _say_text('Nothing to undo.', 'Nie ma czego cofnąć.')
     return False
 
 
-def _value(obj):
+def _value(obj: Any) -> int:
     """What the game says obj is worth now. Its current value when it has
     one, zero included (a worthless object sells for nothing); the catalog
     price only when the object reports no value at all."""
     for getter in (lambda: obj.current_value, lambda: obj.definition.price):
         try:
             value = getter()
-        except Exception:
+        except Exception:  # a value property can fail any way: try the next
             continue
         if value is None:
             continue
         try:
             return max(0, int(value))
-        except Exception:
+        except (TypeError, ValueError, OverflowError):  # not a number: try the next
             continue
     return 0
 
@@ -1334,7 +1550,7 @@ _CANNOT_SELL = {
 }
 
 
-def _occupied(obj):
+def _occupied(obj: Any) -> bool:
     """True when removing obj would take something else with it for obj's
     price only (live 2026-09-26: X offered a desk with a computer on it):
     any child, hidden ones included (an object in a slot, a Sim using it),
@@ -1345,75 +1561,42 @@ def _occupied(obj):
             return True
         inventory = getattr(obj, 'inventory_component', None)
         if inventory is not None and not inventory.is_shared_inventory:
-            for _item in inventory:
-                return True
+            return any(True for _item in inventory)
     except Exception as ex:
-        speech.log_line(f'place: occupancy check failed ({ex!r})')
+        simsight_log.line(f'place: occupancy check failed ({ex!r})')
         return True  # cannot tell: never risk what it holds
     return False
 
 
-def sell_refusal(obj):
-    """Why obj may not be sold here, or None. Uses the game's own flags."""
-    try:
-        if getattr(obj, 'is_sim', False):
-            return 'sim'
-        if obj.is_in_inventory() or obj.is_hidden():
-            return 'hidden'
-        if getattr(obj, 'non_deletable', False) or getattr(obj, 'non_deletable_by_user', False):
-            return 'protected'
-        if _occupied(obj):
-            return 'occupied'
-        import services
-
-        if not services.active_lot().is_position_on_lot(obj.position):
-            return 'offlot'
-        owner = obj.get_household_owner_id()
-        if owner and owner != _household_id():
-            return 'foreign'
-    except Exception as ex:
-        speech.log_line(f'place: sell check failed ({ex!r})')
+def _refusal(obj: Any) -> str | None:
+    if getattr(obj, 'is_sim', False):
+        return 'sim'
+    if obj.is_in_inventory() or obj.is_hidden():
         return 'hidden'
+    if getattr(obj, 'non_deletable', False) or getattr(obj, 'non_deletable_by_user', False):
+        return 'protected'
+    if _occupied(obj):
+        return 'occupied'
+    import services
+
+    if not services.active_lot().is_position_on_lot(obj.position):
+        return 'offlot'
+    owner = obj.get_household_owner_id()
+    if owner and owner != _household_id():
+        return 'foreign'
     return None
 
 
-def sell(obj):
-    """Sell obj; asks for a second press within SELL_CONFIRM_SECONDS."""
-    if not _build_only():
-        _sell[0] = None
-        return False
-    settle_owed()
-    if obj is None:
-        _say_text('Nothing here to sell.', 'Nie ma tu nic do sprzedania.')
-        return False
-    refusal = sell_refusal(obj)
-    if refusal is not None:
-        _sell[0] = None
-        _say_text(*_CANNOT_SELL[refusal])
-        return False
-    now = time.monotonic()
-    value = _value(obj)
-    name = _name_parts(obj)
-    if _sell[0] != obj.id or now - _sell[1] > SELL_CONFIRM_SECONDS:
-        _sell[0], _sell[1] = obj.id, now
-        _say(
-            [
-                _text('Sell ', 'Sprzedać: '),
-                name,
-                _text(
-                    f' for {value} simoleons? Press again to confirm.',
-                    f' za {value} simoleonów? Naciśnij ponownie, aby potwierdzić.',
-                ),
-            ]
-        )
-        return False
-    _sell[0] = None
-    if not _destroy(obj):
-        _say_text('Could not sell it.', 'Nie udało się tego sprzedać.')
-        return False
-    paid = _refund(value)
-    if _last['obj_id'] == obj.id:
-        _last['obj_id'] = None
+def sell_refusal(obj: Any) -> str | None:
+    """Why obj may not be sold here, or None. Uses the game's own flags."""
+    try:
+        return _refusal(obj)
+    except Exception as ex:
+        simsight_log.line(f'place: sell check failed ({ex!r})')
+        return 'hidden'
+
+
+def _say_sold(name: Any, value: int, paid: bool) -> None:
     if value and not paid:
         _say(
             [
@@ -1434,36 +1617,77 @@ def sell(obj):
                 ),
             ]
         )
+
+
+def sell(obj: Any) -> bool:
+    """Sell obj; asks for a second press within SELL_CONFIRM_SECONDS."""
+    if not _build_only():
+        _state.sell_id = None
+        return False
+    settle_owed()
+    if obj is None:
+        _say_text('Nothing here to sell.', 'Nie ma tu nic do sprzedania.')
+        return False
+    refusal = sell_refusal(obj)
+    if refusal is not None:
+        _state.sell_id = None
+        _say_text(*_CANNOT_SELL[refusal])
+        return False
+    now = time.monotonic()
+    value = _value(obj)
+    name = _name_parts(obj)
+    if _state.sell_id != obj.id or now - _state.sell_time > SELL_CONFIRM_SECONDS:
+        _state.sell_id, _state.sell_time = obj.id, now
+        _say(
+            [
+                _text('Sell ', 'Sprzedać: '),
+                name,
+                _text(
+                    f' for {value} simoleons? Press again to confirm.',
+                    f' za {value} simoleonów? Naciśnij ponownie, aby potwierdzić.',
+                ),
+            ]
+        )
+        return False
+    _state.sell_id = None
+    if not _destroy(obj):
+        _say_text('Could not sell it.', 'Nie udało się tego sprzedać.')
+        return False
+    paid = _refund(value)
+    if _last['obj_id'] == obj.id:
+        _last['obj_id'] = None
+    _say_sold(name, value, paid)
     return True
 
 
 @sims4.commands.Command(
     'simsight.buildproduct', 'a11y.buildproduct', command_type=sims4.commands.CommandType.Live
 )
-def buildproduct(encoded: str = '', _connection=None):
+@_command_arg_types
+def buildproduct(encoded: str = '', _connection: Any = None) -> bool:
     """Client: the Build catalog selected a product ('<instance>|<name>') or
     dropped it ('0|'). Names arrive percent-encoded."""
     from urllib.parse import unquote
 
-    text = str(encoded)
-    if '|' not in text or len(text) > 800:
+    try:
+        text = str(encoded)
+        if '|' not in text or len(text) > 800:
+            return False
+        instance, name = text.split('|', 1)
+        # By name: simsight_plus_build wraps set_product to learn the product.
+        return set_product(instance, unquote(name))
+    except Exception:
+        simsight_log.error('place: buildproduct')
         return False
-    instance, name = text.split('|', 1)
-    return set_product(instance, unquote(name))
 
 
-@sims4.commands.Command(
-    'simsight.catalogleft', 'a11y.catalogleft', command_type=sims4.commands.CommandType.Live
-)
-def catalogleft(_state: str = '', _connection=None):
-    """Client: Escape released the Build catalog's keys (TooltipManager
-    A11yReleaseBuildCatalog). The chosen product is unchanged."""
+def _catalog_left() -> bool:
     item = product()
     try:
         import simsight_grid as grid
 
         placing = grid.build_cursor()
-    except Exception:
+    except Exception:  # treated as not placing
         placing = False
     if placing:
         name = item['name'] if item is not None and item['name'] else ''
@@ -1494,15 +1718,34 @@ def catalogleft(_state: str = '', _connection=None):
 
 
 @sims4.commands.Command(
+    'simsight.catalogleft', 'a11y.catalogleft', command_type=sims4.commands.CommandType.Live
+)
+@_command_arg_types
+def catalogleft(_state: str = '', _connection: Any = None) -> bool:
+    """Client: Escape released the Build catalog's keys (TooltipManager
+    A11yReleaseBuildCatalog). The chosen product is unchanged."""
+    try:
+        return _catalog_left()
+    except Exception:
+        simsight_log.error('place: catalogleft')
+        return False
+
+
+@sims4.commands.Command(
     'simsight.buildhand', 'a11y.buildhand', command_type=sims4.commands.CommandType.Live
 )
-def buildhand(encoded: str = '', _connection=None):
+@_command_arg_types
+def buildhand(encoded: str = '', _connection: Any = None) -> bool:
     """Client: '<serial>|ok' once EA's placement tool holds nothing (it put
     the product down, or held none), '<serial>|denied' when it could not."""
-    text = str(encoded)
-    if '|' not in text or len(text) > 40:
+    try:
+        text = str(encoded)
+        if '|' not in text or len(text) > 40:
+            return False
+        serial, state = text.split('|', 1)
+        if not serial.isdigit() or state not in ('ok', 'denied'):
+            return False
+        return acknowledged(int(serial), state == 'ok')
+    except Exception:
+        simsight_log.error('place: buildhand')
         return False
-    serial, state = text.split('|', 1)
-    if not serial.isdigit() or state not in ('ok', 'denied'):
-        return False
-    return acknowledged(int(serial), state == 'ok')

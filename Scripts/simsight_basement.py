@@ -1,63 +1,107 @@
 """Experimental native basement drawing, isolated from ordinary room workers."""
 
+from __future__ import annotations
+
+import json
 import math
 import threading
 import time
+from typing import TYPE_CHECKING, Any, Callable, NamedTuple
 
-_build = None
-_core = None
-_helpers = None
-_selection = None
-_failure = threading.local()
+import simsight_log
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    _Box = tuple[int, int, int, int]  # west, north, east, south in lot metres
+    _Rooms = set[tuple[tuple[int, ...], int]]  # (box, level) of every room
+    _Result = str | _Box  # the drawn box, or why it was not drawn
+    _Wanted = tuple[float, float, float, float]  # a box typed by the player
+
+
+class _Selection(NamedTuple):
+    """A native tool selection waiting for the UI's reply."""
+
+    row: int  # catalog row of the tool
+    name: str
+    serial: int
+    done: threading.Event
+
+
+class _State:
+    def __init__(self) -> None:
+        # Set by install(): simsight_plus_build, simsight_plus_core and
+        # simsight_build_helpers (EA-style modules, so Any).
+        self.build: Any = None
+        self.core: Any = None
+        self.helpers: Any = None
+        self.selection: _Selection | None = None
+
+
+_state = _State()
+_failure = threading.local()  # .reason: why this thread's last basement failed
 SETTING = 'experimental_basement'
 TOOL = 'Basement Tool'
+_REASONS = {
+    'disabled': 'experimental basement creation is turned off',
+    'occupied': 'the requested footprint overlaps an existing basement room',
+    'nofloor': 'the game could not reach the ground floor for the basement tool',
+    'nocatalog': 'the required native tool selection was not confirmed',
+    'noscreen': 'the corners could not be framed clear of the interface',
+}
+_UNVERIFIED_REASON = 'the requested room on floor minus one could not be verified'
+# Results a drag attempt reports itself; only a finished drag is held back
+# when the Room Tool cannot be restored afterwards.
+_STOPPED_EARLY = ('nocatalog', 'noscreen')
 
 
-def _log(kind, **data):
-    import json
-    import simsight_speech as speech
-
-    speech.log_line(
+def _log(kind: str, **data: Any) -> None:
+    simsight_log.line(
         'basement adapter: ' + json.dumps(dict(kind=kind, **data), sort_keys=True, default=str)
     )
 
 
-def _enabled():
+def _speak_later(text: str) -> None:
+    _state.core.post(_state.core.speak, text)
+
+
+def _enabled() -> bool:
     import simsight_settings as settings
 
     return bool(settings.get(SETTING, True))
 
 
-def _context():
+def _context() -> dict[str, Any]:
     import services
 
-    state = _helpers._state()
+    state = _state.helpers._state()
     state['household'] = int(services.active_household_id())
     return state
 
 
-def _same_context(state):
+def _same_context(state: dict[str, Any]) -> bool:
     import services
 
     return (
         _enabled()
-        and _helpers._same_world(state)
+        and _state.helpers._same_world(state)
         and int(services.active_household_id()) == state['household']
     )
 
 
-def _rooms():
-    result = _build._room_ids()
+def _rooms() -> _Rooms:
+    result = _state.build._room_ids()
     if result is None:
         raise RuntimeError('The game did not supply its room geometry')
     return {(tuple(box), int(level)) for box, level in result}
 
 
-def _overlap(a, b):
+def _overlap(a: Sequence[float], b: Sequence[float]) -> bool:
     return max(a[0], b[0]) < min(a[2], b[2]) and max(a[1], b[1]) < min(a[3], b[3])
 
 
-def _bounds(want, frame):
+def _bounds(want: Sequence[Any], frame: Any) -> _Box:
+    """want as whole metres, at least one metre inside the lot; ValueError otherwise."""
     if len(want) != 4 or any(
         isinstance(v, bool)
         or not isinstance(v, (int, float))
@@ -66,74 +110,80 @@ def _bounds(want, frame):
         for v in want
     ):
         raise ValueError('Basement corners must be four whole-metre coordinates')
-    box = tuple(int(v) for v in want)
+    box = (int(want[0]), int(want[1]), int(want[2]), int(want[3]))
     if not (1 <= box[0] < box[2] <= frame.width - 1 and 1 <= box[1] < box[3] <= frame.depth - 1):
         raise ValueError('The basement must fit at least one metre inside the lot')
     return box
 
 
-def reply(encoded=''):
+def _is_selection_reply(job: _Selection, encoded: str) -> bool:
+    from urllib.parse import unquote
+
+    parts = unquote(str(encoded or '')).split('|')
+    return (
+        len(parts) == 3
+        and parts[0] == 'selected'
+        and parts[1] == str(job.row)
+        and unquote(parts[2]) == job.name
+        and _state.build._cat['serial'] == job.serial
+    )
+
+
+def reply(encoded: str = '') -> Any:
+    """The UI's catalog reply: confirms a pending tool selection."""
     # Leave all existing catalog, placement and scanner reply behavior intact.
     result = _original_reply(encoded)
-    job = _selection
+    job = _state.selection
     if job is not None:
         try:
-            from urllib.parse import unquote
-
-            parts = unquote(str(encoded or '')).split('|')
-            if (
-                len(parts) == 3
-                and parts[0] == 'selected'
-                and parts[1] == str(job['index'])
-                and unquote(parts[2]) == job['name']
-                and _build._cat['serial'] == job['serial']
-            ):
-                job['done'].set()
+            if _is_selection_reply(job, encoded):
+                job.done.set()
         except Exception:
-            _core.log_exc('basement tool reply')
+            simsight_log.error('basement: tool reply')
     return result
 
 
-def _tool(name, state):
-    global _selection
-    if not _build.on_main(_same_context, state):
+def _tool(name: str, state: dict[str, Any]) -> bool:
+    """Select the native tool called name; True once the UI confirmed it."""
+    build = _state.build
+    if not build.on_main(_same_context, state):
         return False
     # The native bridge replaces its catalog array. An old index must never
     # reselect an unrelated tool if this query or selection is interrupted.
-    _build.on_main(_build._cat.pop, 'chosen', None)
-    items = _build.fetch_catalog(16, '', 'tool') or []
+    build.on_main(build._cat.pop, 'chosen', None)
+    items = build.fetch_catalog(16, '', 'tool') or []
     names = [item[0] for item in items]
     _log('catalog', wanted=name, tools=names)
-    if name not in names or not _build.on_main(_same_context, state):
+    if name not in names or not build.on_main(_same_context, state):
         return False
     index = names.index(name)
-    job = {'index': index, 'name': name, 'serial': _build._cat['serial'], 'done': threading.Event()}
-    _selection = job
-    silent = _build._cat.get('silent_select', False)
+    job = _Selection(index, name, build._cat['serial'], threading.Event())
+    _state.selection = job
+    silent = build._cat.get('silent_select', False)
     try:
-        _build._cat['silent_select'] = True
-        _build.select_item(index, name)
-        acknowledged = job['done'].wait(2.0)
+        build._cat['silent_select'] = True
+        build.select_item(index, name)
+        acknowledged = job.done.wait(2.0)
         _log('tool-selection', name=name, acknowledged=acknowledged)
-        return acknowledged and bool(_build.on_main(_same_context, state))
+        return acknowledged and bool(build.on_main(_same_context, state))
     finally:
-        _selection = None
-        _build._cat['silent_select'] = silent
+        _state.selection = None
+        build._cat['silent_select'] = silent
 
 
-def _check_result(before, after, wanted):
+def _check_result(before: _Rooms, after: _Rooms, wanted: _Box) -> bool:
     target = (wanted, -1)
     # A bounding box alone cannot count a ground-floor room as a basement.
     return target in after - before and before.issubset(after) and after - before == {target}
 
 
-def _rectangle(wanted):
+def _rectangle(wanted: _Box) -> bool:
+    """Exactly one room on floor -1 with that box, covering every tile of it."""
     import simsight_plus_rooms as rooms
 
-    frame = _build.frame()
-    matches = [
-        r for r in rooms.scan_rooms() if int(r.level) == -1 and _build._room_box(r) == wanted
-    ]
+    build = _state.build
+    frame = build.frame()
+    matches = [r for r in rooms.scan_rooms() if int(r.level) == -1 and build._room_box(r) == wanted]
     if len(matches) != 1:
         return False
     actual = {
@@ -144,223 +194,262 @@ def _rectangle(wanted):
     return actual == expected
 
 
-def _draw(want, overview):
-    state = _build.on_main(_context)
+def _prepare(want: Sequence[Any]) -> tuple[dict[str, Any], Any, _Box, _Rooms]:
+    """(build context, lot frame, wanted box, rooms before); raises when unavailable."""
+    build = _state.build
+    state = build.on_main(_context)
     if not state:
         raise RuntimeError('The simulation thread did not answer')
-    frame = _build.on_main(_build.frame)
+    frame = build.on_main(build.frame)
     if frame is None:
         raise RuntimeError('The lot geometry is unavailable')
     wanted = _bounds(want, frame)
-    before = _build.on_main(_rooms)
+    before = build.on_main(_rooms)
     if before is None:
         raise RuntimeError('Room inspection timed out')
+    return state, frame, wanted, before
+
+
+def _drag(state: dict[str, Any], wanted: _Box, screen: Sequence[Any]) -> None:
+    """The drag itself, once the camera shows both corners."""
+    build = _state.build
+    if not build.on_main(_same_context, state):
+        raise RuntimeError('Build context changed before the basement drag')
+    if not _tool(TOOL, state):
+        raise RuntimeError('The Basement Tool could not be confirmed after camera preparation')
+    info = _state.helpers._native_floor(state)
+    if info['floor'] != 0:
+        raise RuntimeError('The game is no longer showing the ground floor')
+    _log('drag', wanted=wanted, input_floor=0, expected_floor=-1, native_floor=info)
+    build.drag(screen[0], screen[1])
+
+
+def _rooms_after(state: dict[str, Any], before: _Rooms) -> _Rooms:
+    """The rooms once they changed, or as they are after five seconds."""
+    build = _state.build
+    after = before
+    for _ in range(20):
+        if not build.on_main(_same_context, state):
+            raise RuntimeError('Build context changed while checking the basement')
+        after = build.on_main(_rooms)
+        if after is None:
+            raise RuntimeError('Basement verification timed out')
+        if after != before:
+            break
+        time.sleep(0.25)
+    return after
+
+
+def _drag_and_verify(
+    state: dict[str, Any], frame: Any, wanted: _Box, before: _Rooms, overview: bool
+) -> _Result:
+    build = _state.build
+    if not _tool(TOOL, state):
+        _speak_later(
+            'The native Basement Tool was not confirmed. Nothing was drawn. Its catalog entries were logged.'
+        )
+        return 'nocatalog'
+    points = [frame.world(wanted[0], wanted[1]), frame.world(wanted[2], wanted[3])]
+    started = time.monotonic()
+    funds_before = build.on_main(build.funds)
+    performed = build.point_and_act(
+        points,
+        0,
+        lambda screen: _drag(state, wanted, screen),
+        f'experimental basement {wanted}',
+        overview=overview,
+    )
+    if not performed:
+        return 'noscreen'
+    _log(
+        'after-drag',
+        native_floor=_state.helpers._native_floor(state),
+        funds_before=funds_before,
+        funds_after=build.on_main(build.funds),
+    )
+    after = _rooms_after(state, before)
+    okay = _check_result(before, after, wanted) and bool(build.on_main(_rectangle, wanted))
+    error = build._last_error
+    reason = error.get('text', '') if error.get('at', 0) >= started else ''
+    _log(
+        'verification',
+        wanted=wanted,
+        expected_floor=-1,
+        new=sorted(after - before),
+        removed=sorted(before - after),
+        success=okay,
+        game_reason=reason,
+    )
+    if okay:
+        return wanted
+    _speak_later(
+        'Basement construction stopped: the game did not confirm the requested room on floor minus one.'
+        + (' Game message: ' + reason if reason else '')
+        + ' Inspect the result before using Undo or trying again.'
+    )
+    return 'unverified'
+
+
+def _restore_room_tool(state: dict[str, Any]) -> bool:
+    restored = _tool('Room Tool', state) if _state.build.on_main(_same_context, state) else False
+    _log('restore-room-tool', success=restored)
+    return restored
+
+
+def _draw(want: Sequence[Any], overview: bool) -> _Result:
+    state, frame, wanted, before = _prepare(want)
     if any(level == -1 and _overlap(box, wanted) for box, level in before):
         _log('occupied', wanted=wanted)
         return 'occupied'
-    if not _build.set_floor(0):
+    if not _state.build.set_floor(0):
         return 'nofloor'
-    selected = False
-    attempted = False
-    result = 'nocatalog'
-    restore_ok = True
     try:
-        attempted = True
-        selected = _tool(TOOL, state)
-        if not selected:
-            _core.post(
-                _core.speak,
-                'The native Basement Tool was not confirmed. Nothing was drawn. Its catalog entries were logged.',
-            )
-            return 'nocatalog'
-        points = [frame.world(wanted[0], wanted[1]), frame.world(wanted[2], wanted[3])]
-        started = time.monotonic()
-        funds_before = _build.on_main(_build.funds)
-
-        def action(screen):
-            if not _build.on_main(_same_context, state):
-                raise RuntimeError('Build context changed before the basement drag')
-            if not _tool(TOOL, state):
-                raise RuntimeError(
-                    'The Basement Tool could not be confirmed after camera preparation'
-                )
-            info = _helpers._native_floor(state)
-            if info['floor'] != 0:
-                raise RuntimeError('The game is no longer showing the ground floor')
-            _log('drag', wanted=wanted, input_floor=0, expected_floor=-1, native_floor=info)
-            _build.drag(screen[0], screen[1])
-
-        performed = _build.point_and_act(
-            points, 0, action, f'experimental basement {wanted}', overview=overview
-        )
-        if not performed:
-            return 'noscreen'
-        _log(
-            'after-drag',
-            native_floor=_helpers._native_floor(state),
-            funds_before=funds_before,
-            funds_after=_build.on_main(_build.funds),
-        )
-        after = before
-        for attempt in range(20):
-            if not _build.on_main(_same_context, state):
-                raise RuntimeError('Build context changed while checking the basement')
-            after = _build.on_main(_rooms)
-            if after is None:
-                raise RuntimeError('Basement verification timed out')
-            if after != before:
-                break
-            time.sleep(0.25)
-        okay = _check_result(before, after, wanted) and bool(_build.on_main(_rectangle, wanted))
-        error = _build._last_error
-        reason = error.get('text', '') if error.get('at', 0) >= started else ''
-        _log(
-            'verification',
-            wanted=wanted,
-            expected_floor=-1,
-            new=sorted(after - before),
-            removed=sorted(before - after),
-            success=okay,
-            game_reason=reason,
-        )
-        result = wanted if okay else 'unverified'
-        if not okay:
-            _core.post(
-                _core.speak,
-                'Basement construction stopped: the game did not confirm the requested room on floor minus one.'
-                + (' Game message: ' + reason if reason else '')
-                + ' Inspect the result before using Undo or trying again.',
-            )
+        result = _drag_and_verify(state, frame, wanted, before, overview)
     finally:
         # Never leave Basement Tool selected for the next above-ground room.
-        if attempted:
-            if _build.on_main(_same_context, state):
-                restore_ok = _tool('Room Tool', state)
-            else:
-                restore_ok = False
-            _log('restore-room-tool', success=restore_ok)
-    if not restore_ok:
-        _core.post(
-            _core.speak,
-            'The basement step stopped because the ordinary Room Tool could not be restored.',
-        )
-        return 'nocatalog'
-    return result
+        restored = _restore_room_tool(state)
+    if result in _STOPPED_EARLY or restored:
+        return result
+    _speak_later('The basement step stopped because the ordinary Room Tool could not be restored.')
+    return 'nocatalog'
 
 
-def failure_reason():
+def failure_reason() -> str:
     return getattr(_failure, 'reason', '')
 
 
-def room_worker(want, overview=False, tries=4, level=0):
+def _stopped(want: Sequence[Any], exc: Exception) -> _Result:
+    _log('stopped', wanted=want, error=str(exc))
+    _speak_later('Basement construction stopped. ' + str(exc))
+    return 'unverified'
+
+
+def room_worker(want: Sequence[Any], overview: bool = False, tries: int = 4, level: int = 0) -> Any:
+    """Worker thread: draw a room; basements (level -1) go through the Basement Tool."""
     _failure.reason = ''
     if level != -1:
         return _original_room(want, overview=overview, tries=tries, level=level)
+    result: _Result
     if not _enabled():
-        _core.post(_core.speak, 'Experimental basement creation is off in accessibility settings.')
+        _speak_later('Experimental basement creation is off in accessibility settings.')
         result = 'disabled'
     else:
         try:
             result = _draw(want, overview)
+        except (RuntimeError, ValueError) as exc:  # the step's own refusals: spoken as they are
+            result = _stopped(want, exc)
         except Exception as exc:
-            _log('stopped', wanted=want, error=str(exc))
-            _core.post(_core.speak, 'Basement construction stopped. ' + str(exc))
-            result = 'unverified'
+            simsight_log.error('basement: draw')
+            result = _stopped(want, exc)
     if result != tuple(want):
-        _failure.reason = {
-            'disabled': 'experimental basement creation is turned off',
-            'occupied': 'the requested footprint overlaps an existing basement room',
-            'nofloor': 'the game could not reach the ground floor for the basement tool',
-            'nocatalog': 'the required native tool selection was not confirmed',
-            'noscreen': 'the corners could not be framed clear of the interface',
-        }.get(result, 'the requested room on floor minus one could not be verified')
+        _failure.reason = _REASONS.get(str(result), _UNVERIFIED_REASON)
     return result
 
 
-def _start_room(wanted):
-    if _build._busy[0]:
-        _core.speak('Still working on the last build step.')
-        return
-    if not _enabled():
-        _core.speak('Turn on experimental basement creation in accessibility settings first.')
-        return
-    _build._busy[0] = True
-    _core.speak('Building the basement room. Please do not press keys until it finishes.')
+def _run_busy(name: str, work: Callable[[], None]) -> None:
+    """Run work on its own thread, holding the build engine's busy flag."""
+    busy = _state.build._busy
 
-    def work():
+    def run() -> None:
         try:
-            result = room_worker(wanted, overview=True, level=-1)
-            if result == wanted:
-                shown = _build.set_floor(-1)
-                _core.post(
-                    _core.speak,
-                    'The basement room was verified on floor minus one. '
-                    + (
-                        'The game now shows the basement.'
-                        if shown
-                        else 'The room exists, but the game could not switch to its floor.'
-                    ),
-                )
-            else:
-                _core.post(
-                    _core.speak,
-                    f'The basement room was not completed: {result}. No further rooms were attempted.',
-                )
+            work()
+        except Exception:
+            simsight_log.error(f'basement: {name}')
+            raise
         finally:
-            _build._busy[0] = False
+            busy[0] = False
 
+    busy[0] = True
     try:
-        threading.Thread(target=work, name='a11y_basement_room', daemon=True).start()
+        threading.Thread(target=run, name=name, daemon=True).start()
     except Exception:
-        _build._busy[0] = False
+        busy[0] = False
         raise
 
 
-def _ask_room():
-    def size(text):
-        values = _build._numbers(text)
-        if len(values) != 2 or any(v < 1 or v > 30 for v in values):
-            _core.speak('Type a width and depth between 1 and 30 metres.')
-            return
-        width, depth = values
-
-        def position(text):
-            coords = _build._numbers(text)
-            if len(coords) != 2:
-                _core.speak('Type meters from west and north, for example 2 3.')
-                return
-            wanted = (coords[0], coords[1], coords[0] + width, coords[1] + depth)
-            try:
-                _bounds(wanted, _build.frame())
-            except ValueError as exc:
-                _core.speak(str(exc))
-                return
-            rows = [
-                (
-                    'Build this basement room',
-                    'Uses the native tool and spends household funds only if the game accepts it.',
-                    True,
-                ),
-                ('Cancel', None, False),
-            ]
-            _core.choose(
-                'Confirm experimental basement',
-                '{} by {} metres, {} from west and {} from north. Floor minus one. Existing basement rooms must not overlap this footprint.'.format(
-                    width, depth, *coords
-                ),
-                rows,
-                lambda yes: _start_room(wanted) if yes else None,
-                tag='build',
+def _build_room(wanted: _Wanted) -> None:
+    result = room_worker(wanted, overview=True, level=-1)
+    if result == wanted:
+        shown = _state.build.set_floor(-1)
+        _speak_later(
+            'The basement room was verified on floor minus one. '
+            + (
+                'The game now shows the basement.'
+                if shown
+                else 'The room exists, but the game could not switch to its floor.'
             )
-
-        _core.ask_text(
-            'Basement position',
-            'Type meters from the west edge, then the north edge of the lot. For example 2 3.',
-            '',
-            position,
+        )
+    else:
+        _speak_later(
+            f'The basement room was not completed: {result}. No further rooms were attempted.'
         )
 
-    _core.ask_text(
+
+def _start_room(wanted: _Wanted) -> None:
+    core = _state.core
+    if _state.build._busy[0]:
+        core.speak('Still working on the last build step.')
+        return
+    if not _enabled():
+        core.speak('Turn on experimental basement creation in accessibility settings first.')
+        return
+    core.speak('Building the basement room. Please do not press keys until it finishes.')
+    _run_busy('a11y_basement_room', lambda: _build_room(wanted))
+
+
+def _confirm_room(width: float, depth: float, coords: Sequence[float]) -> None:
+    core = _state.core
+    wanted: _Wanted = (coords[0], coords[1], coords[0] + width, coords[1] + depth)
+    try:
+        _bounds(wanted, _state.build.frame())
+    except ValueError as exc:
+        core.speak(str(exc))
+        return
+    rows = [
+        (
+            'Build this basement room',
+            'Uses the native tool and spends household funds only if the game accepts it.',
+            True,
+        ),
+        ('Cancel', None, False),
+    ]
+    core.choose(
+        'Confirm experimental basement',
+        '{} by {} metres, {} from west and {} from north. Floor minus one. Existing basement rooms must not overlap this footprint.'.format(
+            width, depth, *coords
+        ),
+        rows,
+        lambda yes: _start_room(wanted) if yes else None,
+        tag='build',
+    )
+
+
+def _ask_position(width: float, depth: float) -> None:
+    def position(text: str) -> None:
+        coords = _state.build._numbers(text)
+        if len(coords) != 2:
+            _state.core.speak('Type meters from west and north, for example 2 3.')
+            return
+        _confirm_room(width, depth, coords)
+
+    _state.core.ask_text(
+        'Basement position',
+        'Type meters from the west edge, then the north edge of the lot. For example 2 3.',
+        '',
+        position,
+    )
+
+
+def _ask_room() -> None:
+    def size(text: str) -> None:
+        values = _state.build._numbers(text)
+        if len(values) != 2 or any(v < 1 or v > 30 for v in values):
+            _state.core.speak('Type a width and depth between 1 and 30 metres.')
+            return
+        width, depth = values
+        _ask_position(width, depth)
+
+    _state.core.ask_text(
         'Basement size',
         'Type width west to east and depth north to south in metres, for example 4 5.',
         '',
@@ -368,41 +457,35 @@ def _ask_room():
     )
 
 
-def _inspect():
-    if _build._busy[0]:
-        _core.speak('Still working on the last build step.')
-        return
-    _build._busy[0] = True
-
-    def work():
-        try:
-            state = _build.on_main(_context)
-            info = _helpers._native_floor(state)
-            geometry = _build.on_main(_rooms)
-            if geometry is None:
-                raise RuntimeError('Room inspection timed out')
-            basements = sorted(box for box, level in geometry if level == -1)
-            _log('inspect', basement_rooms=basements, native_floor=info)
-            _core.post(
-                _core.speak,
-                f'Logged current floor bounds and {len(basements)} basement rooms. Nothing was built or selected.',
-            )
-        except Exception as exc:
-            _log('inspect-failed', error=str(exc))
-            _core.post(_core.speak, 'Basement inspection failed. ' + str(exc))
-        finally:
-            _build._busy[0] = False
-
+def _inspect_work() -> None:
+    build = _state.build
     try:
-        threading.Thread(target=work, name='a11y_basement_inspect', daemon=True).start()
-    except Exception:
-        _build._busy[0] = False
-        raise
+        state = build.on_main(_context)
+        info = _state.helpers._native_floor(state)
+        geometry = build.on_main(_rooms)
+        if geometry is None:
+            raise RuntimeError('Room inspection timed out')
+        basements = sorted(box for box, level in geometry if level == -1)
+        _log('inspect', basement_rooms=basements, native_floor=info)
+        _speak_later(
+            f'Logged current floor bounds and {len(basements)} basement rooms. Nothing was built or selected.'
+        )
+    except Exception as exc:  # worker thread: report every failure, never raise
+        _log('inspect-failed', error=str(exc))
+        _speak_later('Basement inspection failed. ' + str(exc))
 
 
-def open_assistant():
-    if not _build.in_build_mode():
-        _core.speak('Enter Build mode first.')
+def _inspect() -> None:
+    if _state.build._busy[0]:
+        _state.core.speak('Still working on the last build step.')
+        return
+    _run_busy('a11y_basement_inspect', _inspect_work)
+
+
+def open_assistant() -> None:
+    build, core = _state.build, _state.core
+    if not build.in_build_mode():
+        core.speak('Enter Build mode first.')
         return
     rows = [
         (
@@ -416,7 +499,7 @@ def open_assistant():
             _inspect,
         ),
     ]
-    _core.choose(
+    core.choose(
         'Basement assistant (experimental)',
         'Stacked houses with a basement use the same adapter automatically. Creation can be turned off in accessibility settings.',
         rows,
@@ -425,26 +508,27 @@ def open_assistant():
     )
 
 
-def install():
+def install() -> None:
     """Startup: the engine and helper modules this adapter uses. Idempotent."""
-    global _build, _core, _helpers
-    if _build is not None:
+    if _state.build is not None:
         return
+    import simsight_build_helpers as helpers
     import simsight_plus_build as build
     import simsight_plus_core as core
-    import simsight_build_helpers as helpers
 
-    _build, _core, _helpers = build, core, helpers
+    _state.build, _state.core, _state.helpers = build, core, helpers
     _log('installed', experimental=True, enabled=_enabled())
 
 
-def _original_room(want, overview=False, tries=4, level=0):
+def _original_room(
+    want: Sequence[Any], overview: bool = False, tries: int = 4, level: int = 0
+) -> Any:
     import simsight_plus_build as build
 
     return build._room_worker_base(want, overview=overview, tries=tries, level=level)
 
 
-def _original_reply(encoded=''):
+def _original_reply(encoded: str = '') -> Any:
     import simsight_plus_build as build
 
     return build._flash_reply_base(encoded)
