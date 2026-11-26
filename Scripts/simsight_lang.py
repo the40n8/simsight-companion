@@ -9,7 +9,14 @@ areaserver.c_api_client_connect). Falls back to English until a client exists.
 Translations are first-pass; refine per-language as feedback arrives.
 """
 
-_TRANSLATIONS = {
+from __future__ import annotations
+
+import sys
+
+import simsight_log
+
+# term -> {language code: text}; 'en' is always there.
+_TRANSLATIONS: dict[str, dict[str, str]] = {
     'yourself': {'en': 'Yourself', 'pl': 'Twój Sim'},
     'Sims': {'en': 'Sims', 'pl': 'Simowie'},
     'nearby objects': {'en': 'Objects', 'pl': 'Obiekty'},
@@ -1783,8 +1790,6 @@ _TRANSLATIONS.update(
     }
 )
 
-_locale_lang = None
-
 _TRANSLATIONS['scanner unavailable'] = {
     'en': 'unavailable',
     'pl': 'niedostępne',
@@ -1817,31 +1822,51 @@ _TRANSLATIONS['event goals unavailable'] = {
 }
 
 
-def _detect_lang():
-    """Language prefix from the connected client's account locale."""
-    global _locale_lang
-    if _locale_lang is not None:
-        return _locale_lang
-    try:
-        import services
+class _State:
+    def __init__(self) -> None:
+        self.locale_lang: str | None = None  # set once a client's locale is known
 
-        client = services.client_manager().get_first_client()
-        if client is not None and getattr(client.account, 'locale', None):
-            loc = str(client.account.locale).lower().replace('-', '_')
-            lang = loc.split('_')[0]
-            if any(lang in v for v in _TRANSLATIONS.values()):
-                _locale_lang = lang
-                return _locale_lang
+
+_state = _State()
+
+
+def locale_lang() -> str | None:
+    """The detected language code, or None while no client locale is known
+    (unlike _detect_lang, this never looks for one)."""
+    return _state.locale_lang
+
+
+def _client_locale() -> str | None:
+    import services
+
+    client = services.client_manager().get_first_client()
+    if client is not None and getattr(client.account, 'locale', None):
+        return str(client.account.locale)
+    return None
+
+
+def _detect_lang() -> str:
+    """Language prefix from the connected client's account locale."""
+    if _state.locale_lang is not None:
+        return _state.locale_lang
+    try:
+        locale = _client_locale()
+    except AttributeError:
+        locale = None  # no zone or client manager yet
     except Exception:
-        pass
+        simsight_log.error('lang: client locale')
+        locale = None
+    if locale is not None:
+        lang = locale.lower().replace('-', '_').split('_')[0]
+        if any(lang in v for v in _TRANSLATIONS.values()):
+            _state.locale_lang = lang
+            return lang
     # No client yet: stay undetected so we retry next call.
     return 'en'
 
 
 # macOS: different keys (Option+Command+A opens the accessibility menu).
-import sys
-
-_MAC_TRANSLATIONS = {
+_MAC_TRANSLATIONS: dict[str, dict[str, str]] = {
     'screen reader installed': {
         'en': 'SimSight is installed. Option Command A opens the accessibility menu.',
         'fr': "SimSight est installé. Option Commande A ouvre le menu d'accessibilité.",
@@ -1853,7 +1878,7 @@ _MAC_TRANSLATIONS = {
 }
 
 
-def t(term):
+def t(term: str) -> str:
     """Localized narration term; falls back to English."""
     entry = (
         _MAC_TRANSLATIONS.get(term) if sys.platform == 'darwin' else None

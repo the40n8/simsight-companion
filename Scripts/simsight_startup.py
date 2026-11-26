@@ -15,13 +15,25 @@ belong to this game process. Only the fixed narration/state channels are
 accepted; there is no command execution.
 """
 
-from collections import deque
+from __future__ import annotations
+
 import functools
 import os
 import socket
 import sys
 import threading
 import time
+from collections import deque
+from typing import TYPE_CHECKING, Any
+
+import simsight_log
+
+if TYPE_CHECKING:
+    from typing import Callable, Tuple
+
+    Post = Tuple[str, str]  # (channel, payload)
+    Queued = Tuple[int, str, str]  # (connection generation, channel, payload)
+    Handler = Callable[[str], Any]
 
 # macOS port: the peer check below needs Windows' TCP owner table (ctypes),
 # and the Mac game's Python crashes when a background thread imports from a
@@ -54,39 +66,81 @@ CHANNELS = frozenset(
         'simsight.mark',
     )
 )
+# Channels whose payload must be one of these values.
+_ALLOWED_PAYLOADS = {
+    'simsight.modalstate': ('00', '01', '10', '11'),
+    'simsight.blocking': ('0', '1'),
+    'simsight.inputfence': ('',),
+}
+# Kept even when the queue is full: losing one leaves the key state wrong.
+_STATE_CHANNELS = ('simsight.inputfence', 'simsight.modalstate', 'simsight.blocking')
+# Channel -> simsight_keys function that takes the payload.
+_KEYS_HANDLERS = {
+    'simsight.modalstate': 'a11y_modalstate',
+    'simsight.blocking': 'a11y_blocking',
+}
+# Channel -> simsight_narrator function that takes the payload.
+_NARRATOR_HANDLERS = {
+    'simsight.speak_enc': 'a11y_speak_enc',
+    'simsight.widget_enc': 'a11y_widget_enc',
+    'simsight.focus_enc': 'a11y_focus_enc',
+    'simsight.widgetname_enc': 'a11y_widgetname_enc',
+    'simsight.dialog_enc': 'a11y_dialog_enc',
+    'simsight.scope_enc': 'a11y_scope_enc',
+    'simsight.event_enc': 'a11y_event_enc',
+    'simsight.context_enc': 'a11y_context_enc',
+    'simsight.inspect_enc': 'a11y_inspect_enc',
+    'simsight.clock_enc': 'a11y_clock_enc',
+    'simsight.mood_enc': 'a11y_mood_enc',
+    'simsight.stop': 'a11y_stop',
+}
+_PORT_MEANINGS = {
+    PORT_KEYBOARD: 'keyboard on, simplified menus on',
+    PORT_KEYBOARD_FULL_MENUS: 'keyboard on, simplified menus off',
+    PORT_SPEECH: 'speech only',
+}
+_CHECK_EVERY = 0.5  # seconds between settings checks while serving
+
+
+class _State:
+    """Shared by the listener thread and the simulation thread (under _lock
+    where both touch it)."""
+
+    def __init__(self) -> None:
+        self.installed = False
+        self.connected = False
+        self.startup = True
+        self.generation = 0
+        self.next_tick = 0.0
+        self.port: int | None = None
+        self.wanted: int | None = (
+            None  # the port the settings ask for (a fallback can serve another)
+        )
+        self.seen: int | None = None  # the latest settings reading, for the two-reading rule
+        self.flash_startup = False
+
+
 _lock = threading.Lock()
-_incoming = deque()
-_thread = None
+_incoming: deque[Queued] = deque()
 _stop = threading.Event()
-_connected = False
-_startup = True
-_generation = 0
-_next_tick = 0.0
-_port = None
-_wanted = None  # the port the settings ask for (a fallback can serve another)
-_seen = None  # the latest settings reading, for the two-reading rule
-_flash_startup = False
+_state = _State()
 
 
-def log(message):
-    try:
-        import simsight_speech as speech
-
-        speech.log_line('startup: ' + message)
-    except Exception:
-        pass
+def log(message: str) -> None:
+    simsight_log.line('startup: ' + message)
 
 
-def enabled():
+def enabled() -> bool:
     try:
         import simsight_settings as settings
 
         return bool(settings.get('startup', True))
     except Exception:
+        simsight_log.error('startup: reading the startup setting')
         return True
 
 
-def listen_port():
+def listen_port() -> int:
     """The port tells Flash whether keyboard navigation and Simplified menus
     are enabled."""
     try:
@@ -95,6 +149,7 @@ def listen_port():
         keyboard = bool(settings.get('keyboard', True))
         simplified = bool(settings.get('simplified_menus', True))
     except Exception:
+        simsight_log.error('startup: reading the keyboard settings')
         keyboard = simplified = True
     if not keyboard:
         return PORT_SPEECH
@@ -102,10 +157,13 @@ def listen_port():
 
 
 class FrameReader:
-    def __init__(self):
+    """Splits the byte stream into newline-terminated UTF-8 lines."""
+
+    def __init__(self) -> None:
         self.buffer = b''
 
-    def feed(self, data):
+    def feed(self, data: bytes) -> list[str]:
+        """The complete lines in data; ValueError on bad framing."""
         self.buffer += data
         lines = []
         while b'\n' in self.buffer:
@@ -121,85 +179,92 @@ class FrameReader:
         return lines
 
 
-def parse_hello(line):
+def parse_hello(line: str) -> str | None:
+    """The text after the greeting, or None when line is not the greeting."""
     parts = line.split('|')
     if len(parts) < 2 or '|'.join(parts[:2]) != HELLO:
         return None
     return parts[2] if len(parts) > 2 else ''
 
 
-def parse_post(line):
+def parse_post(line: str) -> Post | None:
+    """(channel, payload) of an accepted POST line, else None."""
     parts = line.split('|', 2)
     if len(parts) != 3 or parts[0] != 'POST' or parts[1] not in CHANNELS:
         return None
-    channel, payload = parts[1:]
-    if channel == 'simsight.modalstate' and payload not in ('00', '01', '10', '11'):
-        return None
-    if channel == 'simsight.blocking' and payload not in ('0', '1'):
-        return None
-    if channel == 'simsight.inputfence' and payload:
+    channel, payload = parts[1], parts[2]
+    allowed = _ALLOWED_PAYLOADS.get(channel)
+    if allowed is not None and payload not in allowed:
         return None
     return channel, payload
 
 
-def same_process_peer(peer_port, listener_port=None):
+def _owner_rows() -> list[Any]:
+    """Windows' IPv4 TCP owner table (GetExtendedTcpTable), or [] when it
+    cannot be read."""
+    if sys.platform != 'win32':
+        return []  # only Windows has the table (and ctypes in the game)
+    import ctypes
+
+    class Row(ctypes.Structure):
+        _fields_ = [
+            (name, ctypes.c_ulong)
+            for name in (
+                'state',
+                'local_address',
+                'local_port',
+                'remote_address',
+                'remote_port',
+                'pid',
+            )
+        ]
+
+    api = ctypes.WinDLL('iphlpapi').GetExtendedTcpTable
+    api.argtypes = [
+        ctypes.c_void_p,
+        ctypes.POINTER(ctypes.c_ulong),
+        ctypes.c_int,
+        ctypes.c_ulong,
+        ctypes.c_int,
+        ctypes.c_ulong,
+    ]
+    api.restype = ctypes.c_ulong
+    size = ctypes.c_ulong(0)
+    result = api(None, ctypes.byref(size), False, 2, 5, 0)
+    if result != 122 or size.value < 4 or size.value > 16 * 1024 * 1024:
+        return []
+    data = ctypes.create_string_buffer(size.value)
+    if api(data, ctypes.byref(size), False, 2, 5, 0) != 0:
+        return []
+    count = ctypes.c_ulong.from_buffer(data).value
+    if 4 + count * ctypes.sizeof(Row) > size.value:
+        return []
+    return [Row.from_buffer(data, 4 + index * ctypes.sizeof(Row)) for index in range(count)]
+
+
+def same_process_peer(peer_port: int, listener_port: int | None = None) -> bool:
     """Use the documented Windows TCP owner table, never game memory."""
     if IS_MAC:
         return False
     if listener_port is None:
-        listener_port = _port or PORT_KEYBOARD
+        listener_port = _state.port or PORT_KEYBOARD
     try:
-        import ctypes
-
-        class Row(ctypes.Structure):
-            _fields_ = [
-                (name, ctypes.c_ulong)
-                for name in (
-                    'state',
-                    'local_address',
-                    'local_port',
-                    'remote_address',
-                    'remote_port',
-                    'pid',
-                )
-            ]
-
-        api = ctypes.WinDLL('iphlpapi').GetExtendedTcpTable
-        api.argtypes = [
-            ctypes.c_void_p,
-            ctypes.POINTER(ctypes.c_ulong),
-            ctypes.c_int,
-            ctypes.c_ulong,
-            ctypes.c_int,
-            ctypes.c_ulong,
-        ]
-        api.restype = ctypes.c_ulong
-        size = ctypes.c_ulong(0)
-        result = api(None, ctypes.byref(size), False, 2, 5, 0)
-        if result != 122 or size.value < 4 or size.value > 16 * 1024 * 1024:
-            return False
-        data = ctypes.create_string_buffer(size.value)
-        if api(data, ctypes.byref(size), False, 2, 5, 0) != 0:
-            return False
-        count = ctypes.c_ulong.from_buffer(data).value
-        if 4 + count * ctypes.sizeof(Row) > size.value:
-            return False
-        for index in range(count):
-            row = Row.from_buffer(data, 4 + index * ctypes.sizeof(Row))
-            if (
-                row.pid == os.getpid()
-                and row.local_address == 0x0100007F
-                and row.remote_address == 0x0100007F
-                and socket.ntohs(row.local_port & 0xFFFF) == peer_port
-                and socket.ntohs(row.remote_port & 0xFFFF) == listener_port
-            ):
-                return True
+        rows = _owner_rows()
     except Exception:
-        pass
-    return False
+        simsight_log.error('startup: TCP owner table')
+        return False
+    loopback = 0x0100007F
+    return any(
+        row.pid == os.getpid()
+        and row.local_address == loopback
+        and row.remote_address == loopback
+        and socket.ntohs(row.local_port & 0xFFFF) == peer_port
+        and socket.ntohs(row.remote_port & 0xFFFF) == listener_port
+        for row in rows
+    )
 
 
-def _is_mode_mark(channel, payload):
+def _is_mode_mark(channel: str, payload: object) -> bool:
     return (
         channel == 'simsight.mark'
         and isinstance(payload, str)
@@ -208,18 +273,17 @@ def _is_mode_mark(channel, payload):
     )
 
 
-def note_mark(payload):
+def note_mark(payload: object) -> None:
     """Flash reports its own mode: '...-active' while it owns the keys before
     a save loads, '...-idle' / '...-native' when the loaded-zone path is used.
     Flash is the source of truth so the poller can never double-drive."""
-    global _flash_startup
     if not _is_mode_mark('simsight.mark', payload):
         return
     with _lock:
-        _flash_startup = payload.endswith('-active')
+        _state.flash_startup = str(payload).endswith('-active')
 
 
-def send_navigation(message_name):
+def send_navigation(message_name: object) -> bool:
     """Called from the key poller. True means the message is consumed here.
 
     While Flash reports startup mode it handles the navigation keys natively
@@ -234,67 +298,49 @@ def send_navigation(message_name):
     if message_name == 'A11yInspect':
         return False
     with _lock:
-        return _connected and _flash_startup
+        return _state.connected and _state.flash_startup
 
 
-def _dispatch(channel, payload):
+def _dispatch(channel: str, payload: str) -> None:
     import simsight_narrator as narrator
 
-    if channel == 'simsight.modalstate':
+    if channel in _KEYS_HANDLERS or channel == 'simsight.inputfence':
         import simsight_keys as keys
 
-        keys.a11y_modalstate(payload)
-    elif channel == 'simsight.blocking':
-        import simsight_keys as keys
-
-        keys.a11y_blocking(payload)
-    elif channel == 'simsight.inputfence':
-        import simsight_keys as keys
-
-        keys.a11y_inputfence()
+        if channel == 'simsight.inputfence':
+            keys.a11y_inputfence()
+        else:
+            getattr(keys, _KEYS_HANDLERS[channel])(payload)
     elif channel == 'simsight.mark':
         note_mark(payload)
         log('shared UI ready: ' + payload[:100])
-    else:
-        handlers = {
-            'simsight.speak_enc': narrator.a11y_speak_enc,
-            'simsight.widget_enc': narrator.a11y_widget_enc,
-            'simsight.focus_enc': narrator.a11y_focus_enc,
-            'simsight.widgetname_enc': narrator.a11y_widgetname_enc,
-            'simsight.dialog_enc': narrator.a11y_dialog_enc,
-            'simsight.scope_enc': narrator.a11y_scope_enc,
-            'simsight.event_enc': narrator.a11y_event_enc,
-            'simsight.context_enc': narrator.a11y_context_enc,
-            'simsight.inspect_enc': narrator.a11y_inspect_enc,
-            'simsight.clock_enc': narrator.a11y_clock_enc,
-            'simsight.mood_enc': narrator.a11y_mood_enc,
-            'simsight.stop': narrator.a11y_stop,
-        }
-        handler = handlers.get(channel)
-        if handler is not None:
-            handler(payload)
+    elif channel in _NARRATOR_HANDLERS:
+        getattr(narrator, _NARRATOR_HANDLERS[channel])(payload)
 
 
-def tick():
-    """Called only by the game's core.on_tick, which also runs pre-zone."""
-    global _startup, _next_tick
-    if time.monotonic() < _next_tick:
-        return
-    _next_tick = time.monotonic() + 0.02
+def _client_present() -> bool:
     import services
 
     zone = services.current_zone()
     manager = services.client_manager() if zone is not None else None
     client = manager.get_first_client() if manager is not None else None
-    startup = client is None
+    return client is not None
+
+
+def tick() -> None:
+    """Called only by the game's core.on_tick, which also runs pre-zone."""
+    if time.monotonic() < _state.next_tick:
+        return
+    _state.next_tick = time.monotonic() + 0.02
+    startup = not _client_present()
     with _lock:
-        changed = startup != _startup
+        changed = startup != _state.startup
         if changed:
             log(
                 'transport switched to ' + ('startup Socket' if startup else 'native loaded client')
             )
-        _startup = startup
-        generation = _generation
+        _state.startup = startup
+        generation = _state.generation
         batch = list(_incoming)
         _incoming.clear()
     for message_generation, channel, payload in batch:
@@ -314,66 +360,88 @@ def tick():
             log(f'handler failed: {channel} {ex!r}')
 
 
-def _connection(conn):
+def _greeted() -> None:
+    """A UI said hello: a new connection generation starts."""
+    with _lock:
+        _state.generation += 1
+        _incoming.clear()
+        _state.connected = True
+    log(f'UI Socket connected (outbound only, port {_state.port})')
+
+
+def _enqueue(post: Post) -> None:
+    with _lock:
+        if len(_incoming) >= MAX_QUEUE and (post[0] in _STATE_CHANNELS or _is_mode_mark(*post)):
+            _incoming.popleft()
+        if len(_incoming) < MAX_QUEUE:
+            _incoming.append((_state.generation, post[0], post[1]))
+
+
+class _Session:
+    """One UI connection: the greeting first, then POST lines."""
+
+    def __init__(self) -> None:
+        self.reader = FrameReader()
+        self.greeted = False
+
+    def take(self, data: bytes) -> bool:
+        """Act on received bytes. False when the connection must end (no
+        greeting first, or a line that is not an accepted POST)."""
+        for line in self.reader.feed(data):
+            if not self.greeted:
+                if parse_hello(line) is None:
+                    return False
+                _greeted()
+                self.greeted = True
+                continue
+            post = parse_post(line)
+            if post is None:
+                return False
+            _enqueue(post)
+        return True
+
+
+def _receive(conn: Any) -> bytes | None:
+    """Bytes from the UI, b'' when it closed, None when nothing came."""
+    try:
+        return conn.recv(4096)
+    except socket.timeout:
+        return None
+
+
+def _connection(conn: Any) -> str | None:
     """Serve one UI connection. Never sends a byte. Returns 'moved' when it
     ended because the settings now ask for another port: a UI copy keeps its
     connection from the main menu through a loaded game and back, so the
     settings are checked here too, every half second."""
-    global _connected, _generation, _flash_startup
-    reader = FrameReader()
-    greeted = False
-    conn.settimeout(0.5)
-    next_check = time.monotonic() + 0.5
+    session = _Session()
+    conn.settimeout(_CHECK_EVERY)
+    next_check = time.monotonic() + _CHECK_EVERY
     try:
         while not _stop.is_set():
-            try:
-                data = conn.recv(4096)
-            except socket.timeout:
-                data = None
+            data = _receive(conn)
             if data == b'':
                 return None
             now = time.monotonic()
             if now >= next_check:
-                next_check = now + 0.5
+                next_check = now + _CHECK_EVERY
                 if _preference_moved():
-                    log(f'UI Socket closed: the settings now ask for port {_wanted}')
+                    log(f'UI Socket closed: the settings now ask for port {_state.wanted}')
                     return 'moved'
-            if data is None:
-                continue
-            for line in reader.feed(data):
-                if not greeted:
-                    if parse_hello(line) is None:
-                        return None
-                    with _lock:
-                        _generation += 1
-                        _incoming.clear()
-                        _connected = True
-                    greeted = True
-                    log(f'UI Socket connected (outbound only, port {_port})')
-                    continue
-                post = parse_post(line)
-                if post is None:
-                    return None
-                with _lock:
-                    if len(_incoming) >= MAX_QUEUE and (
-                        post[0]
-                        in ('simsight.inputfence', 'simsight.modalstate', 'simsight.blocking')
-                        or _is_mode_mark(*post)
-                    ):
-                        _incoming.popleft()
-                    if len(_incoming) < MAX_QUEUE:
-                        _incoming.append((_generation,) + post)
+            if data is not None and not session.take(data):
+                return None
     finally:
         with _lock:
-            _connected = False
-            _flash_startup = False
-            _generation += 1
+            _state.connected = False
+            _state.flash_startup = False
+            _state.generation += 1
             _incoming.clear()
-        if greeted:
+        if session.greeted:
             log('UI Socket disconnected')
+    return None
 
 
-def _bind(port):
+def _bind(port: int) -> socket.socket:
     listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
         # Exclusive Windows binding prevents a second process from joining
@@ -382,20 +450,16 @@ def _bind(port):
             listener.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
         listener.bind(('127.0.0.1', port))
         listener.listen(2)
-        listener.settimeout(0.5)
+        listener.settimeout(_CHECK_EVERY)
     except Exception:
         listener.close()
         raise
-    meaning = {
-        PORT_KEYBOARD: 'keyboard on, simplified menus on',
-        PORT_KEYBOARD_FULL_MENUS: 'keyboard on, simplified menus off',
-        PORT_SPEECH: 'speech only',
-    }.get(port, 'unknown')
+    meaning = _PORT_MEANINGS.get(port, 'unknown')
     log(f'same-process-only loopback listener ready on port {port} ({meaning})')
     return listener
 
 
-def _open_listener(port):
+def _open_listener(port: int) -> tuple[int, socket.socket]:
     """(port, listener) for the wanted port. With Simplified menus off and
     45995 taken by another program, the default keyboard port still gives
     speech and keys before a save loads; the loaded game then applies the
@@ -409,66 +473,77 @@ def _open_listener(port):
         return PORT_KEYBOARD, _bind(PORT_KEYBOARD)
 
 
-def _preference_moved():
+def _preference_moved() -> bool:
     """A settings change made in a loaded game (simsight.reload or the settings
     menu) must reach the main menu. True when the wanted port has changed:
     the new value must read the same twice in a row, half a second apart, so
     the brief empty store of simsight.reload never moves it."""
-    global _wanted, _seen
-    if _wanted is None:
+    if _state.wanted is None:
         return False  # not serving (a session outside _serve)
     now = listen_port()
-    moved = now != _wanted and now == _seen
+    moved = now != _state.wanted and now == _state.seen
     if moved:
-        _wanted = now
-    _seen = now
+        _state.wanted = now
+    _state.seen = now
     return moved
 
 
-def _move_listener(listener):
+def _move_listener(listener: socket.socket) -> socket.socket:
     """Serve the wanted port. A failed move keeps the current listener until
     the settings change again."""
-    global _port
-    if _wanted == _port:
+    if _state.wanted is None or _state.wanted == _state.port:
         return listener
     try:
-        port, replacement = _open_listener(_wanted)
+        port, replacement = _open_listener(_state.wanted)
     except Exception as ex:
-        log(f'listener stays on port {_port}: {ex!r}')
+        log(f'listener stays on port {_state.port}: {ex!r}')
         return listener
     listener.close()
-    _port = port
+    _state.port = port
     return replacement
 
 
-def _serve():
-    global _port, _wanted, _seen
+def _serve_one(conn: Any, address: Any) -> bool:
+    """Serve an accepted connection; True when it ended because the settings
+    asked for another port."""
+    moved = False
+    try:
+        if address[0] == '127.0.0.1' and same_process_peer(address[1], _state.port):
+            moved = _connection(conn) == 'moved'
+    except Exception as ex:
+        log(f'Socket session ended: {ex!r}')
+    finally:
+        conn.close()
+    return moved
+
+
+def _accept_loop(listener: socket.socket) -> socket.socket:
+    """Accept until stopped; the listener in use at the end."""
+    while not _stop.is_set():
+        try:
+            conn, address = listener.accept()
+        except socket.timeout:
+            if _preference_moved():
+                listener = _move_listener(listener)
+            continue
+        if _serve_one(conn, address):
+            # Before the next accept: a UI that reconnects at once must not
+            # land on the port it was just closed for.
+            listener = _move_listener(listener)
+    return listener
+
+
+def _serve() -> None:
+    """The listener thread (Windows only)."""
     listener = None
     try:
         if not enabled():
             log('startup speech disabled in settings; not listening')
             return
-        _wanted = _seen = listen_port()
-        _port, listener = _open_listener(_wanted)
-        while not _stop.is_set():
-            try:
-                conn, address = listener.accept()
-            except socket.timeout:
-                if _preference_moved():
-                    listener = _move_listener(listener)
-                continue
-            moved = False
-            try:
-                if address[0] == '127.0.0.1' and same_process_peer(address[1], _port):
-                    moved = _connection(conn) == 'moved'
-            except Exception as ex:
-                log(f'Socket session ended: {ex!r}')
-            finally:
-                conn.close()
-            if moved:
-                # Before the next accept: a UI that reconnects at once must not
-                # land on the port it was just closed for.
-                listener = _move_listener(listener)
+        wanted = listen_port()
+        _state.wanted = _state.seen = wanted
+        _state.port, listener = _open_listener(wanted)
+        listener = _accept_loop(listener)
     except Exception as ex:
         log(f'Socket unavailable: {ex!r}')
     finally:
@@ -476,34 +551,33 @@ def _serve():
             listener.close()
 
 
-def stop():
+def stop() -> None:
     _stop.set()
 
 
-def install():
-    global _thread
-    if _thread is not None:
+def install() -> None:
+    """Hook the game's core tick and, on Windows, start the listener thread."""
+    if _state.installed:
         return
     import sims4.core_services as core
 
     original = core.on_tick
 
     @functools.wraps(original)
-    def on_tick(*args, **kwargs):
+    def on_tick(*args: Any, **kwargs: Any) -> Any:
         result = original(*args, **kwargs)
         try:
             tick()
-        except Exception as ex:
-            log(f'core tick failed: {ex!r}')
+        except Exception:
+            simsight_log.error('startup: core tick')
         return result
 
     core.on_tick = on_tick
+    _state.installed = True
     if IS_MAC:
         log('macOS: startup listener not started (main menu and CAS speech unavailable)')
-        _thread = False
         return
-    _thread = threading.Thread(target=_serve, name='a11y_startup', daemon=True)
-    _thread.start()
+    threading.Thread(target=_serve, name='a11y_startup', daemon=True).start()
 
 
 try:
