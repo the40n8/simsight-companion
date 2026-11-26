@@ -1,6 +1,7 @@
 """Stand-ins for the game's modules, so Mac-only mod code can be checked
 offline with the game's Python 3.7 (mac/test.sh). Not the real game: these
 checks cover our own logic, not EA's APIs."""
+
 import sys
 import types
 
@@ -19,5 +20,6 @@ def module(name, **attrs):
 
 def scripts_on_path():
     import os
+
     here = os.path.dirname(os.path.abspath(__file__))
     sys.path.insert(0, os.path.join(here, '..', '..', 'Scripts'))

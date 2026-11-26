@@ -1,4 +1,5 @@
 """Mac keyboard feeder: families, repeats, key-up, focus loss, owned keys."""
+
 import time
 import unittest
 
@@ -10,9 +11,16 @@ fakegame.scripts_on_path()
 LOG = []
 module('simsight_speech', log_line=lambda m: None)
 module('simsight_pump', alive=lambda: True, post=lambda fn, *a: LOG.append(('post',)))
-KEYS = module('simsight_keys', _enabled=True, _REPEAT_DELAY=0.03, _REPEAT_INTERVAL=0.0,
-              _chord_repeating=False, CHORDS={0x28: ('next', True), 0x48: ('help', False)},
-              _REPEATABLE={'A11yArrowDown'}, _announce_ui_settings=lambda: None)
+KEYS = module(
+    'simsight_keys',
+    _enabled=True,
+    _REPEAT_DELAY=0.03,
+    _REPEAT_INTERVAL=0.0,
+    _chord_repeating=False,
+    CHORDS={0x28: ('next', True), 0x48: ('help', False)},
+    _REPEATABLE={'A11yArrowDown'},
+    _announce_ui_settings=lambda: None,
+)
 KEYS.modal = True
 
 
@@ -57,7 +65,9 @@ class MacKeysTest(unittest.TestCase):
         time.sleep(0.05)
         mackeys._repeat(time.monotonic())
         mackeys.handle('plain', 0x28, False, False)
-        self.assertEqual(LOG, [('send', 'A11yArrowDown'), ('send', 'A11yArrowDown'), ('send', 'A11y|keyup|40')])
+        self.assertEqual(
+            LOG, [('send', 'A11yArrowDown'), ('send', 'A11yArrowDown'), ('send', 'A11y|keyup|40')]
+        )
 
     def test_chord_repeat_is_flagged(self):
         mackeys.handle('chord', 0x28, True, False)

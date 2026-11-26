@@ -54,7 +54,7 @@ def main():
                     header = MAGIC_NUMBER + struct.pack('<III', 0, 0, 0)
                     zf.writestr(rel[:-3] + '.pyc', header + marshal.dumps(code))
                     count += 1
-    print('built {} modules ({}) -> {}'.format(count, platform, target))
+    print(f'built {count} modules ({platform}) -> {target}')
 
 
 if __name__ == '__main__':

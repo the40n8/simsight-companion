@@ -1,5 +1,6 @@
 """Relationship labels in the right gender: the game's text for a label
 describes the other Sim as token 0, {M0.Father}{F0.Mother}."""
+
 import types
 import unittest
 
@@ -7,10 +8,17 @@ import fakegame
 from fakegame import module
 
 fakegame.scripts_on_path()
-module('simsight_speech', speak=lambda *a, **k: None, log_line=lambda *a: None,
-       MODS_FOLDER='/nonexistent', _mods_root=lambda: '/nonexistent')
+module(
+    'simsight_speech',
+    speak=lambda *a, **k: None,
+    log_line=lambda *a: None,
+    MODS_FOLDER='/nonexistent',
+    _mods_root=lambda: '/nonexistent',
+)
 module('sims4')
-module('sims4.commands', Command=lambda *a, **k: (lambda f: f), CommandType=types.SimpleNamespace(Live=1))
+module(
+    'sims4.commands', Command=lambda *a, **k: lambda f: f, CommandType=types.SimpleNamespace(Live=1)
+)
 module('sims4.core_services', on_tick=lambda *a, **k: None)
 module('simsight_scanner', _loc_cache={7: '{M0.Father}{F0.Mother}'})
 

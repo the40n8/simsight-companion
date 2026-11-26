@@ -1,6 +1,7 @@
 """House map: rooms, doors, garden, pool and stairs on a fake 14x10 lot.
 Ground floor: kitchen (x 2-6) and living room (x 6-12), z 2-8; yard around;
 a pool at x<2, z<3; upstairs a room above the living room; stairs in it."""
+
 import types
 import unittest
 
@@ -16,7 +17,7 @@ def room_id(x, z, level):
     if level != 0:
         return 0
     if not (2 <= x < 12 and 2 <= z < 8):
-        return 9            # the yard
+        return 9  # the yard
     return 1 if x < 6 else 2
 
 
@@ -42,20 +43,40 @@ class Sim:
 
 
 SIM = Sim()
-OBJECTS = [Obj(1, 3, 7, {'Func_Fridge'}), Obj(2, 6, 5, {'BuyCatSS_Door'}), Obj(3, 12, 5, {'BuyCatSS_Door'}),
-           Obj(4, 9, 5), Obj(5, 1, 1), Obj(6, 13, 9), Obj(7, 10, 5, {'Build_Stair'}, (0, 1))]
-LOT = types.SimpleNamespace(corners=[V(0, 0, 0), V(14, 0, 0), V(14, 0, 10), V(0, 0, 10)], min_level=0, max_level=1)
+OBJECTS = [
+    Obj(1, 3, 7, {'Func_Fridge'}),
+    Obj(2, 6, 5, {'BuyCatSS_Door'}),
+    Obj(3, 12, 5, {'BuyCatSS_Door'}),
+    Obj(4, 9, 5),
+    Obj(5, 1, 1),
+    Obj(6, 13, 9),
+    Obj(7, 10, 5, {'Build_Stair'}, (0, 1)),
+]
+LOT = types.SimpleNamespace(
+    corners=[V(0, 0, 0), V(14, 0, 0), V(14, 0, 10), V(0, 0, 10)], min_level=0, max_level=1
+)
 
-module('simsight_plus_rooms', room_id_at=room_id, tag_names=lambda o: o.tags, given_name=lambda r: '',
-       KINDS=(('Kitchen', ('Func_Fridge',), 5),))
-module('services', active_lot=lambda: LOT, get_active_sim=lambda: SIM,
-       object_manager=lambda: types.SimpleNamespace(get_valid_objects_gen=lambda: iter(OBJECTS)),
-       sim_info_manager=lambda: types.SimpleNamespace(instanced_sims_gen=lambda: iter([SIM])))
+module(
+    'simsight_plus_rooms',
+    room_id_at=room_id,
+    tag_names=lambda o: o.tags,
+    given_name=lambda r: '',
+    KINDS=(('Kitchen', ('Func_Fridge',), 5),),
+)
+module(
+    'services',
+    active_lot=lambda: LOT,
+    get_active_sim=lambda: SIM,
+    object_manager=lambda: types.SimpleNamespace(get_valid_objects_gen=lambda: iter(OBJECTS)),
+    sim_info_manager=lambda: types.SimpleNamespace(instanced_sims_gen=lambda: iter([SIM])),
+)
 module('build_buy', is_location_pool=lambda p, level: p.x < 2 and p.z < 3)
 module('terrain', get_terrain_height=lambda x, z: 0.0)
 math_mod = module('sims4.math', Vector3=V)
 module('sims4', math=math_mod)
-module('simsight_bridge', _classify=lambda o: ('MISC', 'k', ''), _object_name=lambda o: 'obj%d' % o.id)
+module(
+    'simsight_bridge', _classify=lambda o: ('MISC', 'k', ''), _object_name=lambda o: f'obj{o.id}'
+)
 
 import simsight_housemap as housemap  # noqa: E402
 
@@ -63,10 +84,10 @@ import simsight_housemap as housemap  # noqa: E402
 class HouseMapTest(unittest.TestCase):
     def setUp(self):
         self.house = housemap.build()
-        self.rooms = dict((r['id'], r) for r in self.house['rooms'])
+        self.rooms = {r['id']: r for r in self.house['rooms']}
 
     def links(self, room_id):
-        return dict((l['roomId'], l) for l in self.rooms[room_id]['links'])
+        return {link['roomId']: link for link in self.rooms[room_id]['links']}
 
     def test_rooms_and_kinds(self):
         self.assertEqual(self.rooms['1:0']['kind'], 'KITCHEN')
@@ -90,7 +111,10 @@ class HouseMapTest(unittest.TestCase):
     def test_stairs(self):
         self.assertEqual(self.links('2:0')['3:1']['stairs'], 'up')
         self.assertEqual(self.links('3:1')['2:0']['stairs'], 'down')
-        self.assertEqual(self.house['stairs'], [{'floor': 0, 'part': 'E', 'bottomRoomId': '2:0', 'topRoomId': '3:1'}])
+        self.assertEqual(
+            self.house['stairs'],
+            [{'floor': 0, 'part': 'E', 'bottomRoomId': '2:0', 'topRoomId': '3:1'}],
+        )
 
 
 if __name__ == '__main__':
