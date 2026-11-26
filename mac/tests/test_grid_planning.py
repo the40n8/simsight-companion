@@ -24,6 +24,9 @@ class Frame:
 
     width, depth = 10, 8
 
+    def world(self, e, n):
+        return (0.0 + e, 8.0 - n)
+
     def local(self, x, z):
         return (x - 0.0, 8.0 - z)
 
@@ -49,6 +52,13 @@ class Obj:
     def is_in_inventory(self):
         return False
 
+    def is_hidden(self):
+        return False
+
+
+class Door(Obj):
+    pass
+
 
 ROOMS = [
     Room(1, 'Kitchen', 0, block(0, 0, 4, 3)),
@@ -57,7 +67,7 @@ ROOMS = [
     Room(4, 'Shed', 0, block(8, 6, 10, 8)),
 ]
 OBJECTS = {
-    1: Obj(1, 4.0, 6.5, ('door',)),
+    1: Door(1, 4.0, 6.5, ('door',)),  # between the kitchen and the lounge
     2: Obj(2, 1.5, 8.0, ('window',)),
     3: Obj(3, 9.0, 0.5, ('window',)),
     4: Obj(4, 5.0, 1.0, ('plant',)),
@@ -81,13 +91,39 @@ module(
     tag_names=lambda obj: set(obj.tags),
     KINDS=[],
 )
+
+
+class Lot:
+    corners = [V(0, 0, 0), V(10, 0, 0), V(0, 0, 8), V(10, 0, 8)]
+
+    def is_position_on_lot(self, p):
+        return 0 <= p.x <= 10 and 0 <= p.z <= 8
+
+
 module(
     'services',
+    active_lot=Lot,
     object_manager=lambda: dict(OBJECTS),
     current_zone_id=lambda: 42,
     get_persistence_service=lambda: types.SimpleNamespace(
         get_save_slot_proto_buff=lambda: types.SimpleNamespace(slot_id=3)
     ),
+)
+
+module('terrain', get_terrain_height=lambda x, z, routing_surface=None: 0.0)
+module(
+    'routing',
+    SurfaceIdentifier=lambda zone, level, kind: (zone, level),
+    SurfaceType=types.SimpleNamespace(SURFACETYPE_WORLD='world'),
+)
+module('sims4').math = module('sims4.math', Vector3=V)
+# A pool in the south west corner (world x and z below 2), a patio north
+# of it (x 4 to 6, z below 1), open ground east of x 7.
+module(
+    'build_buy',
+    is_location_pool=lambda p, level: p.x < 2 and p.z < 2,
+    has_floor_at_location=lambda p, level: 4 <= p.x < 6 and p.z < 1,
+    is_location_outside=lambda p, level: p.z < 2 or p.x >= 7,
 )
 
 import simsight_log  # noqa: E402
@@ -143,7 +179,21 @@ class Buildings(unittest.TestCase):
         self.assertEqual((shed.box, shed.signature), ((8, 6, 10, 8), '3:42:8:6:10:8:0:0'))
         self.assertEqual((house.doors, house.windows), ({1}, {2}))
         self.assertEqual((shed.doors, shed.windows), (set(), {3}))
-        self.assertIs(snap.by_room[(4, 0)], shed)
+
+    def test_cursor_tiles_find_their_building_and_room(self):
+        # Build cursor tile (i, j) has its centre at world x = j + 0.5,
+        # z = i + 0.5 on this lot; the kitchen's cell (1, 1) is at x 1.5, z 6.5.
+        self.assertEqual(lot_grid._describe_tile(6, 1, 0), 'Main building, Kitchen.')
+        self.assertEqual(lot_grid._describe_tile(6, 1, 1), 'Main building, Attic.')
+        self.assertEqual(lot_grid._describe_tile(1, 8, 0), 'Unlabelled building 1, Shed.')
+        self.assertEqual(lot_grid._describe_tile(0, 0, 0), 'Pool.')
+        self.assertEqual(
+            lot_grid._describe_tile(4, 8, 0),
+            'Open outdoor ground; apparently clear, but construction still requires game '
+            'validation.',
+        )
+        self.assertIsNone(lot_grid._building_at(4, 8, 0))
+        self.assertEqual(lot_grid._building_at(6, 5, 0).name, 'Main building')
 
     def test_describe_buildings(self):
         lot_grid.describe_buildings()
@@ -196,10 +246,24 @@ class LotDescription(unittest.TestCase):
                 (
                     'Lot 10 by 8 metres. Main building in the north central part, rectangular, '
                     'footprint 7 by 3 metres. Building 2 in the south east part, roughly square, '
-                    'footprint 2 by 2 metres. Possible garden or landscaped plant cluster in the '
-                    'south central part, 1 detected plants.'
+                    'footprint 2 by 2 metres. Pool in the south west part, approximately 2 by 2 '
+                    'metres. Possible patio, porch, deck or path in the south central part, 2 '
+                    'square metres; exterior flooring alone cannot distinguish its purpose. '
+                    'Possible garden or landscaped plant cluster in the south central part, 1 '
+                    'detected plants.'
                 )
             ],
+        )
+
+    def test_room_doors(self):
+        kitchen, lounge = ROOMS[0], ROOMS[1]
+        self.assertEqual(
+            roof._room_text(kitchen, ROOMS, Frame()),
+            'Kitchen, roughly square, 4 by 3 metres. Doors: east wall to Lounge.',
+        )
+        self.assertEqual(
+            roof._room_text(lounge, ROOMS, Frame()),
+            'Lounge, roughly square, 3 by 3 metres. Doors: west wall to Kitchen.',
         )
 
 

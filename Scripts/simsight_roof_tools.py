@@ -11,6 +11,8 @@ import simsight_log
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
+    from simsight_tiles import Frame
+
     Cell = tuple[int, int]
     Box = tuple[Any, ...]  # west, north, east, south (lot metres)
     # (shape, box, level, room names) or (shape, box, level, names, style)
@@ -147,14 +149,32 @@ def _ground_cells(frame: Any) -> tuple[set[Cell], set[Cell]]:
 
     pool: set[Cell] = set()
     exterior_floor: set[Cell] = set()
-    for i in range(frame.width):
-        for j in range(frame.depth):
-            facts = tiles.ground(frame, i, j, 0)
+    tile_frame = tiles.frame()
+    if tile_frame is None:
+        return pool, exterior_floor
+    for e in range(frame.width):
+        for n in range(frame.depth):
+            facts = tiles.ground(tile_frame, *_tile_of_cell(frame, tile_frame, (e, n)), 0)
             if facts.get('pool'):
-                pool.add((i, j))
+                pool.add((e, n))
             if facts.get('outside') and facts.get('floor'):
-                exterior_floor.add((i, j))
+                exterior_floor.add((e, n))
     return pool, exterior_floor
+
+
+# simsight_plus_build's frame counts lot metres from the west and north
+# edges (cells); the tile queries (simsight_tiles) take the Build cursor's
+# tiles. These convert between the two through the tile centre.
+
+
+def _tile_of_cell(frame: Any, tile_frame: Frame, cell: Cell) -> tuple[int, int]:
+    x, z = frame.world(cell[0] + 0.5, cell[1] + 0.5)
+    return tile_frame.tile_of(x, z)
+
+
+def _cell_of_tile(frame: Any, tile_frame: Frame, i: int, j: int) -> Cell:
+    e, n = frame.local(*tile_frame.world(i, j))
+    return math.floor(e), math.floor(n)
 
 
 def _ground_parts(frame: Any) -> list[str]:
@@ -253,33 +273,44 @@ def _kind(obj: Any) -> str | None:
     return None
 
 
-def _doors(room: Any, by_id: dict[tuple[Any, Any], str], frame: Any) -> list[tuple[str, str]]:
+# Which wall a door is on, from the step between lot-metre cells.
+_CELL_SIDES = {(0, -1): 'north', (1, 0): 'east', (0, 1): 'south', (-1, 0): 'west'}
+
+
+def _doors(room: Any, all_rooms: list[Any], frame: Any) -> list[tuple[str, str]]:
+    """(wall, room or 'outside' beyond it) for each door of the room."""
     import simsight_tiles as tiles
 
+    tile_frame = tiles.frame()
+    if tile_frame is None:
+        return []
+    names = {(cell, r.level): r.name for r in all_rooms for cell in _room_cells(r)}
+    objects = tiles.snapshot(room.level)
     found = set()
-    for i, j in _room_cells(room):
-        for side in _doors_or_none(frame, i, j, room.level):
+    for cell in _room_cells(room):
+        i, j = _tile_of_cell(frame, tile_frame, cell)
+        for side in _doors_or_none(tile_frame, i, j, room.level, objects):
             di, dj = tiles.STEPS[side]
-            rid = tiles.room(frame, i + di, j + dj, room.level)
-            destination = by_id.get((rid, room.level), 'outside')
-            found.add((tiles.direction_name(side), destination))
+            beyond = _cell_of_tile(frame, tile_frame, i + di, j + dj)
+            step = (beyond[0] - cell[0], beyond[1] - cell[1])
+            wall = _CELL_SIDES.get(step) or tiles.direction_name(side)
+            found.add((wall, names.get((beyond, room.level), 'outside')))
     return sorted(found)
 
 
-def _doors_or_none(frame: Any, i: int, j: int, level: Any) -> dict[int, Any]:
+def _doors_or_none(frame: Frame, i: int, j: int, level: Any, objects: list[Any]) -> dict[int, Any]:
     import simsight_tiles as tiles
 
     try:
-        return tiles.doors(frame, i, j, level)
+        return tiles.doors(frame, i, j, level, objects=objects)
     except Exception:  # doors the game will not list
         return {}
 
 
 def _room_text(room: Any, all_rooms: list[Any], frame: Any) -> str:
     x1, z1, x2, z2 = _box(room)
-    by_id = {(r.rid, r.level): r.name for r in all_rooms}
     text = f'{room.name}, {_shape(room)}, {x2 - x1} by {z2 - z1} metres'
-    doors = _doors(room, by_id, frame)
+    doors = _doors(room, all_rooms, frame)
     if doors:
         text += '. Doors: ' + '; '.join(f'{side} wall to {dest}' for side, dest in doors)
     major = []

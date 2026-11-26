@@ -31,7 +31,6 @@ class _Room:
     def __init__(self, room: Any, cells: set[Cell]) -> None:
         self.room = room
         self.level = int(room.level)
-        self.rid = int(room.rid)
         self.cells = cells
 
 
@@ -56,9 +55,8 @@ class _Building:
 
 class _Snapshot:
     def __init__(self, frame: Any, buildings: list[_Building]) -> None:
-        self.frame = frame
+        self.frame = frame  # simsight_plus_build's lot frame: cells in lot metres
         self.buildings = buildings
-        self.by_room = {(r.rid, r.level): b for b in buildings for r in b.rooms}
 
 
 class _State:
@@ -236,14 +234,33 @@ def _snapshot(refresh: bool = False) -> _Snapshot:
     return snap
 
 
-def _building_at(i: int, j: int, level: int, snap: _Snapshot | None = None) -> _Building | None:
+def _cell_of_tile(frame: Any, i: int, j: int) -> Cell | None:
+    """The lot-metre cell (as the room scan counts them) under the Build
+    cursor's tile (i, j); None without a lot frame."""
     import simsight_tiles as tiles
 
-    snap = snap or _snapshot()
-    rid = tiles.room(snap.frame, i, j, level)
-    if rid is None:  # no room here
+    tile_frame = tiles.frame()
+    if tile_frame is None:
         return None
-    return snap.by_room.get((rid, int(level)))
+    e, n = frame.local(*tile_frame.world(i, j))
+    return int(e), int(n)
+
+
+def _room_at(i: int, j: int, level: int, snap: _Snapshot) -> tuple[_Building, _Room] | None:
+    """The building and room whose cells hold the cursor tile (i, j)."""
+    cell = _cell_of_tile(snap.frame, i, j)
+    if cell is None:
+        return None
+    for building in snap.buildings:
+        for record in building.rooms:
+            if record.level == int(level) and cell in record.cells:
+                return building, record
+    return None
+
+
+def _building_at(i: int, j: int, level: int, snap: _Snapshot | None = None) -> _Building | None:
+    found = _room_at(i, j, level, snap or _snapshot())
+    return found[0] if found is not None else None
 
 
 def _plural(count: int) -> str:
@@ -253,15 +270,13 @@ def _plural(count: int) -> str:
 def _describe_tile(i: int, j: int, level: int) -> str:
     import simsight_tiles as tiles
 
-    snap = _snapshot()
-    frame = snap.frame
-    building = _building_at(i, j, level, snap)
-    if building:
-        rec = next(
-            (r for r in building.rooms if r.level == int(level) and (i, j) in r.cells),
-            None,
-        )
-        return '{}, {}.'.format(building.name, rec.room.name if rec else 'room')
+    found = _room_at(i, j, level, _snapshot())
+    if found is not None:
+        building, record = found
+        return f'{building.name}, {record.room.name}.'
+    frame = tiles.frame()
+    if frame is None:
+        return 'Unclassified tile.'
     facts = tiles.ground(frame, i, j, level)
     objects = tiles.objects_on(frame, i, j, level)
     if facts.get('pool'):
