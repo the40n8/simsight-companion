@@ -1,5 +1,6 @@
 """Read-only Windows/build coordinate diagnostics; never inject input or set DPI."""
 
+import simsight_log
 import ctypes
 import json
 import math
@@ -155,7 +156,7 @@ def saved_options():
     # preferences, paths or personal data from Options.ini in the log.
     result = {}
     try:
-        folder = os.path.dirname(speech.LOG_PATH)
+        folder = os.path.dirname(simsight_log.PATH)
         for _ in range(3):
             if os.path.basename(folder).lower() == 'mods':
                 root = os.path.dirname(folder)
@@ -185,7 +186,7 @@ def saved_options():
 
 def record(kind, data=None, build=None):
     global _window_start, _count
-    if not speech.log_enabled:
+    if not simsight_log.enabled:
         return False
     with _lock:
         now = time.monotonic()
@@ -239,7 +240,7 @@ def inspect_display(delay: float = 5, _connection=None):
     output = sims4.commands.CheatOutput(_connection)
     if not math.isfinite(delay):
         return False
-    if not speech.log_enabled:
+    if not simsight_log.enabled:
         output('Run simsight.log on first.')
         return False
     try:

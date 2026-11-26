@@ -6,6 +6,7 @@ The wall height comes from the target layer (simsight_layers): Ctrl+Alt+U
 and Ctrl+Alt+D step through ground, six wall heights and ceiling.
 """
 
+import simsight_log
 import threading
 import time
 
@@ -444,7 +445,7 @@ def hang_with_game_tool(frame, side, item, point, height):
                 import os
 
                 base = os.path.join(
-                    os.path.dirname(speech.LOG_PATH), f'SimSight_wallshot_{_attempt[0]}'
+                    os.path.dirname(simsight_log.PATH), f'SimSight_wallshot_{_attempt[0]}'
                 )
                 spot = plus._to_screen(*screen[0])
                 plus.move_to(*spot)

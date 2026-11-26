@@ -1,5 +1,6 @@
 """Optional lot-planning descriptions and persistent whole-building labels."""
 
+import simsight_log
 import json
 import os
 import time
@@ -20,7 +21,7 @@ def _log(text):
 
 
 def _label_path():
-    return os.path.join(os.path.dirname(speech.LOG_PATH), 'SimSight_BuildingLabels.json')
+    return os.path.join(os.path.dirname(simsight_log.PATH), 'SimSight_BuildingLabels.json')
 
 
 def _load_labels():

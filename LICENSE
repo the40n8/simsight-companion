@@ -27,4 +27,4 @@ cover, and this repository does not include, The Sims 4's own files or other
 mods' files: contributors extract the ones the build needs from their own
 installs (see CONTRIBUTING.md). The speech pack in prism/ is Prism by Ethin
 Probst under MPL-2.0, unmodified, with its own licences in prism/LICENSES.
-Scripts/ctypes is from the Python 3.7 standard library (PSF licence).
+windows/vendor/ctypes is from the Python 3.7 standard library (PSF licence).

@@ -7,6 +7,7 @@ lot, floor and room in SimSight_RoomLabels.json next to the log, and the
 Build cursor names labelled rooms as it enters them and across walls.
 """
 
+import simsight_log
 import json
 import os
 
@@ -37,7 +38,7 @@ def _log(text):
 
 
 def _path():
-    return os.path.join(os.path.dirname(speech.LOG_PATH), 'SimSight_RoomLabels.json')
+    return os.path.join(os.path.dirname(simsight_log.PATH), 'SimSight_RoomLabels.json')
 
 
 def _load():

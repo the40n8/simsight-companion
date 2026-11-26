@@ -18,6 +18,7 @@ opened and what was read, so the two together show which windows need work.
 Nothing is spoken and nothing changes the game.
 """
 
+import simsight_log
 import sys
 
 import simsight_speech as speech
@@ -28,7 +29,7 @@ MAX_ROWS = 8
 
 
 def _log(text):
-    if speech.log_enabled:
+    if simsight_log.enabled:
         speech.log_line('modui: ' + text)
 
 
@@ -118,7 +119,7 @@ def install():
 
     def build_msg(self, *args, **kwargs):
         msg = original(self, *args, **kwargs)
-        if speech.log_enabled:
+        if simsight_log.enabled:
             try:
                 module, filename = _source()
                 if module is not None:

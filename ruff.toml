@@ -2,7 +2,7 @@
 # The game runs Python 3.7: target-version keeps newer syntax out.
 target-version = "py37"
 line-length = 100
-extend-exclude = ["Scripts/ctypes", "companion", "dist", "site"]
+extend-exclude = ["windows/vendor", "companion", "dist", "site"]
 
 [format]
 quote-style = "single"

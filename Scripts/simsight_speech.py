@@ -3,6 +3,8 @@
 import os
 import sys
 
+import simsight_log
+
 try:
     import atexit
 except ImportError:
@@ -38,7 +40,7 @@ def _mods_folder():
 
 
 MODS_FOLDER = _mods_folder()
-LOG_PATH = os.path.join(MODS_FOLDER, 'SimSight.log')
+LOG_PATH = simsight_log.PATH
 
 
 def _mods_root():
@@ -89,7 +91,7 @@ _last_time = 0.0
 # The cfg value rules logging (default off). This line remains as the
 # compile.py --release transform target and as the last-ditch fallback if
 # the settings module itself fails to import.
-log_enabled = True
+simsight_log.enabled = True
 
 # NVDA-style speech modes: hover speaks everything as you point, manual
 # captures silently for the read-current key, beeps replaces speech with a
@@ -100,7 +102,7 @@ speech_mode = 'hover'
 try:
     import simsight_settings as _settings
 
-    log_enabled = bool(_settings.get('logging'))
+    simsight_log.enabled = bool(_settings.get('logging'))
     _stored_braille = str(_settings.get('braille_mode', braille_mode))
     if _stored_braille in ('concise', 'full', 'only', 'off'):
         braille_mode = _stored_braille
@@ -112,13 +114,7 @@ except Exception:
 
 
 def log_line(message):
-    if not log_enabled:
-        return
-    try:
-        with open(LOG_PATH, 'a', encoding='utf-8') as handle:
-            handle.write('[{}] {}\n'.format(time.strftime('%H:%M:%S'), message))
-    except Exception:
-        pass
+    simsight_log.line(message)
 
 
 def _try_init_prism():

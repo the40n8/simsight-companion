@@ -31,7 +31,7 @@ def same(a, b):
 def modules(root):
     found = {}
     for folder, subs, files in os.walk(root):
-        subs[:] = [d for d in subs if d not in ('__pycache__', 'ctypes')]
+        subs[:] = [d for d in subs if d != '__pycache__']
         for name in files:
             if name.endswith('.py'):
                 full = os.path.join(folder, name)

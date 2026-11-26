@@ -7,6 +7,7 @@ repeats and releases. The transient Windows hook remains scanner-chord-only.
 Ordinary typing never waits on a permanent Python keyboard hook.
 """
 
+import simsight_log
 import threading
 import time
 from collections import deque
@@ -940,7 +941,7 @@ def _hook_callback_factory(user32, kernel32):
                         and _game_is_foreground(user32, kernel32)
                         and not _altgr_pressed(user32)
                     )
-                    if speech.log_enabled and not (is_down and previous):
+                    if simsight_log.enabled and not (is_down and previous):
                         try:
                             late = (kernel32.GetTickCount() - info[3]) & 0xFFFFFFFF
                         except Exception:
@@ -1281,7 +1282,7 @@ def _toggle_logging():
         speech.log_line(f'keys: logging toggle failed: {ex!r}')
         return False
     speech.speak(
-        '{}: {}'.format(lang.t('logging'), lang.t('on') if speech.log_enabled else lang.t('off')),
+        '{}: {}'.format(lang.t('logging'), lang.t('on') if simsight_log.enabled else lang.t('off')),
         explicit=True,
     )
     return True
@@ -1634,7 +1635,7 @@ def _loop():
             # chords lost). A second modifier read after the sample shows
             # whether a press bit read with Ctrl+Alt up had them held a
             # moment later. It decides nothing: chords use the first read.
-            tracing = speech.log_enabled
+            tracing = simsight_log.enabled
             chord_end = tracing and (
                 bool(read_key(VK_CONTROL) & 0x8000)
                 and bool(read_key(VK_MENU) & 0x8000)

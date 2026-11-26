@@ -16,6 +16,7 @@ Diagnostics:
     simsight.status   report backend, DLL presence and log path
 """
 
+import simsight_log
 import re
 import threading
 import time
@@ -1093,7 +1094,7 @@ def a11y_test(_connection=None):
     backend = speech.init()
     speech.speak(f'Narration test successful. The active backend is {backend}.', explicit=True)
     output(f'simsight: spoke test sentence via backend "{backend}"')
-    output(f'simsight: log file at {speech.LOG_PATH}')
+    output(f'simsight: log file at {simsight_log.PATH}')
     return True
 
 
@@ -1126,21 +1127,21 @@ def a11y_log(mode: str = '', _connection=None):
     output = sims4.commands.CheatOutput(_connection)
     m = mode.lower()
     if m in ('on', 'true', '1'):
-        speech.log_enabled = True
+        simsight_log.enabled = True
         settings.set('logging', True)
         speech.log_line('logging enabled via simsight.log')
-        output(f'simsight: logging ON -> {speech.LOG_PATH}')
+        output(f'simsight: logging ON -> {simsight_log.PATH}')
         speech.speak('Logging on.', explicit=True)
     elif m in ('off', 'false', '0'):
         speech.log_line('logging disabled via simsight.log')
-        speech.log_enabled = False
+        simsight_log.enabled = False
         settings.set('logging', False)
         output('simsight: logging OFF')
         speech.speak('Logging off.', explicit=True)
     else:
         output(
             'simsight: logging is {} (log file: {})'.format(
-                'ON' if speech.log_enabled else 'OFF', speech.LOG_PATH
+                'ON' if simsight_log.enabled else 'OFF', simsight_log.PATH
             )
         )
         output('simsight: usage simsight.log on|off')
@@ -1156,7 +1157,7 @@ def a11y_reload(_connection=None):
     settings.reload()
     if not settings.get('captions', False):
         speech.clear_caption()
-    speech.log_enabled = bool(settings.get('logging', speech.log_enabled))
+    simsight_log.enabled = bool(settings.get('logging', simsight_log.enabled))
     braille = str(settings.get('braille_mode', speech.braille_mode))
     if braille in ('concise', 'full', 'only', 'off'):
         speech.braille_mode = braille
@@ -1273,7 +1274,7 @@ def a11y_settings(_connection=None):
     lines.append('auto focus {}'.format('on' if settings.get('auto_focus') else 'off'))
     lines.append(f'braille mode {speech.braille_mode}')
     lines.append('verbosity {}'.format(settings.get('verbosity')))
-    lines.append('logging {}'.format('on' if speech.log_enabled else 'off'))
+    lines.append('logging {}'.format('on' if simsight_log.enabled else 'off'))
     for line in lines:
         output('simsight: ' + line)
     for line in keybind_lines:
@@ -1322,5 +1323,5 @@ def a11y_status(_connection=None):
             'supported by reader' if speech.has_braille() else 'not available', speech.braille_mode
         )
     )
-    output('a11y log: {} ({})'.format('ON' if speech.log_enabled else 'OFF', speech.LOG_PATH))
+    output('a11y log: {} ({})'.format('ON' if simsight_log.enabled else 'OFF', simsight_log.PATH))
     return True

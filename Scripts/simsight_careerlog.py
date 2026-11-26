@@ -20,6 +20,7 @@ The log names hidden answers (the sickness, correct treatments) on purpose:
 it is research data for the developers, never narration.
 """
 
+import simsight_log
 import simsight_speech as speech
 
 _installed = False
@@ -63,7 +64,7 @@ def _who(target):
 
 
 def _log(text):
-    if speech.log_enabled:
+    if simsight_log.enabled:
         speech.log_line('doctor: ' + text)
 
 
@@ -142,7 +143,7 @@ def _install_sickness():
 
     def applied(klass, args, kwargs):
         info = args[0] if args else kwargs.get('sim_info')
-        if not speech.log_enabled:
+        if not simsight_log.enabled:
             return
         _log(
             'sickness {} applied to {} (from_load={})'.format(

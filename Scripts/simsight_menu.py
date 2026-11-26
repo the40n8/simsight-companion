@@ -7,6 +7,7 @@ is retained as a diagnostic; captions are the narration display.
 First-install automatic opening is deferred by the user (2026-09-15).
 """
 
+import simsight_log
 import sims4.commands
 
 import simsight_lang as lang
@@ -236,7 +237,7 @@ def _value(row):
 
             return bool(objectnames._enabled)
         if key == 'logging':
-            return bool(speech.log_enabled)
+            return bool(simsight_log.enabled)
     except Exception:
         pass
     value = settings.get(key)
@@ -334,12 +335,12 @@ def _apply(row, value):
         objectnames.enable(bool(value))
     elif key == 'logging':
         if value:
-            speech.log_enabled = True
+            simsight_log.enabled = True
             settings.set(key, True)
             speech.log_line('logging enabled via the settings menu')
         else:
             speech.log_line('logging disabled via the settings menu')
-            speech.log_enabled = False
+            simsight_log.enabled = False
             settings.set(key, False)
     elif key in ('sapi_rate', 'sapi_volume'):
         settings.set(key, int(value))
