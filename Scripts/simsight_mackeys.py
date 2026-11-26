@@ -17,9 +17,18 @@ bridge forwards the list to the helper whenever it changes. Held keys repeat
 with the Windows reader's timing, and a key-up is sent like on Windows.
 """
 
-import time
+from __future__ import annotations
 
-import simsight_speech as speech
+import time
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
+
+import simsight_log
+
+if TYPE_CHECKING:
+    from typing import Callable
+
+    HeldKey = tuple[str, int, bool]  # (family, vk, shift)
 
 LEASE_SECONDS = 0.5
 
@@ -50,31 +59,90 @@ _CANDIDATES = [
 ]
 _SHIFTED = [0x09, 0x52]
 
-_held = {}  # (family, vk, shift) -> [message or intent, pressed_at, last_fire]
+
+@dataclass
+class _Held:
+    """A held key that repeats: the message (plain) or intent (chord) it sends."""
+
+    what: str
+    pressed_at: float
+    last_fire: float
+
+
+_held: dict[HeldKey, _Held] = {}
+# Module attributes (the tests reset them): last keyboard lease, last grab set sent.
 _last_lease = -1e9
-_last_grab = None
+_last_grab: list[str] | None = None
 
 
-def _keys():
+def _keys() -> Any:
     import simsight_keys as keys
 
     return keys
 
 
-def _log(message):
-    speech.log_line('mackeys: ' + message)
-
-
-def _pump_alive():
+def _pump_alive() -> bool:
     try:
         import simsight_pump as pump
 
         return bool(pump.alive())
     except Exception:
+        simsight_log.error('mackeys: pump state')
         return False
 
 
-def handle(family, vk, down, shift):
+def _needs(keys: Any, key: HeldKey, now: float) -> bool:
+    keys._send('A11yNeeds')
+    return True
+
+
+def _chord_key(keys: Any, key: HeldKey, now: float) -> bool:
+    entry = keys.CHORDS.get(key[1])
+    if entry is None:
+        return False
+    intent, repeats = entry
+    keys._chord(intent)
+    if repeats:
+        _held[key] = _Held(intent, now, now)
+    return True
+
+
+def _plus_key(keys: Any, key: HeldKey, now: float) -> bool:
+    import simsight_plus_core as core
+
+    entry = core.HOTKEYS.get(key[1])
+    if entry is None:
+        return False
+    fn = entry[0]
+    try:
+        if core._wants_shift(fn):
+            fn(key[2])
+        else:
+            fn()
+    except Exception:
+        simsight_log.error(f'mackeys: {entry[1]}')
+    return True
+
+
+def _plain_key(keys: Any, key: HeldKey, now: float) -> bool:
+    message = keys._plain_message(key[1], False, False, key[2])
+    if message is None:
+        return False
+    keys._send(message)
+    if message in keys._REPEATABLE:
+        _held[key] = _Held(message, now, now)
+    return True
+
+
+_FAMILIES: dict[str, Callable[[Any, HeldKey, float], bool]] = {
+    'needs': _needs,
+    'chord': _chord_key,
+    'plus': _plus_key,
+    'plain': _plain_key,
+}
+
+
+def handle(family: str, vk: int, down: bool, shift: bool) -> bool:
     """One key event from the helper (simulation thread)."""
     keys = _keys()
     key = (family, vk, shift)
@@ -83,102 +151,76 @@ def handle(family, vk, down, shift):
         if family == 'plain':
             keys._send(f'A11y|keyup|{vk}')
         return True
-    now = time.monotonic()
-    if family == 'needs':
-        keys._send('A11yNeeds')
-        return True
-    if family == 'chord':
-        entry = keys.CHORDS.get(vk)
-        if entry is None:
-            return False
-        intent, repeats = entry
-        keys._chord(intent)
-        if repeats:
-            _held[key] = [intent, now, now]
-        return True
-    if family == 'plus':
-        import simsight_plus_core as core
-
-        entry = core.HOTKEYS.get(vk)
-        if entry is None:
-            return False
-        fn = entry[0]
-        try:
-            if core._wants_shift(fn):
-                fn(shift)
-            else:
-                fn()
-        except Exception as ex:
-            _log(f'{entry[1]} failed: {ex!r}')
-        return True
-    if family == 'plain':
-        message = keys._plain_message(vk, False, False, shift)
-        if message is None:
-            return False
-        keys._send(message)
-        if message in keys._REPEATABLE:
-            _held[key] = [message, now, now]
-        return True
-    return False
+    handler = _FAMILIES.get(family)
+    if handler is None:
+        return False
+    return handler(keys, key, time.monotonic())
 
 
-def _repeat(now):
+def _repeat(now: float) -> None:
     keys = _keys()
     for (family, _vk, _shift), entry in list(_held.items()):
-        what, pressed_at, last_fire = entry
-        if now - pressed_at < keys._REPEAT_DELAY or now - last_fire < keys._REPEAT_INTERVAL:
+        if (
+            now - entry.pressed_at < keys._REPEAT_DELAY
+            or now - entry.last_fire < keys._REPEAT_INTERVAL
+        ):
             continue
-        entry[2] = now
+        entry.last_fire = now
         if family == 'chord':
             keys._chord_repeating = True
             try:
-                keys._chord(what)
+                keys._chord(entry.what)
             finally:
                 keys._chord_repeating = False
         else:
-            keys._send(what)
+            keys._send(entry.what)
 
 
-def grab_set():
+def grab_set() -> list[str]:
     """The bare keys the mod owns right now, as 'vk' or 'vk+shift' strings."""
     if not _pump_alive():
         return []
     keys = _keys()
-    out = []
-    for vk in _CANDIDATES:
-        if keys._plain_message(vk, False, False, False) is not None:
-            out.append(str(vk))
-    for vk in _SHIFTED:
-        if keys._plain_message(vk, False, False, True) is not None:
-            out.append(f'{vk}+shift')
+    out = [
+        str(vk) for vk in _CANDIDATES if keys._plain_message(vk, False, False, False) is not None
+    ]
+    out.extend(
+        f'{vk}+shift' for vk in _SHIFTED if keys._plain_message(vk, False, False, True) is not None
+    )
     return out
 
 
-def tick(send):
+def _lease() -> None:
+    """Keep Flash's keyboard guards on, and the UI copies' settings current."""
+    keys = _keys()
+    if keys._enabled and _pump_alive():
+        keys._send('A11y|lease')
+        try:
+            import simsight_pump as pump
+
+            pump.post(keys._announce_ui_settings)
+        except Exception:
+            simsight_log.error('mackeys: settings heartbeat')
+
+
+def tick(send: Callable[[dict[str, Any]], object]) -> None:
     """Every game tick: key repeats, the keyboard lease Flash's guards need,
     and the bare-key set for the helper (sent through send when it changes)."""
-    global _last_lease, _last_grab
+    global _last_lease, _last_grab  # noqa: PLW0603 - module attributes the tests reset
     now = time.monotonic()
     if _held:
         _repeat(now)
-    if now - _last_lease >= LEASE_SECONDS:
-        _last_lease = now
-        keys = _keys()
-        if keys._enabled and _pump_alive():
-            keys._send('A11y|lease')
-            try:
-                import simsight_pump as pump
-
-                pump.post(keys._announce_ui_settings)
-            except Exception:
-                pass
-        grab = grab_set()
-        if grab != _last_grab:
-            _last_grab = grab
-            send({'grab': {'keys': grab}})
+    if now - _last_lease < LEASE_SECONDS:
+        return
+    _last_lease = now
+    _lease()
+    grab = grab_set()
+    if grab != _last_grab:
+        _last_grab = grab
+        send({'grab': {'keys': grab}})
 
 
-def focus_lost():
+def focus_lost() -> None:
     """The game went to the background: release held keys (like Windows)."""
     keys = _keys()
     for family, vk, _shift in list(_held):

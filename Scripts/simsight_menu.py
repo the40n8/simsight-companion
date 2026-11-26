@@ -7,30 +7,34 @@ is retained as a diagnostic; captions are the narration display.
 First-install automatic opening is deferred by the user (2026-09-15).
 """
 
-import simsight_log
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any, Callable
+
 import sims4.commands
 
 import simsight_lang as lang
+import simsight_log
 import simsight_pump as pump
 import simsight_settings as settings
 import simsight_speech as speech
+from simsight_narrator import live_command
 
 
+@dataclass(frozen=True)
 class Row:
-    __slots__ = ('key', 'kind', 'term', 'choices', 'lo', 'hi', 'step', 'help')
-
-    def __init__(self, key, kind, term, choices=(), lo=0, hi=0, step=1, help=''):
-        self.key = key
-        self.kind = kind  # bool | choice | number | voice | action
-        self.term = term  # simsight_lang term for the label
-        self.choices = choices
-        self.lo = lo
-        self.hi = hi
-        self.step = step
-        self.help = help  # settings-window description (visual only)
+    key: str
+    kind: str  # bool | choice | number | voice | action
+    term: str  # simsight_lang term for the label
+    choices: tuple[str, ...] = ()
+    lo: float = 0
+    hi: float = 0
+    step: float = 1
+    help: str = ''  # settings-window description (visual only)
 
 
-ROWS = [
+ROWS: list[Row] = [
     Row(
         'speech_mode',
         'choice',
@@ -201,46 +205,60 @@ ROWS = [
     Row('close', 'action', 'close menu', help='close this window'),
 ]
 _SETTING_ROWS = [row for row in ROWS if row.kind != 'action']
-
-_index = 0
-_visual_id = None  # settings window dialog id
-_scan_visual_id = None  # scanner window dialog id
-_voices = None  # cached installed-voice list
-_picker_factory = None
-_text_picker_factory = None
+# Shown when the installed voices cannot be listed.
+_FALLBACK_VOICES = ['david', 'zira', 'hazel']
 
 
-def is_open():
-    return _visual_id is not None
+class _State:
+    def __init__(self) -> None:
+        self.index = 0  # row of the settings window to select
+        self.visual_id: Any = None  # settings window dialog id
+        self.scan_visual_id: Any = None  # scanner window dialog id
+        self.voices: list[str] | None = None  # cached installed-voice list
+        self.picker_factory: Any = None
+        self.text_picker_factory: Any = None
+
+
+_state = _State()
+
+
+def is_open() -> bool:
+    return _state.visual_id is not None
 
 
 # ------------------------------------------------------------------ values
 
 
-def _keys():
+def _keys() -> Any:
     import simsight_keys as keys
 
     return keys
 
 
-def _value(row):
-    key = row.key
-    try:
-        if key == 'speech_mode':
-            return speech.speech_mode
-        if key == 'braille_mode':
-            return speech.braille_mode
-        if key == 'keyboard':
-            return bool(_keys()._enabled)
-        if key == 'object_names':
-            import simsight_objectnames as objectnames
+def _objectnames() -> Any:
+    import simsight_objectnames as objectnames
 
-            return bool(objectnames._enabled)
-        if key == 'logging':
-            return bool(simsight_log.enabled)
-    except Exception:
-        pass
-    value = settings.get(key)
+    return objectnames
+
+
+# Options whose live value is not (only) the setting.
+_LIVE_VALUES: dict[str, Callable[[], Any]] = {
+    'speech_mode': lambda: speech.speech_mode,
+    'braille_mode': lambda: speech.braille_mode,
+    'keyboard': lambda: bool(_keys()._enabled),
+    'object_names': lambda: bool(_objectnames()._enabled),
+    'logging': lambda: bool(simsight_log.enabled),
+}
+
+
+def _value(row: Row) -> Any:
+    live = _LIVE_VALUES.get(row.key)
+    if live is not None:
+        try:
+            return live()
+        except (ImportError, AttributeError):
+            pass  # module not loaded yet: the saved setting stands in
+    value = settings.get(row.key)
     if row.kind == 'bool':
         return bool(value)
     if row.kind == 'voice':
@@ -248,7 +266,7 @@ def _value(row):
     return value
 
 
-def _value_text(row):
+def _value_text(row: Row) -> str:
     value = _value(row)
     if row.kind == 'bool':
         return lang.t('on') if value else lang.t('off')
@@ -265,113 +283,197 @@ def _value_text(row):
     return str(value)
 
 
-def _label(row):
-    return lang.t(row.term)
+def _label(row: Row) -> str:
+    return str(lang.t(row.term))
 
 
-def _apply(row, value):
+# ------------------------------------------------------------------ applying
+
+
+def _apply_speech_mode(value: Any) -> None:
+    speech.speech_mode = value
+    settings.set('speech_mode', value)
+    simsight_log.line(f'speech mode -> {value} (menu)')
+
+
+def _apply_braille_mode(value: Any) -> None:
+    speech.braille_mode = value
+    settings.set('braille_mode', value)
+
+
+def _apply_keyboard(value: Any) -> None:
+    keys = _keys()
+    keys._enabled = bool(value)
+    keys._send('A11yKeyboardOn' if value else 'A11yKeyboardOff')
+    settings.set('keyboard', bool(value))
+    if value:
+        keys.start()
+
+
+def _apply_captions(value: Any) -> None:
+    settings.set('captions', bool(value))
+    if not value:
+        speech.clear_caption()
+
+
+def _apply_simplified_menus(value: Any) -> None:
+    settings.set('simplified_menus', bool(value))
+    import simsight_narrator as narrator
+
+    narrator.push_simplified_menus()
+
+
+def _apply_travel_list(value: Any) -> None:
+    settings.set('travel_list', bool(value))
+    try:
+        import simsight_travel as travel
+
+        travel.apply_setting()
+    except Exception:
+        simsight_log.error('menu: travel setting notice')
+
+
+def _apply_scanner_mode(value: Any) -> None:
+    try:
+        _keys().set_scanner_mode(bool(value))
+    except Exception:
+        simsight_log.error('menu: scanner mode')
+
+
+def _apply_build_controls(value: Any) -> None:
+    settings.set('build_controls', bool(value))
+    try:
+        import simsight_build as build
+
+        build.apply_setting()
+    except Exception:
+        simsight_log.error('menu: build controls notice')
+
+
+def _apply_scanner(value: Any) -> None:
+    settings.set('scanner', bool(value))
+    if value:
+        _keys().start_swallow()
+
+
+def _apply_object_names(value: Any) -> None:
+    settings.set('object_names', bool(value))
+    _objectnames().enable(bool(value))
+
+
+def _apply_logging(value: Any) -> None:
+    if value:
+        simsight_log.enabled = True
+        settings.set('logging', True)
+        simsight_log.line('logging enabled via the settings menu')
+    else:
+        simsight_log.line('logging disabled via the settings menu')
+        simsight_log.enabled = False
+        settings.set('logging', False)
+
+
+def _apply_sapi_rate(value: Any) -> None:
+    settings.set('sapi_rate', int(value))
+    speech.restart_sapi()
+
+
+def _apply_sapi_volume(value: Any) -> None:
+    settings.set('sapi_volume', int(value))
+    speech.restart_sapi()
+
+
+def _apply_sapi_voice(value: Any) -> None:
+    settings.set('sapi_voice', str(value))
+    speech.restart_sapi()
+
+
+def _apply_tooltip_delay(value: Any) -> None:
+    settings.set('tooltip_delay', float(value))
+
+
+def _apply_scanner_range(value: Any) -> None:
+    settings.set('scanner_range', value)
+    import simsight_scanner as scanner
+
+    scanner.apply_range_setting()
+
+
+# Options that do more than save the setting; others are saved as they are
+# (bool rows as bool).
+_APPLY: dict[str, Callable[[Any], None]] = {
+    'speech_mode': _apply_speech_mode,
+    'braille_mode': _apply_braille_mode,
+    'keyboard': _apply_keyboard,
+    'captions': _apply_captions,
+    'simplified_menus': _apply_simplified_menus,
+    'travel_list': _apply_travel_list,
+    'scanner_mode': _apply_scanner_mode,
+    'build_controls': _apply_build_controls,
+    'scanner': _apply_scanner,
+    'object_names': _apply_object_names,
+    'logging': _apply_logging,
+    'sapi_rate': _apply_sapi_rate,
+    'sapi_volume': _apply_sapi_volume,
+    'sapi_voice': _apply_sapi_voice,
+    'tooltip_delay': _apply_tooltip_delay,
+    'scanner_range': _apply_scanner_range,
+}
+
+
+def _apply(row: Row, value: Any) -> None:
     """Set one option live and persist it (the same paths the a11y.*
     commands use). Simulation thread."""
-    key = row.key
-    if key == 'speech_mode':
-        speech.speech_mode = value
-        settings.set(key, value)
-        speech.log_line(f'speech mode -> {value} (menu)')
-    elif key == 'braille_mode':
-        speech.braille_mode = value
-        settings.set(key, value)
-    elif key == 'keyboard':
-        keys = _keys()
-        keys._enabled = bool(value)
-        keys._send('A11yKeyboardOn' if value else 'A11yKeyboardOff')
-        settings.set(key, bool(value))
-        if value:
-            keys.start()
-    elif key == 'auto_focus':
-        settings.set(key, bool(value))
-        import simsight_narrator as narrator
-
-        narrator._push_autofocus()
-    elif key == 'captions':
-        settings.set(key, bool(value))
-        if not value:
-            speech.clear_caption()
-    elif key == 'startup':
-        settings.set(key, bool(value))
-    elif key == 'simplified_menus':
-        settings.set(key, bool(value))
-        import simsight_narrator as narrator
-
-        narrator.push_simplified_menus()
-    elif key == 'travel_list':
-        settings.set(key, bool(value))
-        try:
-            import simsight_travel as travel
-
-            travel.apply_setting()
-        except Exception as ex:
-            speech.log_line(f'menu: travel setting notice failed: {ex!r}')
-    elif key == 'scanner_mode':
-        try:
-            _keys().set_scanner_mode(bool(value))
-        except Exception as ex:
-            speech.log_line(f'menu: scanner mode failed: {ex!r}')
-    elif key == 'build_controls':
-        settings.set(key, bool(value))
-        try:
-            import simsight_build as build
-
-            build.apply_setting()
-        except Exception as ex:
-            speech.log_line(f'menu: build controls notice failed: {ex!r}')
-    elif key == 'scanner':
-        settings.set(key, bool(value))
-        if value:
-            _keys().start_swallow()
-    elif key == 'object_names':
-        settings.set(key, bool(value))
-        import simsight_objectnames as objectnames
-
-        objectnames.enable(bool(value))
-    elif key == 'logging':
-        if value:
-            simsight_log.enabled = True
-            settings.set(key, True)
-            speech.log_line('logging enabled via the settings menu')
-        else:
-            speech.log_line('logging disabled via the settings menu')
-            simsight_log.enabled = False
-            settings.set(key, False)
-    elif key in ('sapi_rate', 'sapi_volume'):
-        settings.set(key, int(value))
-        speech.restart_sapi()
-    elif key == 'sapi_voice':
-        settings.set(key, str(value))
-        speech.restart_sapi()
-    elif key == 'tooltip_delay':
-        settings.set(key, float(value))
-    elif key == 'scanner_range':
-        settings.set(key, value)
-        import simsight_scanner as scanner
-
-        scanner.apply_range_setting()
+    apply = _APPLY.get(row.key)
+    if apply is not None:
+        apply(value)
     else:
-        settings.set(key, bool(value) if row.kind == 'bool' else value)
+        settings.set(row.key, bool(value) if row.kind == 'bool' else value)
 
 
-def _voice_list():
-    global _voices
-    if _voices is None:
+def _voice_list() -> list[str]:
+    if _state.voices is None:
         try:
-            _voices = list(speech.list_voices())
+            voices = list(speech.list_voices())
         except Exception:
-            _voices = []
-        if not _voices:
-            _voices = ['david', 'zira', 'hazel']
-    return _voices
+            simsight_log.error('menu: list voices')
+            voices = []
+        _state.voices = voices or list(_FALLBACK_VOICES)
+    return _state.voices
 
 
-def _change(row, direction):
+def _next_number(row: Row, current: float, direction: int) -> float:
+    """One step from current, wrapping at the row's limits."""
+    value = current + direction * row.step
+    if value > row.hi:
+        value = row.lo
+    elif value < row.lo:
+        value = row.hi
+    if row.key == 'tooltip_delay':
+        return round(value, 1)
+    return int(round(value))
+
+
+def _change_number(row: Row, direction: int) -> bool:
+    try:
+        current = float(_value(row))
+    except (TypeError, ValueError):
+        current = 0.0
+    value = _next_number(row, current, direction)
+    if value == current:
+        return False
+    _apply(row, value)
+    return True
+
+
+def _voice_index(names: list[str], current: str) -> int:
+    """Position of the voice matching current (partial, either way), or -1."""
+    for position, name in enumerate(names):
+        if current and (current in name.lower() or name.lower() in current):
+            return position
+    return -1
+
+
+def _change(row: Row, direction: int) -> bool:
     """Step the value. Returns True when something changed."""
     if row.kind == 'bool':
         _apply(row, not _value(row))
@@ -383,31 +485,10 @@ def _change(row, direction):
         _apply(row, choices[(index + direction) % len(choices)])
         return True
     if row.kind == 'number':
-        try:
-            current = float(_value(row))
-        except (TypeError, ValueError):
-            current = 0.0
-        value = current + direction * row.step
-        if value > row.hi:
-            value = row.lo
-        elif value < row.lo:
-            value = row.hi
-        if row.key == 'tooltip_delay':
-            value = round(value, 1)
-        else:
-            value = int(round(value))
-        if value == current:
-            return False
-        _apply(row, value)
-        return True
+        return _change_number(row, direction)
     if row.kind == 'voice':
         names = _voice_list()
-        current = str(_value(row)).lower()
-        index = -1
-        for position, name in enumerate(names):
-            if current and (current in name.lower() or name.lower() in current):
-                index = position
-                break
+        index = _voice_index(names, str(_value(row)).lower())
         _apply(row, names[(index + direction) % len(names)])
         return True
     return False
@@ -416,78 +497,83 @@ def _change(row, direction):
 # ------------------------------------------------------------------ speaking
 
 
-def _say(text):
+def _say(text: str) -> None:
     speech.speak(text, explicit=True)
 
 
-def _open_menu():
+def _open_menu() -> bool:
     """Simulation thread: show only the visual settings window."""
-    global _index
-    _index = 0
+    _state.index = 0
     return _show_settings_window()
 
 
-def _close():
-    global _visual_id
-    _cancel_dialog(_visual_id)
-    _visual_id = None
-    speech.log_line('menu: closed')
+def _close() -> None:
+    _cancel_dialog(_state.visual_id)
+    _state.visual_id = None
+    simsight_log.line('menu: closed')
 
 
-def _toggle():
+def _toggle() -> None:
     if is_open():
         _close()
     else:
         _open_menu()
 
 
-def _enter(row):
+def _enter(row: Row) -> bool:
     if row.kind == 'action':
         return _run_action(row)
     return _change(row, 1)
 
 
-def _run_action(row):
-    key = row.key
-    if key == 'reload':
-        settings.reload()
-        for setting_row in _SETTING_ROWS:
-            try:
-                _apply(setting_row, settings.get(setting_row.key))
-            except Exception as ex:
-                speech.log_line(f'menu: reload apply {setting_row.key} failed: {ex!r}')
-        try:
-            speech.retry_screen_reader()
-        except Exception:
-            pass
-        warnings = list(settings.load_errors)
-        text = lang.t('settings reloaded') + '.'
-        if warnings:
-            text += ' {} {}. {}'.format(len(warnings), 'warnings', ' '.join(warnings))
-        speech.log_line(text)
+def _reapply(row: Row) -> None:
+    """Apply the re-read value of one option; one failure does not stop the rest."""
+    try:
+        _apply(row, settings.get(row.key))
+    except Exception:
+        simsight_log.error(f'menu: reload apply {row.key}')
+
+
+def _reload_settings() -> None:
+    settings.reload()
+    for setting_row in _SETTING_ROWS:
+        _reapply(setting_row)
+    try:
+        speech.retry_screen_reader()
+    except Exception:
+        simsight_log.error('menu: reload screen reader retry')
+    warnings = list(settings.load_errors)
+    text = lang.t('settings reloaded') + '.'
+    if warnings:
+        text += ' {} {}. {}'.format(len(warnings), 'warnings', ' '.join(warnings))
+    simsight_log.line(text)
+
+
+def _run_action(row: Row) -> bool:
+    if row.key == 'reload':
+        _reload_settings()
         return True
-    if key == 'close':
+    if row.key == 'close':
         _close()
-        return False
     return False
 
 
 # ------------------------------------------------------------------ dialogs
 
 
-def _raw(text):
+def _raw(text: object) -> Any:
     from sims4.localization import LocalizationHelperTuning
 
     return LocalizationHelperTuning.get_raw_text(str(text))
 
 
-def _ls_hash(key):
+def _ls_hash(key: int) -> Any:
     """A LocalizedString for a string-table key the client will render."""
     try:
         from sims4.localization import _create_localized_string
 
         return _create_localized_string(int(key))
-    except Exception:
+    except Exception:  # any failure of EA's helper: build the proto by hand
         from protocolbuffers.Localization_pb2 import LocalizedString
 
         result = LocalizedString()
@@ -495,39 +581,38 @@ def _ls_hash(key):
         return result
 
 
-def _join(*strings):
+def _join(*strings: Any) -> Any:
     """Comma-join LocalizedStrings; falls back to the first one."""
-    strings = [s for s in strings if s is not None]
-    if not strings:
+    present = [s for s in strings if s is not None]
+    if not present:
         return None
-    if len(strings) == 1:
-        return strings[0]
+    if len(present) == 1:
+        return present[0]
     try:
         from sims4.localization import LocalizationHelperTuning
 
-        return LocalizationHelperTuning.get_comma_separated_list(*strings)
-    except Exception as ex:
-        speech.log_line(f'menu: comma list failed: {ex!r}')
-        return strings[0]
+        return LocalizationHelperTuning.get_comma_separated_list(*present)
+    except Exception:
+        simsight_log.error('menu: comma list')
+        return present[0]
 
 
-def _cancel_dialog(dialog_id):
+def _cancel_dialog(dialog_id: Any) -> None:
     if not dialog_id:
         return
     try:
         import services
 
         services.ui_dialog_service().dialog_cancel(dialog_id)
-    except Exception as ex:
-        speech.log_line(f'menu: cancel dialog {dialog_id} failed: {ex!r}')
+    except Exception:
+        simsight_log.error('menu: cancel dialog')
 
 
-def _picker(title, text, text_only=False, localized_title=None):
+def _picker(title: str, text: str, text_only: bool = False, localized_title: Any = None) -> Any:
     """localized_title: a game string used as the title as it is (a phone
     category, for example); title is then only a fallback."""
-    global _picker_factory, _text_picker_factory
     import services
-    from ui.ui_dialog_picker import UiObjectPicker, UiItemPicker
+    from ui.ui_dialog_picker import UiItemPicker, UiObjectPicker
 
     owner = services.get_active_sim()
     if owner is None:
@@ -535,18 +620,18 @@ def _picker(title, text, text_only=False, localized_title=None):
     if text_only:
         # Item pickers carry BasePickerRow data. An ObjectPickerRow with no
         # definition still asks the client for a thumbnail of definition 0.
-        if _text_picker_factory is None:
-            _text_picker_factory = UiItemPicker.TunableFactory()
-        return _text_picker_factory.default(
+        if _state.text_picker_factory is None:
+            _state.text_picker_factory = UiItemPicker.TunableFactory()
+        return _state.text_picker_factory.default(
             owner,
             title=lambda *args, **kwargs: _raw(title),
             text=lambda *args, **kwargs: _raw(text),
             min_selectable=1,
             max_selectable=1,
         )
-    if _picker_factory is None:
-        _picker_factory = UiObjectPicker.TunableFactory()
-    return _picker_factory.default(
+    if _state.picker_factory is None:
+        _state.picker_factory = UiObjectPicker.TunableFactory()
+    return _state.picker_factory.default(
         owner,
         title=lambda *args, **kwargs: (
             localized_title if localized_title is not None else _raw(title)
@@ -558,11 +643,16 @@ def _picker(title, text, text_only=False, localized_title=None):
     )
 
 
-def _show_settings_window():
+def _settings_row_name(row: Row) -> str:
+    if row.kind == 'action':
+        return _label(row)
+    return f'{_label(row)}: {_value_text(row)}'
+
+
+def _show_settings_window() -> bool:
     """Simulation thread. Replaces any earlier settings window."""
-    global _visual_id
-    _cancel_dialog(_visual_id)
-    _visual_id = None
+    _cancel_dialog(_state.visual_id)
+    _state.visual_id = None
     try:
         from ui.ui_dialog_picker import BasePickerRow
 
@@ -573,68 +663,123 @@ def _show_settings_window():
             text_only=True,
         )
         if dialog is None:
-            speech.log_line('menu: no active Sim, settings window skipped')
+            simsight_log.line('menu: no active Sim, settings window skipped')
             return False
         for position, row in enumerate(ROWS):
-            if row.kind == 'action':
-                name = _label(row)
-            else:
-                name = f'{_label(row)}: {_value_text(row)}'
             dialog.add_row(
                 BasePickerRow(
                     option_id=position,
-                    name=_raw(name),
+                    name=_raw(_settings_row_name(row)),
                     row_description=_raw(row.help),
                     row_tooltip=None,
                     icon=None,
                     tag=position,
-                    is_selected=(position == _index % len(ROWS)),
+                    is_selected=(position == _state.index % len(ROWS)),
                 )
             )
         dialog.add_listener(_on_settings_pick)
         _keys().fence_opening_input()
         dialog.show_dialog()
-        _visual_id = dialog.dialog_id
+        _state.visual_id = dialog.dialog_id
         return True
-    except Exception as ex:
-        speech.log_line(f'menu: settings window failed: {ex!r}')
+    except Exception:
+        simsight_log.error('menu: settings window')
         return False
 
 
-def _on_settings_pick(dialog):
-    """Picker reply (simulation thread)."""
-    global _visual_id, _index
-    if dialog.dialog_id != _visual_id:
-        return  # a window we already replaced
-    _visual_id = None
+def _picked_tag(dialog: Any, where: str) -> Any:
+    """The first result tag of an accepted picker reply, or None."""
     if not dialog.accepted:
-        return
+        return None
     try:
         tags = list(dialog.get_result_tags())
-    except Exception as ex:
-        speech.log_line(f'menu: pick result failed: {ex!r}')
-        return
-    if not tags:
-        return
-    position = int(tags[0]) % len(ROWS)
-    row = ROWS[position]
-    _index = position
-    if row.key == 'close':
-        _close()
-        return
-    _enter(row)
-    _show_settings_window()
+    except Exception:
+        simsight_log.error(where)
+        return None
+    return tags[0] if tags else None
 
 
-def _show_scanner_window(group=None):
-    """Simulation thread. What the scanner sees, one row per thing."""
-    global _scan_visual_id
-    _cancel_dialog(_scan_visual_id)
-    _scan_visual_id = None
+def _on_settings_pick(dialog: Any) -> None:
+    """Picker reply (simulation thread)."""
     try:
-        import services
+        if dialog.dialog_id != _state.visual_id:
+            return  # a window we already replaced
+        _state.visual_id = None
+        tag = _picked_tag(dialog, 'menu: pick result')
+        if tag is None:
+            return
+        position = int(tag) % len(ROWS)
+        row = ROWS[position]
+        _state.index = position
+        if row.key == 'close':
+            _close()
+            return
+        _enter(row)
+        _show_settings_window()
+    except Exception:
+        simsight_log.error('menu: settings pick')
+
+
+def _add_scanner_rows(dialog: Any, groups: list[Any], current: tuple[Any, Any]) -> int:
+    """One row per group and per entry; returns the number of rows."""
+    import services
+    import simsight_scanner as scanner
+    from ui.ui_dialog_picker import ObjectPickerRow
+
+    current_group, current_entry = current
+    manager = services.object_manager()
+    option = 0
+    for group_key, entries in groups:
+        subs = scanner.subs_in(entries)
+        label = scanner.GROUP_TERMS.get(group_key)
+        dialog.add_row(
+            ObjectPickerRow(
+                option_id=option,
+                name=_raw(lang.t(label)) if label else _ls_hash(scanner.label_hash(group_key)),
+                row_description=_raw(
+                    '{} items, {} subcategories{}'.format(
+                        len(entries),
+                        len(subs),
+                        '  (current)' if group_key == current_group else '',
+                    )
+                ),
+                row_tooltip=None,
+                icon=None,
+                tag=('group', group_key),
+            )
+        )
+        option += 1
+        for position, entry in enumerate(entries):
+            name, icon_info = _entry_name(entry, manager)
+            where = f'{scanner.place_text(entry)}. {position + 1} of {len(entries)}'
+            if entry is current_entry:
+                where = '>> ' + where
+            if len(subs) > 1:
+                description = _join(_ls_hash(scanner.label_hash(entry.category)), _raw(where))
+            else:
+                description = _raw(where)
+            dialog.add_row(
+                ObjectPickerRow(
+                    option_id=option,
+                    name=name,
+                    row_description=description,
+                    row_tooltip=None,
+                    icon=None,
+                    icon_info=icon_info,
+                    tag=('item', group_key, entry.obj_id),
+                    is_selected=(entry is current_entry),
+                )
+            )
+            option += 1
+    return option
+
+
+def _show_scanner_window(group: Any = None) -> bool:
+    """Simulation thread. What the scanner sees, one row per thing."""
+    _cancel_dialog(_state.scan_visual_id)
+    _state.scan_visual_id = None
+    try:
         import simsight_scanner as scanner
-        from ui.ui_dialog_picker import ObjectPickerRow
 
         if not scanner.ensure_scan():
             _say(lang.t('nothing nearby'))
@@ -652,90 +797,18 @@ def _show_scanner_window(group=None):
         )
         if dialog is None:
             return False
-        manager = services.object_manager()
-        option = 0
-        for group_key, entries in groups:
-            subs = scanner.subs_in(entries)
-            label = scanner.GROUP_TERMS.get(group_key)
-            dialog.add_row(
-                ObjectPickerRow(
-                    option_id=option,
-                    name=_raw(lang.t(label)) if label else _ls_hash(scanner.label_hash(group_key)),
-                    row_description=_raw(
-                        '{} items, {} subcategories{}'.format(
-                            len(entries),
-                            len(subs),
-                            '  (current)' if group_key == current_group else '',
-                        )
-                    ),
-                    row_tooltip=None,
-                    icon=None,
-                    tag=('group', group_key),
-                )
-            )
-            option += 1
-            for position, entry in enumerate(entries):
-                name, icon_info = _entry_name(entry, manager)
-                where = f'{scanner.place_text(entry)}. {position + 1} of {len(entries)}'
-                if entry is current_entry:
-                    where = '>> ' + where
-                if len(subs) > 1:
-                    description = _join(_ls_hash(scanner.label_hash(entry.category)), _raw(where))
-                else:
-                    description = _raw(where)
-                dialog.add_row(
-                    ObjectPickerRow(
-                        option_id=option,
-                        name=name,
-                        row_description=description,
-                        row_tooltip=None,
-                        icon=None,
-                        icon_info=icon_info,
-                        tag=('item', group_key, entry.obj_id),
-                        is_selected=(entry is current_entry),
-                    )
-                )
-                option += 1
+        option = _add_scanner_rows(dialog, groups, (current_group, current_entry))
         dialog.add_listener(_on_scanner_pick)
         dialog.show_dialog()
-        _scan_visual_id = dialog.dialog_id
-        speech.log_line(f'menu: scanner window with {option} rows')
+        _state.scan_visual_id = dialog.dialog_id
+        simsight_log.line(f'menu: scanner window with {option} rows')
         return True
-    except Exception as ex:
-        speech.log_line(f'menu: scanner window failed: {ex!r}')
+    except Exception:
+        simsight_log.error('menu: scanner window')
         return False
 
 
-def _entry_name(entry, manager):
-    """LocalizedString name (and an icon when the game has one) for a
-    scanner entry."""
-    from sims4.localization import LocalizationHelperTuning
-
-    icon_info = None
-    obj = None
-    try:
-        obj = manager.get(entry.obj_id)
-    except Exception:
-        obj = None
-    if entry.is_sim:
-        if entry.name:
-            return _raw(entry.name), None
-        if entry.name_hash:
-            return _ls_hash(entry.name_hash), None
-        return _raw('Sim'), None
-    if obj is not None:
-        try:
-            from distributor.shared_messages import IconInfoData
-
-            icon_info = IconInfoData(obj_instance=obj)
-        except Exception:
-            icon_info = None
-        if entry.name:
-            return _raw(entry.name), icon_info
-        try:
-            return LocalizationHelperTuning.get_object_name(obj), icon_info
-        except Exception as ex:
-            speech.log_line(f'menu: object name failed: {ex!r}')
+def _fallback_name(entry: Any, icon_info: Any) -> tuple[Any, Any]:
     if entry.name:
         return _raw(entry.name), icon_info
     if entry.name_hash:
@@ -743,43 +816,71 @@ def _entry_name(entry, manager):
     return _raw('?'), icon_info
 
 
-def _on_scanner_pick(dialog):
-    global _scan_visual_id
-    if dialog.dialog_id != _scan_visual_id:
-        return
-    _scan_visual_id = None
-    if not dialog.accepted:
-        return
-    try:
-        tags = list(dialog.get_result_tags())
-    except Exception as ex:
-        speech.log_line(f'menu: scanner pick failed: {ex!r}')
-        return
-    if not tags:
-        return
-    import simsight_scanner as scanner
+def _object_name(entry: Any, obj: Any) -> tuple[Any, Any]:
+    """Name and icon of a scanner entry whose object still exists."""
+    from sims4.localization import LocalizationHelperTuning
 
-    tag = tags[0]
     try:
+        from distributor.shared_messages import IconInfoData
+
+        icon_info = IconInfoData(obj_instance=obj)
+    except Exception:  # no icon for this object: the row goes without one
+        icon_info = None
+    if entry.name:
+        return _raw(entry.name), icon_info
+    try:
+        return LocalizationHelperTuning.get_object_name(obj), icon_info
+    except Exception:
+        simsight_log.error('menu: object name')
+    return _fallback_name(entry, icon_info)
+
+
+def _entry_name(entry: Any, manager: Any) -> tuple[Any, Any]:
+    """LocalizedString name (and an icon when the game has one) for a
+    scanner entry."""
+    if entry.is_sim:
+        if entry.name:
+            return _raw(entry.name), None
+        if entry.name_hash:
+            return _ls_hash(entry.name_hash), None
+        return _raw('Sim'), None
+    try:
+        obj = manager.get(entry.obj_id)
+    except Exception:  # the object went away while the window was built
+        obj = None
+    if obj is not None:
+        return _object_name(entry, obj)
+    return _fallback_name(entry, None)
+
+
+def _on_scanner_pick(dialog: Any) -> None:
+    try:
+        if dialog.dialog_id != _state.scan_visual_id:
+            return
+        _state.scan_visual_id = None
+        tag = _picked_tag(dialog, 'menu: scanner pick')
+        if tag is None:
+            return
+        import simsight_scanner as scanner
+
         if tag[0] == 'group':
             scanner.select_group(tag[1])
         elif tag[0] == 'item':
             scanner.select_item(tag[1], tag[2])
-    except Exception as ex:
-        speech.log_line(f'menu: scanner select failed: {ex!r}')
+    except Exception:
+        simsight_log.error('menu: scanner select')
 
 
 # First-install popup deferred. Forget dialog ids when changing zones.
-def _install_zone_hook():
+def _install_zone_hook() -> None:
     import zone
 
     original = zone.Zone.on_loading_screen_animation_finished
 
-    def a11y_menu_on_loading_screen_animation_finished(self, *args, **kwargs):
-        global _visual_id, _scan_visual_id
+    def a11y_menu_on_loading_screen_animation_finished(self: Any, *args: Any, **kwargs: Any) -> Any:
         result = original(self, *args, **kwargs)
-        _visual_id = None
-        _scan_visual_id = None
+        _state.visual_id = None
+        _state.scan_visual_id = None
         return result
 
     zone.Zone.on_loading_screen_animation_finished = a11y_menu_on_loading_screen_animation_finished
@@ -787,43 +888,49 @@ def _install_zone_hook():
 
 # ------------------------------------------------------------------ commands
 
+_MENU_ACTIONS: dict[str, Callable[[], Any]] = {
+    'open': _open_menu,
+    'close': _close,
+    'window': _show_settings_window,
+    'toggle': _toggle,
+}
 
-@sims4.commands.Command('simsight.menu', 'a11y.menu', command_type=sims4.commands.CommandType.Live)
-def a11y_menu(action: str = 'toggle', _connection=None):
+
+@live_command('simsight.menu', 'a11y.menu')
+def a11y_menu(action: str = 'toggle', _connection: Any = None) -> bool:
     """simsight.menu [open|close|toggle|window] - visual settings."""
-    output = sims4.commands.CheatOutput(_connection)
-    action = action.lower()
-    if action == 'open':
-        _open_menu()
-    elif action == 'close':
-        _close()
-    elif action == 'window':
-        _show_settings_window()
-    elif action == 'toggle':
-        _toggle()
-    else:
-        output('Usage: simsight.menu [open|close|toggle|window]')
-        return False
-    output(
-        'simsight: settings window {} (row {} of {}), pump {}'.format(
-            'open' if is_open() else 'closed', _index + 1, len(ROWS), pump.status()
+    try:
+        output = sims4.commands.CheatOutput(_connection)
+        run = _MENU_ACTIONS.get(action.lower())
+        if run is None:
+            output('Usage: simsight.menu [open|close|toggle|window]')
+            return False
+        run()
+        output(
+            'simsight: settings window {} (row {} of {}), pump {}'.format(
+                'open' if is_open() else 'closed', _state.index + 1, len(ROWS), pump.status()
+            )
         )
-    )
-    return True
+        return True
+    except Exception:
+        simsight_log.error('menu: menu command')
+        return False
 
 
-@sims4.commands.Command(
-    'simsight.scanview', 'a11y.scanview', command_type=sims4.commands.CommandType.Live
-)
-def a11y_scanview(_connection=None):
+@live_command('simsight.scanview', 'a11y.scanview')
+def a11y_scanview(_connection: Any = None) -> bool:
     """Show the scanner window: what the scanner sees, with the cursor."""
-    output = sims4.commands.CheatOutput(_connection)
-    shown = _show_scanner_window()
-    output('simsight: scanner window {}'.format('shown' if shown else 'not shown (see log)'))
-    return True
+    try:
+        output = sims4.commands.CheatOutput(_connection)
+        shown = _show_scanner_window()
+        output('simsight: scanner window {}'.format('shown' if shown else 'not shown (see log)'))
+        return True
+    except Exception:
+        simsight_log.error('menu: scanview command')
+        return False
 
 
 try:
     _install_zone_hook()
-except Exception as _zone_ex:
-    speech.log_line(f'menu: zone hook install failed: {_zone_ex!r}')
+except Exception:
+    simsight_log.error('menu: zone hook install')

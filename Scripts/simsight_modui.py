@@ -18,24 +18,35 @@ opened and what was read, so the two together show which windows need work.
 Nothing is spoken and nothing changes the game.
 """
 
-import simsight_log
+from __future__ import annotations
+
+import contextlib
 import sys
+from typing import TYPE_CHECKING, Any
 
-import simsight_speech as speech
+import simsight_log
 
-_installed = False
+if TYPE_CHECKING:
+    from types import FrameType
+
 EA_PREFIXES = ('T:\\InGame', 'T:/InGame', '<')
 MAX_ROWS = 8
 
 
-def _log(text):
-    if simsight_log.enabled:
-        speech.log_line('modui: ' + text)
+class _State:
+    installed = False
 
 
-def _source():
+_state = _State()
+
+
+def _log(text: str) -> None:
+    simsight_log.line('modui: ' + text)
+
+
+def _source() -> tuple[str | None, str | None]:
     """(label, module) of the first mod frame that led to this dialog."""
-    frame = sys._getframe(2)
+    frame: FrameType | None = sys._getframe(2)
     while frame is not None:
         module = frame.f_globals.get('__name__', '') or ''
         filename = frame.f_code.co_filename or ''
@@ -49,7 +60,7 @@ def _source():
     return None, None
 
 
-def ls_text(value, depth=0):
+def ls_text(value: Any, depth: int = 0) -> str:
     """Readable text of a LocalizedString proto: its raw-text tokens, or its key."""
     if value is None or depth > 3:
         return ''
@@ -61,7 +72,7 @@ def ls_text(value, depth=0):
         if raw:
             parts.append(str(raw))
         nested = getattr(token, 'text_string', None)
-        if nested is not None and getattr(nested, 'hash', 0):
+        if nested is not None and getattr(nested, 'hash', None):
             inner = ls_text(nested, depth + 1)
             if inner:
                 parts.append(inner)
@@ -71,26 +82,25 @@ def ls_text(value, depth=0):
     return f'key 0x{key:08X}' if key else ''
 
 
-def _rows(dialog):
+def _rows(dialog: Any) -> tuple[int, list[str]]:
     rows = list(getattr(dialog, 'picker_rows', None) or ())
-    names = []
-    for row in rows[:MAX_ROWS]:
-        name = getattr(row, 'name', None)
-        names.append(ls_text(name) or '?')
+    names = [ls_text(getattr(row, 'name', None)) or '?' for row in rows[:MAX_ROWS]]
     return len(rows), names
 
 
-def describe(dialog, msg):
+def _field_text(msg: Any, field: str) -> str:
+    try:
+        if msg is not None and msg.HasField(field):
+            return ls_text(getattr(msg, field, None))
+    except (AttributeError, TypeError, ValueError):
+        pass  # a message without that field: nothing to show
+    return ''
+
+
+def describe(dialog: Any, msg: Any) -> str:
     parts = [type(dialog).__name__]
     for field in ('title', 'text'):
-        try:
-            text = (
-                ls_text(getattr(msg, field, None))
-                if msg is not None and msg.HasField(field)
-                else ''
-            )
-        except Exception:
-            text = ''
+        text = _field_text(msg, field)
         if text:
             parts.append(f'{field} "{text[:120]}"')
     count, names = _rows(dialog)
@@ -98,34 +108,31 @@ def describe(dialog, msg):
         parts.append('rows {}: {}'.format(count, ' | '.join(f'"{n[:60]}"' for n in names)))
     inputs = getattr(dialog, 'text_inputs', None)
     if inputs:
-        try:
+        with contextlib.suppress(TypeError):  # names that do not sort: leave them out
             parts.append(f'text inputs {sorted(inputs)}')
-        except Exception:
-            pass
     picker_type = getattr(dialog, 'picker_type', None)
     if picker_type is not None:
         parts.append('picker_type {}'.format(getattr(picker_type, 'name', picker_type)))
     return ' '.join(parts)
 
 
-def install():
-    global _installed
-    if _installed:
+def install() -> bool:
+    if _state.installed:
         return True
-    _installed = True
+    _state.installed = True
     from ui.ui_dialog import UiDialog
 
     original = UiDialog.build_msg
 
-    def build_msg(self, *args, **kwargs):
+    def build_msg(self: Any, *args: Any, **kwargs: Any) -> Any:
         msg = original(self, *args, **kwargs)
         if simsight_log.enabled:
             try:
                 module, filename = _source()
                 if module is not None:
                     _log(f'{module} ({filename}) {describe(self, msg)}')
-            except Exception as ex:
-                _log(f'census failed: {ex!r}')
+            except Exception:
+                simsight_log.error('modui: census')
         return msg
 
     build_msg.__name__ = original.__name__
@@ -135,5 +142,5 @@ def install():
 
 try:
     install()
-except Exception as _install_ex:
-    speech.log_line(f'modui: install failed: {_install_ex!r}')
+except Exception:
+    simsight_log.error('modui: install')
