@@ -1,7 +1,7 @@
 """SimSight.log: one log for the whole mod.
 
 - line(): routine notes, written only when logging is on (mod menu, off by
-  default).
+  default). json_line(): the same, as one JSON object.
 - error(): something failed. Always written, logging on or off, with the
   traceback. The same place failing again (a tick handler can fail 30 times
   a second) is only counted, and the count is written now and then, so the
@@ -13,6 +13,7 @@ so it works even when the rest failed to load.
 
 from __future__ import annotations
 
+import json
 import os
 import time
 import traceback
@@ -50,6 +51,13 @@ def line(message: str) -> None:
     """A routine note, when logging is on."""
     if enabled:
         _write(message)
+
+
+def json_line(prefix: str, kind: str, **data: object) -> None:
+    """A routine note as `prefix` + one JSON object (kind and data, sorted keys),
+    when logging is on."""
+    if enabled:
+        _write(prefix + json.dumps(dict(kind=kind, **data), sort_keys=True, default=str))
 
 
 def error(where: str, exc: BaseException | None = None) -> None:

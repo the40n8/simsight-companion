@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import math
 import threading
 import time
@@ -17,6 +16,9 @@ if TYPE_CHECKING:
     _Rooms = set[tuple[tuple[int, ...], int]]  # (box, level) of every room
     _Result = str | _Box  # the drawn box, or why it was not drawn
     _Wanted = tuple[float, float, float, float]  # a box typed by the player
+
+
+_LOG = 'basement adapter: '  # log line prefix
 
 
 class _Selection(NamedTuple):
@@ -53,12 +55,6 @@ _UNVERIFIED_REASON = 'the requested room on floor minus one could not be verifie
 # Results a drag attempt reports itself; only a finished drag is held back
 # when the Room Tool cannot be restored afterwards.
 _STOPPED_EARLY = ('nocatalog', 'noscreen')
-
-
-def _log(kind: str, **data: Any) -> None:
-    simsight_log.line(
-        'basement adapter: ' + json.dumps(dict(kind=kind, **data), sort_keys=True, default=str)
-    )
 
 
 def _speak_later(text: str) -> None:
@@ -153,7 +149,7 @@ def _tool(name: str, state: dict[str, Any]) -> bool:
     build.on_main(build._cat.pop, 'chosen', None)
     items = build.fetch_catalog(16, '', 'tool') or []
     names = [item[0] for item in items]
-    _log('catalog', wanted=name, tools=names)
+    simsight_log.json_line(_LOG, 'catalog', wanted=name, tools=names)
     if name not in names or not build.on_main(_same_context, state):
         return False
     index = names.index(name)
@@ -164,7 +160,7 @@ def _tool(name: str, state: dict[str, Any]) -> bool:
         build._cat['silent_select'] = True
         build.select_item(index, name)
         acknowledged = job.done.wait(2.0)
-        _log('tool-selection', name=name, acknowledged=acknowledged)
+        simsight_log.json_line(_LOG, 'tool-selection', name=name, acknowledged=acknowledged)
         return acknowledged and bool(build.on_main(_same_context, state))
     finally:
         _state.selection = None
@@ -220,7 +216,9 @@ def _drag(state: dict[str, Any], wanted: _Box, screen: Sequence[Any]) -> None:
     info = _state.helpers._native_floor(state)
     if info['floor'] != 0:
         raise RuntimeError('The game is no longer showing the ground floor')
-    _log('drag', wanted=wanted, input_floor=0, expected_floor=-1, native_floor=info)
+    simsight_log.json_line(
+        _LOG, 'drag', wanted=wanted, input_floor=0, expected_floor=-1, native_floor=info
+    )
     build.drag(screen[0], screen[1])
 
 
@@ -261,7 +259,8 @@ def _drag_and_verify(
     )
     if not performed:
         return 'noscreen'
-    _log(
+    simsight_log.json_line(
+        _LOG,
         'after-drag',
         native_floor=_state.helpers._native_floor(state),
         funds_before=funds_before,
@@ -271,7 +270,8 @@ def _drag_and_verify(
     okay = _check_result(before, after, wanted) and bool(build.on_main(_rectangle, wanted))
     error = build._last_error
     reason = error.get('text', '') if error.get('at', 0) >= started else ''
-    _log(
+    simsight_log.json_line(
+        _LOG,
         'verification',
         wanted=wanted,
         expected_floor=-1,
@@ -292,14 +292,14 @@ def _drag_and_verify(
 
 def _restore_room_tool(state: dict[str, Any]) -> bool:
     restored = _tool('Room Tool', state) if _state.build.on_main(_same_context, state) else False
-    _log('restore-room-tool', success=restored)
+    simsight_log.json_line(_LOG, 'restore-room-tool', success=restored)
     return restored
 
 
 def _draw(want: Sequence[Any], overview: bool) -> _Result:
     state, frame, wanted, before = _prepare(want)
     if any(level == -1 and _overlap(box, wanted) for box, level in before):
-        _log('occupied', wanted=wanted)
+        simsight_log.json_line(_LOG, 'occupied', wanted=wanted)
         return 'occupied'
     if not _state.build.set_floor(0):
         return 'nofloor'
@@ -319,7 +319,7 @@ def failure_reason() -> str:
 
 
 def _stopped(want: Sequence[Any], exc: Exception) -> _Result:
-    _log('stopped', wanted=want, error=str(exc))
+    simsight_log.json_line(_LOG, 'stopped', wanted=want, error=str(exc))
     _speak_later('Basement construction stopped. ' + str(exc))
     return 'unverified'
 
@@ -466,12 +466,12 @@ def _inspect_work() -> None:
         if geometry is None:
             raise RuntimeError('Room inspection timed out')
         basements = sorted(box for box, level in geometry if level == -1)
-        _log('inspect', basement_rooms=basements, native_floor=info)
+        simsight_log.json_line(_LOG, 'inspect', basement_rooms=basements, native_floor=info)
         _speak_later(
             f'Logged current floor bounds and {len(basements)} basement rooms. Nothing was built or selected.'
         )
     except Exception as exc:  # worker thread: report every failure, never raise
-        _log('inspect-failed', error=str(exc))
+        simsight_log.json_line(_LOG, 'inspect-failed', error=str(exc))
         _speak_later('Basement inspection failed. ' + str(exc))
 
 
@@ -517,7 +517,7 @@ def install() -> None:
     import simsight_plus_core as core
 
     _state.build, _state.core, _state.helpers = build, core, helpers
-    _log('installed', experimental=True, enabled=_enabled())
+    simsight_log.json_line(_LOG, 'installed', experimental=True, enabled=_enabled())
 
 
 def _original_room(

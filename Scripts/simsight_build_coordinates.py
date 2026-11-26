@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import contextlib
 import ctypes
-import json
 import math
 import os
 import sys
@@ -29,6 +28,7 @@ if TYPE_CHECKING:
     # virtual desktop (left, top, width, height), window style
     Geometry = tuple[int, int, int, int, int, int, tuple[int, ...], int]
 
+_LOG = 'build coordinates: '  # log line prefix
 _STAGE_MODES = ('noScale', 'exactFit', 'showAll', 'noBorder')
 _ALIGNMENTS = frozenset(('', 'T', 'B', 'L', 'R', 'TL', 'TR', 'BL', 'BR', 'LT', 'RT', 'LB', 'RB'))
 _MOUSE_MOVE_ABSOLUTE = 0xC001  # MOUSEEVENTF_MOVE | ABSOLUTE | VIRTUALDESK
@@ -49,12 +49,6 @@ _lock = threading.Lock()
 # Per worker thread: .input_frame (the frame an action runs in), .down (left
 # button held), .last (where the pointer was put).
 _local = threading.local()
-
-
-def _log(kind: str, **data: Any) -> None:
-    simsight_log.line(
-        'build coordinates: ' + json.dumps(dict(kind=kind, **data), sort_keys=True, default=str)
-    )
 
 
 def _api() -> Any:
@@ -86,7 +80,7 @@ def physical_context(u: Any) -> Iterator[None]:
         yield
     finally:
         if not u.SetThreadDpiAwarenessContext(previous):
-            _log('dpi-restore-failed')
+            simsight_log.json_line(_LOG, 'dpi-restore-failed')
             raise RuntimeError('Thread DPI context could not be restored')
 
 
@@ -260,11 +254,11 @@ def receive(text: str = '', _connection: Any = None) -> bool:
     try:
         return _receive(text)
     except ValueError as exc:  # a number that does not parse
-        _log('reply-rejected', error=type(exc).__name__)
+        simsight_log.json_line(_LOG, 'reply-rejected', error=type(exc).__name__)
         return False
     except Exception as exc:
         simsight_log.error('build coordinates: projection reply')
-        _log('reply-rejected', error=type(exc).__name__)
+        simsight_log.json_line(_LOG, 'reply-rejected', error=type(exc).__name__)
         return False
 
 
@@ -311,10 +305,10 @@ def _measure(
         after = capture_window()
         if before != after:
             raise RuntimeError('Game window changed during projection')
-        _log('raw-measure', response=result, window=after)
+        simsight_log.json_line(_LOG, 'raw-measure', response=result, window=after)
         frame = Frame(result, after)
         _state.frame = frame
-        _log('measure', response=result, window=after)
+        simsight_log.json_line(_LOG, 'measure', response=result, window=after)
         return result, frame
     finally:
         with _lock:
@@ -327,11 +321,11 @@ def project(x: float, z: float, level: int, timeout: float = 2.5, height: float 
         result, _frame = _measure(x, z, level, height, timeout=max(2.5, timeout))
         return result['point'] if result['status'] == 'point' else None
     except (RuntimeError, ValueError) as exc:  # refused, timed out or moved: logged, no point
-        _log('project-refused', error=str(exc))
+        simsight_log.json_line(_LOG, 'project-refused', error=str(exc))
         return None
     except Exception as exc:
         simsight_log.error('build coordinates: project')
-        _log('project-refused', error=str(exc))
+        simsight_log.json_line(_LOG, 'project-refused', error=str(exc))
         return None
 
 
@@ -365,7 +359,14 @@ def to_screen(x: float, y: float) -> tuple[int, int]:
         point = display.POINT(cx, cy)
         if not u.ClientToScreen(f.geometry[0], ctypes.byref(point)):
             raise RuntimeError('Client conversion failed')
-        _log('convert', ui=[x, y], client=[cx, cy], screen=[point.x, point.y], window=f.geometry)
+        simsight_log.json_line(
+            _LOG,
+            'convert',
+            ui=[x, y],
+            client=[cx, cy],
+            screen=[point.x, point.y],
+            window=f.geometry,
+        )
         return point.x, point.y
 
 
@@ -508,7 +509,7 @@ def install() -> None:
     import simsight_plus_build as build
 
     _state.build = build
-    _log('installed')
+    simsight_log.json_line(_LOG, 'installed')
 
 
 def _original_mouse(flags: int, data: int = 0) -> Any:
@@ -540,12 +541,14 @@ def _preflight_work() -> None:
             if result['status'] == 'point' and frame.clear(result['point'])
             else None
         )
-        _log('preflight', response=result, physical_point=mapped, window=frame.geometry)
+        simsight_log.json_line(
+            _LOG, 'preflight', response=result, physical_point=mapped, window=frame.geometry
+        )
         text = 'Build coordinate check complete. No pointer movement or construction. See SimSight log.'
     except Exception as exc:  # timer thread: every failure is reported
         if not isinstance(exc, (RuntimeError, ValueError)):
             simsight_log.error('build coordinates: preflight')
-        _log('preflight-failed', error=str(exc))
+        simsight_log.json_line(_LOG, 'preflight-failed', error=str(exc))
         text = 'Build coordinate check failed: ' + str(exc)
     build.core.post(lambda: speech.speak(text, explicit=True))
 

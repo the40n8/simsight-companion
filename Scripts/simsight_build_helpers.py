@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import contextlib
 import importlib
-import json
 import math
 import threading
 import time
@@ -15,6 +14,7 @@ import simsight_log
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+_LOG = 'build helpers: '  # log line prefix
 _PAGE_UP = (33, 0x49)  # virtual key, scan code: one floor up
 _PAGE_DOWN = (34, 0x51)  # one floor down
 _MODIFIERS = (16, 17, 18, 91, 92)  # Shift, Ctrl, Alt, both Windows keys
@@ -39,12 +39,6 @@ class _State:
 _runtime = _State()
 _floor_lock = threading.Lock()
 _house_context = threading.local()  # .transitions: the running plan's stairs
-
-
-def _log(kind: str, **data: Any) -> None:
-    simsight_log.line(
-        'build helpers: ' + json.dumps(dict(kind=kind, **data), sort_keys=True, default=str)
-    )
 
 
 def _state() -> dict[str, Any]:
@@ -121,7 +115,7 @@ def _release_grid(state: dict[str, Any]) -> None:
         if time.monotonic() >= deadline:
             raise RuntimeError('Grid ownership did not release')
         time.sleep(0.02)
-    _log('floor-ownership-released', zone=state['zone'])
+    simsight_log.json_line(_LOG, 'floor-ownership-released', zone=state['zone'])
 
 
 @contextlib.contextmanager
@@ -140,7 +134,9 @@ def _floor_input(state: dict[str, Any]) -> Iterator[tuple[Any, Any]]:
     finally:
         if sent_off:
             restored = _runtime.build.on_main(_restore_grid, state)
-            _log('floor-ownership-restored', zone=state['zone'], restored=bool(restored))
+            simsight_log.json_line(
+                _LOG, 'floor-ownership-restored', zone=state['zone'], restored=bool(restored)
+            )
 
 
 def _whole(value: Any) -> bool:
@@ -270,7 +266,9 @@ def _step(state: dict[str, Any], u: Any, geometry: Any, level: int) -> bool | No
         raise RuntimeError('Input context changed before the floor key')
     _press(u, key, scan)
     actual = _floor_after_key(state, u, geometry, current)
-    _log('floor-step', wanted=level, before=current, actual=actual, source='BBGetLevelInfo')
+    simsight_log.json_line(
+        _LOG, 'floor-step', wanted=level, before=current, actual=actual, source='BBGetLevelInfo'
+    )
     if actual != current + step:
         return False
     if actual == level:
@@ -284,9 +282,9 @@ def _change_floor(level: int) -> bool:
         raise RuntimeError('Simulation thread did not answer')
     info = _native_floor(state)
     state['floor'] = info['floor']
-    _log('floor-query', wanted=level, **info)
+    simsight_log.json_line(_LOG, 'floor-query', wanted=level, **info)
     if not info['minimum'] <= level <= info['maximum']:
-        _log('floor-out-of-range', wanted=level, **info)
+        simsight_log.json_line(_LOG, 'floor-out-of-range', wanted=level, **info)
         return False
     if state['floor'] == level:
         return True
@@ -306,11 +304,11 @@ def set_floor(level: Any) -> bool:
     try:
         return _change_floor(wanted)
     except RuntimeError as exc:  # the step's own refusals
-        _log('floor-refused', wanted=wanted, error=str(exc))
+        simsight_log.json_line(_LOG, 'floor-refused', wanted=wanted, error=str(exc))
         return False
     except Exception as exc:
         simsight_log.error('build helpers: set floor')
-        _log('floor-refused', wanted=wanted, error=str(exc))
+        simsight_log.json_line(_LOG, 'floor-refused', wanted=wanted, error=str(exc))
         return False
 
 
@@ -335,7 +333,7 @@ def _stairs_for_plan(top: Any, climb: Any) -> Any:
         return _original_house_stairs(top, climb)
     for stair_top, stair_climb, lower, upper in transitions:
         result = planner._place_stair_at(stair_top, stair_climb, lower)
-        _log('stair-transition', lower=lower, upper=upper, result=result)
+        simsight_log.json_line(_LOG, 'stair-transition', lower=lower, upper=upper, result=result)
         if result is not True:
             return result
     return True
@@ -390,7 +388,7 @@ def install() -> None:
     _runtime.planner = _optional('simsight_house_planner')
     # The Mac build leaves the coordinates out: no native floor keys there.
     _runtime.build, _runtime.coordinates = build, _optional('simsight_build_coordinates')
-    _log('installed')
+    simsight_log.json_line(_LOG, 'installed')
 
 
 def _original_house_build(plan: Any) -> Any:
