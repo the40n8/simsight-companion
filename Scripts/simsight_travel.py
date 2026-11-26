@@ -43,6 +43,7 @@ import sims4.commands
 import simsight_lang as lang
 from simsight_commands import real_annotations
 import simsight_log
+import simsight_names as names
 import simsight_menu as menu
 import simsight_pump as pump
 import simsight_settings as settings
@@ -404,14 +405,6 @@ def _rental(zone_id: int) -> bool | None:
     return _venue_flag(zone_id, 'is_rental')
 
 
-def _full_name(info: Any) -> str:
-    return ' '.join(
-        str(part)
-        for part in (getattr(info, 'first_name', ''), getattr(info, 'last_name', ''))
-        if part
-    )
-
-
 def _residents(household_id: int) -> tuple[str, ...]:
     """Full names of the Sims living in a household, in household order."""
     try:
@@ -420,7 +413,7 @@ def _residents(household_id: int) -> tuple[str, ...]:
         household = services.household_manager().get(household_id)
         if household is None:
             return ()
-        return tuple(name for name in (_full_name(info) for info in household) if name)
+        return tuple(name for name in (names.full_name(info) for info in household) if name)
     except Exception:
         simsight_log.error('travel: household residents')
         return ()

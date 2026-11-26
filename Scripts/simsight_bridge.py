@@ -35,6 +35,7 @@ except ImportError:  # not every Python the game ships has it: no companion then
 
 from simsight_commands import real_annotations
 import simsight_log
+import simsight_names as names
 import simsight_speech as speech
 
 if TYPE_CHECKING:
@@ -101,10 +102,6 @@ def _logged(where: str) -> Iterator[None]:
 def _distance(a: Any, b: Any) -> float:
     """Distance on the ground between two positions (x and z)."""
     return ((float(a.x) - float(b.x)) ** 2 + (float(a.z) - float(b.z)) ** 2) ** 0.5
-
-
-def _full_name(info: Any) -> str:
-    return f'{info.first_name} {info.last_name}'.strip()
 
 
 def _on_active_lot(obj: Any, default: bool) -> bool:
@@ -1020,7 +1017,7 @@ def _relationship(tracker: Any, other: Any, info: Any, tracks: tuple[Any, Any]) 
         r = int(round(tracker.get_relationship_score(other.sim_id, romance) or 0)) if romance else 0
     return {
         'simId': str(other.sim_id),
-        'name': _full_name(other),
+        'name': names.full_name(other).strip(),
         'friendship': f,
         'romance': r,
         'labels': _relationship_labels(tracker, other, info),
@@ -1215,7 +1212,7 @@ def _visitor(sim: Any, members: set[Any]) -> Json | None:
     with _logged('visitor'):
         info = sim.sim_info
         if info.sim_id not in members and _on_active_lot(sim, False):
-            entry = {'simId': str(info.sim_id), 'name': _full_name(info)}
+            entry = {'simId': str(info.sim_id), 'name': names.full_name(info).strip()}
             room = _room_ref(sim)
             if room is not None:
                 entry['room'] = room
@@ -1479,7 +1476,7 @@ def _failure_object_name(failure_object_id: Any) -> str:
         return ''
     if not getattr(obj, 'is_sim', False):
         return _object_name(obj)
-    return _full_name(obj.sim_info)
+    return names.full_name(obj.sim_info).strip()
 
 
 def _report_route_fail(
@@ -1745,7 +1742,7 @@ def _sim_targets(sim: Any) -> list[Json]:
     targets: list[Json] = [
         {
             'id': str(sim.id),
-            'name': _full_name(sim.sim_info),
+            'name': names.full_name(sim.sim_info).strip(),
             'isSim': True,
             'isSelf': True,
             'group': 'SIMS',
@@ -1763,7 +1760,7 @@ def _sim_targets(sim: Any) -> list[Json]:
         targets.append(
             {
                 'id': str(other.id),
-                'name': _full_name(other.sim_info),
+                'name': names.full_name(other.sim_info).strip(),
                 'isSim': True,
                 'group': 'SIMS',
                 'distance': int(round(d)),

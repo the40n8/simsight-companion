@@ -20,6 +20,7 @@ import sims4.commands
 import simsight_lang as lang
 from simsight_commands import real_annotations
 import simsight_log
+import simsight_names as names
 import simsight_settings as settings
 import simsight_speech as speech
 
@@ -57,9 +58,7 @@ def _note(dialog: Any, phone_ring_type: Any) -> None:
         return
     _state.waiting.append(token)
     del _state.waiting[:-_MAX_WAITING]
-    name = ' '.join(
-        part for part in (getattr(info, 'first_name', ''), getattr(info, 'last_name', '')) if part
-    )
+    name = names.full_name(info)
     speech.speak(f'Phone for {name}. Control Alt P opens the waiting call or text.', source='event')
 
 

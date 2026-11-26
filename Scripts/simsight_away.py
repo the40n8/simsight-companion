@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 import simsight_lang as lang
 import simsight_log
+import simsight_names as names
 import simsight_speech as speech
 
 if TYPE_CHECKING:
@@ -19,10 +20,6 @@ if TYPE_CHECKING:
 
 def _say(term: str) -> None:
     speech.speak(lang.t(term), explicit=True)
-
-
-def _full_name(info: Any) -> str:
-    return ' '.join(p for p in (info.first_name, info.last_name) if p)
 
 
 def _state() -> tuple[Any, Any, Any, int] | None:
@@ -79,7 +76,7 @@ def _portrait_request(sim_id: int, actor_id: int, zone_id: int, household_id: in
         raise ValueError('invalid lot')
     if lot_id > 0xFFFFFFFF:
         lot_id = 0  # Native current-lot sentinel; never truncate an ID.
-    name = _full_name(info).replace('|', ' ')
+    name = names.full_name(info).replace('|', ' ')
     sent = scanner._send_ui(
         'A11y|pick|{}|{}|{}|{}|{:.3f}|{:.3f}|{:.3f}|{}'.format(
             sim_id, int(PickType.PICK_SKEWER), lot_id, name, *point, int(actor.level)
@@ -119,7 +116,7 @@ def _rows(state: tuple[Any, Any, Any, int]) -> list[Row]:
     ):
         rows.append(
             (
-                menu._raw(_full_name(info) or str(ident)),
+                menu._raw(names.full_name(info) or str(ident)),
                 None,
                 lambda ident=ident: open_sim(ident, actor_id, zone_id, household_id),
             )

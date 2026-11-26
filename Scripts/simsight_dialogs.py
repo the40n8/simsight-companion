@@ -21,6 +21,7 @@ import time
 from typing import TYPE_CHECKING, Any
 
 import simsight_log
+import simsight_names as names
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -171,7 +172,7 @@ def _sim_name(sim_id: Any) -> str:
 
         info = services.sim_info_manager().get(int(sim_id))
         if info is not None:
-            return f'{info.first_name} {info.last_name}'.strip()
+            return names.full_name(info).strip()
     except _LOOKUP_ERRORS:
         pass  # no name: the row keeps its own words
     return ''

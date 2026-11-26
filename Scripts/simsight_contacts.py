@@ -12,6 +12,7 @@ import sims4.commands
 import simsight_lang as lang
 from simsight_commands import real_annotations
 import simsight_log
+import simsight_names as names
 import simsight_menu as menu
 import simsight_speech as speech
 
@@ -28,7 +29,7 @@ def _contacts(actor: Any) -> list[tuple[str, int]]:
         if info is None or info.sim_id in seen or tracker.is_hidden(info.sim_id):
             continue
         seen.add(info.sim_id)
-        name = ' '.join(part for part in (info.first_name, info.last_name) if part)
+        name = names.full_name(info)
         if name:
             result.append((name, info.sim_id))
     return sorted(result, key=lambda item: (item[0].casefold(), item[1]))

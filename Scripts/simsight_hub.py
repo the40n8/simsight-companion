@@ -13,6 +13,7 @@ import simsight_contacts as contacts
 import simsight_lang as lang
 from simsight_commands import real_annotations
 import simsight_log
+import simsight_names as names
 import simsight_menu as menu
 import simsight_pump as pump
 import simsight_speech as speech
@@ -55,12 +56,6 @@ PANELS = (
 
 def _say(term: str) -> None:
     speech.speak(lang.t(term), explicit=True)
-
-
-def _name(info: Any) -> str:
-    return ' '.join(
-        p for p in (getattr(info, 'first_name', ''), getattr(info, 'last_name', '')) if p
-    )
 
 
 def _client() -> Any:
@@ -167,7 +162,7 @@ def select_sim(sim_id: int) -> bool:
     if client.active_sim_info is not info and not client.set_active_sim_by_id(sim_id):
         _say('sim unavailable')
         return False
-    speech.speak(_name(info), explicit=True)
+    speech.speak(names.full_name(info), explicit=True)
     return True
 
 
@@ -194,7 +189,7 @@ def household() -> bool:
         detail = 'active sim' if info is client.active_sim_info else 'select this sim'
         rows.append(
             (
-                menu._raw(_name(info)),
+                menu._raw(names.full_name(info)),
                 menu._raw(lang.t(detail)),
                 lambda ident=sim_id: select_sim(ident),
             )
