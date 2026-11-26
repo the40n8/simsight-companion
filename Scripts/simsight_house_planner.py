@@ -1,54 +1,34 @@
 """Configurable, conservative stacked-house plans for SimSight Plus."""
 
+from __future__ import annotations
+
 import threading
 import time
+from typing import TYPE_CHECKING, Any
 
-import simsight_speech as speech
+import simsight_log
 
-_pending_stairs = []
+if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
 
+    Point = tuple[float, float]
+    Tile = tuple[int, int]
+    # (top step lot tile, climb direction, lower level, upper level)
+    Transition = tuple[Any, Any, int, int]
 
-def _client_size():
-    """Game cursor coordinates already use client pixels, not DPI units."""
-    import ctypes
-    import simsight_plus_build as build
+# Stair runs the approved plan still has to place. simsight_build_helpers
+# rebinds this attribute (planner._pending_stairs = []): keep it a module list.
+_pending_stairs: list[Transition] = []
 
-    class RECT(ctypes.Structure):
-        _fields_ = [
-            ('l', ctypes.c_long),
-            ('t', ctypes.c_long),
-            ('r', ctypes.c_long),
-            ('b', ctypes.c_long),
-        ]
-
-    u = build._user32()
-    hwnd = u.GetForegroundWindow()
-    rect = RECT()
-    if not hwnd or not u.GetClientRect(hwnd, ctypes.byref(rect)):
-        raise RuntimeError('game client rectangle unavailable')
-    return float(rect.r - rect.l), float(rect.b - rect.t)
+_FRONT = 4  # depth of the street-facing rooms, metres
+_HALL = 2  # depth of the hallway between front and back rooms, metres
 
 
-def _client_to_screen(x, y):
-    import ctypes
-    import simsight_plus_build as build
-
-    class POINT(ctypes.Structure):
-        _fields_ = [('x', ctypes.c_long), ('y', ctypes.c_long)]
-
-    u = build._user32()
-    hwnd = u.GetForegroundWindow()
-    point = POINT(int(round(x + build.OFFSET[0])), int(round(y + build.OFFSET[1])))
-    if not hwnd or not u.ClientToScreen(hwnd, ctypes.byref(point)):
-        raise RuntimeError('game client-to-screen conversion failed')
-    return point.x, point.y
-
-
-def _room_overview(points, level, attempt):
+def _room_overview(points: Sequence[Point], level: int, attempt: int) -> None:
     """Simulation thread: widen the view without moving the room bounds."""
     import camera
-    import terrain
     import sims4.math
+    import terrain
 
     xs, zs = [p[0] for p in points], [p[1] for p in points]
     cx = (min(xs) + max(xs)) / 2.0
@@ -62,13 +42,21 @@ def _room_overview(points, level, attempt):
     )
 
 
-def overview_point_and_act(
-    points_world, level, action, describe, height=0.0, view=None, overview=False
-):
+def overview_point_and_act(  # noqa: PLR0913, PLR0917 - same signature as build.point_and_act
+    points_world: list[Point],
+    level: int,
+    action: Callable[[list[Any]], object],
+    describe: str,
+    height: float = 0.0,
+    view: Any = None,
+    overview: bool = False,
+) -> bool:
+    """Worker thread only. Overview jobs widen the camera until every room corner
+    projects clear of the interface; other jobs use the build helper's pointing."""
     import simsight_plus_build as build
 
     if not overview:
-        return _original_point_and_act(
+        return build._point_and_act_base(
             points_world, level, action, describe, height=height, view=view, overview=False
         )
     points = tuple(points_world)
@@ -84,8 +72,8 @@ def overview_point_and_act(
             time.sleep(1.8)
             projected = [build.project(x, z, level, height=height) for x, z in points]
             clear = all(p is not None and build._clear_of_panels(p) for p in projected)
-            _log(
-                f'room framing attempt={attempt + 1} level={level} bounds={points} screen={projected} stage={build._stage_size()} clear={clear}'
+            simsight_log.line(
+                f'house planner: room framing attempt={attempt + 1} level={level} bounds={points} screen={projected} stage={build._stage_size()} clear={clear}'
             )
             if clear:
                 build.cursor_off()
@@ -101,38 +89,31 @@ def overview_point_and_act(
         build.park_mouse()
 
 
-def _log(text):
-    try:
-        speech.log_line('house planner: ' + text)
-    except Exception:
-        pass
-
-
-def _limits():
+def _limits() -> tuple[int, int]:
+    """(lowest, highest) floor the game allows here; (-1, 3) when it cannot say."""
     try:
         import build_buy
 
         return int(build_buy.get_lowest_level_allowed()), int(build_buy.get_highest_level_allowed())
-    except Exception as ex:
-        _log(f'floor limits unavailable: {ex!r}')
+    except (ImportError, AttributeError, TypeError, ValueError, RuntimeError) as ex:
+        simsight_log.line(f'house planner: floor limits unavailable: {ex!r}')
         return -1, 3
 
 
-def _clean_names(text, count, level, attic=False):
+def _clean_names(text: str | None, count: int, level: int, attic: bool = False) -> list[str]:
+    """Exactly `count` room names from a comma list, defaults filling the gaps;
+    repeated names get a number."""
     names = [' '.join(v.strip().split())[:50] for v in (text or '').split(',') if v.strip()]
-    defaults = (
-        ('Attic room', 'Storage', 'Attic bedroom', 'Attic bathroom')
-        if attic
-        else (
-            ('Living room', 'Kitchen', 'Bedroom', 'Bathroom')
-            if level == 0
-            else ('Bedroom', 'Bedroom', 'Study', 'Bathroom')
-        )
-    )
+    if attic:
+        defaults: tuple[str, ...] = ('Attic room', 'Storage', 'Attic bedroom', 'Attic bathroom')
+    elif level == 0:
+        defaults = ('Living room', 'Kitchen', 'Bedroom', 'Bathroom')
+    else:
+        defaults = ('Bedroom', 'Bedroom', 'Study', 'Bathroom')
     while len(names) < count:
         names.append(defaults[len(names) % len(defaults)])
     names = names[:count]
-    seen = {}
+    seen: dict[str, int] = {}
     for i, name in enumerate(names):
         seen[name] = seen.get(name, 0) + 1
         if names.count(name) > 1:
@@ -140,123 +121,129 @@ def _clean_names(text, count, level, attic=False):
     return names
 
 
-def _room(kind, name, uv, level):
+def _room(kind: str, name: str, uv: tuple[int, int, int, int], level: int) -> dict[str, Any]:
     return {'kind': kind, 'name': name, 'uv': uv, 'level': level}
 
 
-def _build_plan(width, depth, levels, layout, names_by_level):
-    import simsight_plus_house as house
-    import simsight_plus_build as build
+def _level_rooms(
+    names: Sequence[str], level: int, width: int, depth: int, layout: str
+) -> list[dict[str, Any]]:
+    """One level's rooms: front room(s), the hallway, back room(s)."""
+    front, hall = _FRONT, _HALL
+    hallway = _room(
+        'hall',
+        '{} hallway'.format('Basement' if level < 0 else f'Floor {level + 1}'),
+        (0, front, width, front + hall),
+        level,
+    )
+    if layout == 'two':
+        return [
+            _room('room', names[0], (0, 0, width, front), level),
+            hallway,
+            _room('room', names[1], (0, front + hall, width, depth), level),
+        ]
+    split = width // 2
+    return [
+        _room('room', names[0], (0, 0, split, front), level),
+        _room('room', names[1], (split, 0, width, front), level),
+        hallway,
+        _room('room', names[2], (0, front + hall, split, depth), level),
+        _room('room', names[3], (split, front + hall, width, depth), level),
+    ]
 
-    p = house.Plan()
+
+def _door(what: str, a: Tile, b: Tile, front: bool, level: int) -> dict[str, Any]:
+    return {'what': what, 'a': a, 'b': b, 'front': front, 'level': level}
+
+
+def _hall_doors(rooms: Sequence[dict[str, Any]], level: int) -> list[dict[str, Any]]:
+    """A door from each front room into the hallway, then from the hallway to each back room."""
+    front, hall = _FRONT, _HALL
+    hallroom = [r for r in rooms if r['kind'] == 'hall'][0]
+    doors = []
+    for r in rooms:
+        if r['uv'][1] == 0:
+            mid = (r['uv'][0] + r['uv'][2]) // 2
+            what = 'Door from {} to {}'.format(r['name'], hallroom['name'])
+            doors.append(_door(what, (mid, front - 1), (mid, front), False, level))
+    for r in rooms:
+        if r['uv'][1] > front:
+            mid = (r['uv'][0] + r['uv'][2]) // 2
+            what = 'Door from {} to {}'.format(hallroom['name'], r['name'])
+            doors.append(_door(what, (mid, front + hall - 1), (mid, front + hall), False, level))
+    return doors
+
+
+def _build_plan(
+    width: int, depth: int, levels: Sequence[int], layout: str, names_by_level: dict[int, list[str]]
+) -> Any:
+    """A house.Plan of stacked identical levels with a hallway and straight stairs."""
+    import simsight_plus_build as build
+    import simsight_plus_house as house
+
+    p: Any = house.Plan()
     p.side = house.street_side()
     p.width = width
     p.depth = depth
     p.floors = len([v for v in levels if v >= 0])
-    front = 4
-    hall = 2
-    if depth < front + hall + 3:
+    if depth < _FRONT + _HALL + 3:
         p.problem = (
             'The footprint is too shallow for rooms, a hallway and verified straight stairs.'
         )
         return p
     for level in levels:
-        names = names_by_level[level]
-        if layout == 'two':
-            p.rooms += [
-                _room('room', names[0], (0, 0, width, front), level),
-                _room(
-                    'hall',
-                    '{} hallway'.format('Basement' if level < 0 else f'Floor {level + 1}'),
-                    (0, front, width, front + hall),
-                    level,
-                ),
-                _room('room', names[1], (0, front + hall, width, depth), level),
-            ]
-        else:
-            split = width // 2
-            p.rooms += [
-                _room('room', names[0], (0, 0, split, front), level),
-                _room('room', names[1], (split, 0, width, front), level),
-                _room(
-                    'hall',
-                    '{} hallway'.format('Basement' if level < 0 else f'Floor {level + 1}'),
-                    (0, front, width, front + hall),
-                    level,
-                ),
-                _room('room', names[2], (0, front + hall, split, depth), level),
-                _room('room', names[3], (split, front + hall, width, depth), level),
-            ]
-        rooms = [r for r in p.rooms if r['level'] == level]
-        hallroom = [r for r in rooms if r['kind'] == 'hall'][0]
-        frontrooms = [r for r in rooms if r['uv'][1] == 0]
-        backrooms = [r for r in rooms if r['uv'][1] > front]
-        for r in frontrooms:
-            mid = (r['uv'][0] + r['uv'][2]) // 2
-            p.doors.append(
-                {
-                    'what': 'Door from {} to {}'.format(r['name'], hallroom['name']),
-                    'a': (mid, front - 1),
-                    'b': (mid, front),
-                    'front': False,
-                    'level': level,
-                }
-            )
-        for r in backrooms:
-            mid = (r['uv'][0] + r['uv'][2]) // 2
-            p.doors.append(
-                {
-                    'what': 'Door from {} to {}'.format(hallroom['name'], r['name']),
-                    'a': (mid, front + hall - 1),
-                    'b': (mid, front + hall),
-                    'front': False,
-                    'level': level,
-                }
-            )
+        rooms = _level_rooms(names_by_level[level], level, width, depth, layout)
+        p.rooms += rooms
+        p.doors += _hall_doors(rooms, level)
     ground = [r for r in p.rooms if r['level'] == 0 and r['uv'][1] == 0][0]
     mid = (ground['uv'][0] + ground['uv'][2]) // 2
-    p.doors.append(
-        {
-            'what': 'Front door into {}'.format(ground['name']),
-            'a': (mid, 0),
-            'b': (mid, -1),
-            'front': True,
-            'level': 0,
-        }
-    )
+    p.doors.append(_door('Front door into {}'.format(ground['name']), (mid, 0), (mid, -1), True, 0))
     frame = build.frame()
     along = frame.width if p.side in ('north', 'south') else frame.depth
-    if (
-        width > along - 2
-        or depth
-        > (frame.depth if p.side in ('north', 'south') else frame.width) - house.SETBACK - 1
-    ):
+    across = frame.depth if p.side in ('north', 'south') else frame.width
+    if width > along - 2 or depth > across - house.SETBACK - 1:
         p.problem = (
             f'That {width} by {depth} house does not fit this lot with the required setbacks.'
         )
         return p
     house._map_plan(p, frame, along)
-    transitions = []
-    for lower in levels[:-1]:
-        upper = lower + 1
-        top = (width - 2, front)
-        transitions.append(
-            (
-                house._tile_to_lot(p, frame, (along - width) // 2, top),
-                house._dir_to_lot(p, (1, 0)),
-                lower,
-                upper,
-            )
+    top = (width - 2, _FRONT)
+    transitions = [
+        (
+            house._tile_to_lot(p, frame, (along - width) // 2, top),
+            house._dir_to_lot(p, (1, 0)),
+            lower,
+            lower + 1,
         )
+        for lower in levels[:-1]
+    ]
     if transitions:
         p.stairs = {'top_lot': transitions[0][0], 'climb_lot': transitions[0][1]}
     p._a11y_transitions = transitions
     return p
 
 
-def _place_stair_at(top, climb, level):
-    import simsight_plus_house as house
+def _select_stairs_silently(build: Any, pick: Sequence[Any]) -> None:
+    build._cat['silent_select'] = True
+    try:
+        build.select_item(*pick)
+    finally:
+        build._cat['silent_select'] = False
+
+
+def _click_stairs(screen: list[Any]) -> None:
     import simsight_plus_build as build
+
+    build.move_to(*build._to_screen(*screen[0]))
+    time.sleep(0.8)
+    build.click(screen[0])
+
+
+def _place_stair_at(top: Tile, climb: Tile, level: int) -> bool | str:
+    """Worker thread only. Straight stairs whose highest step is lot tile `top`, climbing
+    `climb`, from `level` up. True when placed where wanted, else a failure word."""
+    import simsight_plus_build as build
+    import simsight_plus_house as house
 
     pick = house._pick_stairs()
     if not pick:
@@ -272,38 +259,30 @@ def _place_stair_at(top, climb, level):
     turn = False
     for attempt in range(10):
         before = set(build.on_main(house._stair_ids) or [])
-        build._cat['silent_select'] = True
-        try:
-            build.select_item(*pick)
-        finally:
-            build._cat['silent_select'] = False
+        _select_stairs_silently(build, pick)
         if turn:
             build.tap_scan(52)
             time.sleep(0.5)
             turn = False
         point = frame.world(top[0] + 0.5 + shift[0], top[1] + 0.5 + shift[1])
-
-        def act(screen):
-            build.move_to(*build._to_screen(*screen[0]))
-            time.sleep(0.8)
-            build.click(screen[0])
-
         if not build.point_and_act(
-            [point], level, act, f'stacked stairs level {level} attempt {attempt + 1}'
+            [point], level, _click_stairs, f'stacked stairs level {level} attempt {attempt + 1}'
         ):
             return 'noscreen'
         time.sleep(0.5)
         new = [oid for oid in build.on_main(house._stair_ids) or [] if oid not in before]
         if not new:
-            _log(
-                'stairs level {} attempt {} rejected: {}'.format(
+            simsight_log.line(
+                'house planner: stairs level {} attempt {} rejected: {}'.format(
                     level, attempt + 1, build._last_error.get('text')
                 )
             )
             turn = True
             continue
         info = build.on_main(house._stair_info, new[0])
-        _log(f'stairs level {level} placed {info} wanted {want} climb {climb}')
+        simsight_log.line(
+            f'house planner: stairs level {level} placed {info} wanted {want} climb {climb}'
+        )
         if info is None:
             continue
         e, n, got = info
@@ -316,37 +295,30 @@ def _place_stair_at(top, climb, level):
     return 'failed'
 
 
-def _stacked_stairs(top, climb):
-    global _pending_stairs
-    if not _pending_stairs:
-        return _original_stairs(top, climb)
-    results = []
-    for stair_top, stair_climb, lower, upper in list(_pending_stairs):
-        result = _place_stair_at(stair_top, stair_climb, lower)
-        results.append(result)
-        _log(f'transition {lower} to {upper} result {result}')
-        if result is not True:
-            break
-    _pending_stairs = []
-    return all(r is True for r in results)
-
-
-def _build_with_followup(plan):
-    result = _original_build(plan)
-    complete = False
+def _built_completely(plan: Any) -> bool:
+    """After a build: does every planned room exist, with its box and level?"""
     try:
-        import simsight_plus_rooms as rooms
         import simsight_plus_build as build
+        import simsight_plus_rooms as rooms
 
         actual = {(build._room_box(r), int(r.level)) for r in rooms.scan_rooms()}
         complete = all((r['box'], int(r.get('level', 0))) in actual for r in plan.rooms)
-        _log(
-            'post-build completeness {} actual={} wanted={}'.format(
+        simsight_log.line(
+            'house planner: post-build completeness {} actual={} wanted={}'.format(
                 complete, actual, [(r['box'], r.get('level', 0)) for r in plan.rooms]
             )
         )
+        return complete
     except Exception as ex:
-        _log(f'post-build completeness failed: {ex!r}')
+        simsight_log.line(f'house planner: post-build completeness failed: {ex!r}')
+        simsight_log.error('house planner: post-build completeness')
+        return False
+
+
+def _build_with_followup(plan: Any) -> Any:
+    """Build the plan; when a stacked house is complete, offer the roof builder."""
+    result = _original_build(plan)
+    complete = _built_completely(plan)
     if getattr(plan, '_a11y_roof_prompt', False) and complete:
         try:
             import simsight_plus_core as core
@@ -358,14 +330,15 @@ def _build_with_followup(plan):
             )
             core.post(roofs.roof_builder)
         except Exception as ex:
-            _log(f'roof follow-up failed: {ex!r}')
+            simsight_log.line(f'house planner: roof follow-up failed: {ex!r}')
+            simsight_log.error('house planner: roof follow-up')
     return result
 
 
-def _review(plan, description):
+def _review(plan: Any, description: str) -> None:
+    import simsight_plus_build as build
     import simsight_plus_core as core
     import simsight_plus_house as house
-    import simsight_plus_build as build
 
     if plan.problem:
         core.speak(plan.problem)
@@ -384,14 +357,14 @@ def _review(plan, description):
         ('Cancel', None, False),
     ]
 
-    def chosen(go):
-        global _pending_stairs
+    def chosen(go: bool) -> None:
         if not go:
             return
-        _pending_stairs = list(plan._a11y_transitions)
-        _log(
-            'approved plan levels={} size={}x{} rooms={} stairs={}'.format(
-                sorted(set(r['level'] for r in plan.rooms)),
+        # In place: the module attribute stays the list other modules see.
+        _pending_stairs[:] = list(plan._a11y_transitions)
+        simsight_log.line(
+            'house planner: approved plan levels={} size={}x{} rooms={} stairs={}'.format(
+                sorted({r['level'] for r in plan.rooms}),
                 plan.width,
                 plan.depth,
                 [(r['level'], r['name'], r['box']) for r in plan.rooms],
@@ -410,23 +383,42 @@ def _review(plan, description):
     )
 
 
-def open_planner():
-    import simsight_plus_core as core
-    import simsight_plus_build as build
+class _StackedHouseChoices:
+    """The planner's dialogs, one after the other: stories, basement, footprint,
+    layout, top-floor use, then the room names of each level."""
 
-    if not build.in_build_mode():
-        core.speak('Enter Build mode first.')
-        return
-    low, high = _limits()
-    max_stories = max(1, high + 1)
-    floor_rows = [
-        ('{} above-ground stor{}'.format(n, 'y' if n == 1 else 'ies'), None, n)
-        for n in range(1, max_stories + 1)
-    ]
+    def __init__(self, low: int, high: int) -> None:
+        import simsight_plus_core as core
 
-    def floors_chosen(stories):
-        basement_rows = [('No basement', None, False)]
-        if low < 0:
+        self.core: Any = core
+        self.low = low
+        self.high = high
+        self.stories = 1
+        self.basement = False
+        self.size = (10, 10)
+        self.layout = 'two'
+        self.attic = False
+        self.levels: list[int] = []
+        self.count = 2
+        self.names: dict[int, list[str]] = {}
+
+    def start(self) -> None:
+        floor_rows = [
+            ('{} above-ground stor{}'.format(n, 'y' if n == 1 else 'ies'), None, n)
+            for n in range(1, max(1, self.high + 1) + 1)
+        ]
+        self.core.choose(
+            'Number of stories',
+            f'The game currently reports support through floor {self.high}. Choose an above-ground count.',
+            floor_rows,
+            self.floors_chosen,
+            tag='build',
+        )
+
+    def floors_chosen(self, stories: int) -> None:
+        self.stories = stories
+        basement_rows: list[tuple[str, str | None, bool]] = [('No basement', None, False)]
+        if self.low < 0:
             basement_rows.append(
                 (
                     'One basement level',
@@ -434,125 +426,129 @@ def open_planner():
                     True,
                 )
             )
-
-        def basement_chosen(basement):
-            sizes = [
-                ('Compact square', '10 by 10 metres.', (10, 10)),
-                ('Standard rectangle', '10 by 11 metres.', (10, 11)),
-                ('Large rectangle', '12 by 14 metres.', (12, 14)),
-            ]
-
-            def size_chosen(size):
-                layouts = [
-                    ('Two rooms per floor', 'One front room, hallway, one back room.', 'two'),
-                    ('Four rooms per floor', 'Two front rooms, hallway, two back rooms.', 'four'),
-                ]
-
-                def layout_chosen(layout):
-                    levels = list(range(-1 if basement else 0, stories))
-                    count = 2 if layout == 'two' else 4
-                    names = {}
-
-                    def ask(index):
-                        if index >= len(levels):
-                            plan = _build_plan(size[0], size[1], levels, layout, names)
-                            plan._a11y_roof_prompt = True
-                            desc = '{} by {} metre {} house; levels {}; {} rooms plus a hallway per level; straight aligned stairs.'.format(
-                                size[0],
-                                size[1],
-                                'square' if size[0] == size[1] else 'rectangular',
-                                ', '.join(str(v) for v in levels),
-                                count,
-                            )
-                            _review(plan, desc)
-                            return
-                        level = levels[index]
-                        where = 'basement' if level < 0 else f'floor {level + 1}'
-                        order = (
-                            'front, back'
-                            if count == 2
-                            else 'front west, front east, back west, back east'
-                        )
-                        is_attic = attic and level == max(levels)
-                        core.ask_text(
-                            f'Rooms on {where}',
-                            'Type {} room names separated by commas, in this order: {}.{}'.format(
-                                count,
-                                order,
-                                ' Leave blank for attic and storage defaults.' if is_attic else '',
-                            ),
-                            '',
-                            lambda text: (
-                                names.__setitem__(
-                                    level, _clean_names(text, count, level, is_attic)
-                                ),
-                                ask(index + 1),
-                            ),
-                        )
-
-                    attic_rows = [
-                        ('Normal top floor', None, False),
-                        (
-                            'Attic-style top floor',
-                            'A full-height normal story with attic and storage defaults, followed by the roof chooser.',
-                            True,
-                        ),
-                    ]
-
-                    def attic_chosen(value):
-                        nonlocal attic
-                        attic = value
-                        ask(0)
-
-                    attic = False
-                    core.choose(
-                        'Top-floor use',
-                        'This does not create unsafe sloped rooms; it changes the intended room naming and roof follow-up.',
-                        attic_rows,
-                        attic_chosen,
-                        tag='build',
-                    )
-
-                core.choose(
-                    'Room layout',
-                    'The same proven rectangular partition pattern is used on every level.',
-                    layouts,
-                    layout_chosen,
-                    tag='build',
-                )
-
-            core.choose(
-                'House footprint',
-                'Every level uses exactly this perimeter.',
-                sizes,
-                size_chosen,
-                tag='build',
-            )
-
-        core.choose(
+        self.core.choose(
             'Basement',
             'A basement counts as level minus one and receives the same footprint.',
             basement_rows,
-            basement_chosen,
+            self.basement_chosen,
             tag='build',
         )
 
-    core.choose(
-        'Number of stories',
-        f'The game currently reports support through floor {high}. Choose an above-ground count.',
-        floor_rows,
-        floors_chosen,
-        tag='build',
-    )
+    def basement_chosen(self, basement: bool) -> None:
+        self.basement = basement
+        sizes = [
+            ('Compact square', '10 by 10 metres.', (10, 10)),
+            ('Standard rectangle', '10 by 11 metres.', (10, 11)),
+            ('Large rectangle', '12 by 14 metres.', (12, 14)),
+        ]
+        self.core.choose(
+            'House footprint',
+            'Every level uses exactly this perimeter.',
+            sizes,
+            self.size_chosen,
+            tag='build',
+        )
+
+    def size_chosen(self, size: tuple[int, int]) -> None:
+        self.size = size
+        layouts = [
+            ('Two rooms per floor', 'One front room, hallway, one back room.', 'two'),
+            ('Four rooms per floor', 'Two front rooms, hallway, two back rooms.', 'four'),
+        ]
+        self.core.choose(
+            'Room layout',
+            'The same proven rectangular partition pattern is used on every level.',
+            layouts,
+            self.layout_chosen,
+            tag='build',
+        )
+
+    def layout_chosen(self, layout: str) -> None:
+        self.layout = layout
+        self.levels = list(range(-1 if self.basement else 0, self.stories))
+        self.count = 2 if layout == 'two' else 4
+        self.names = {}
+        self.attic = False
+        attic_rows = [
+            ('Normal top floor', None, False),
+            (
+                'Attic-style top floor',
+                'A full-height normal story with attic and storage defaults, followed by the roof chooser.',
+                True,
+            ),
+        ]
+        self.core.choose(
+            'Top-floor use',
+            'This does not create unsafe sloped rooms; it changes the intended room naming and roof follow-up.',
+            attic_rows,
+            self.attic_chosen,
+            tag='build',
+        )
+
+    def attic_chosen(self, value: bool) -> None:
+        self.attic = value
+        self.ask(0)
+
+    def ask(self, index: int) -> None:
+        """The room names of level number `index`; after the last level, the review."""
+        if index >= len(self.levels):
+            self.review()
+            return
+        level = self.levels[index]
+        count = self.count
+        where = 'basement' if level < 0 else f'floor {level + 1}'
+        order = 'front, back' if count == 2 else 'front west, front east, back west, back east'
+        is_attic = self.attic and level == max(self.levels)
+
+        def named(text: str) -> None:
+            self.names[level] = _clean_names(text, count, level, is_attic)
+            self.ask(index + 1)
+
+        self.core.ask_text(
+            f'Rooms on {where}',
+            'Type {} room names separated by commas, in this order: {}.{}'.format(
+                count,
+                order,
+                ' Leave blank for attic and storage defaults.' if is_attic else '',
+            ),
+            '',
+            named,
+        )
+
+    def review(self) -> None:
+        size, levels = self.size, self.levels
+        plan = _build_plan(size[0], size[1], levels, self.layout, self.names)
+        plan._a11y_roof_prompt = True
+        desc = '{} by {} metre {} house; levels {}; {} rooms plus a hallway per level; straight aligned stairs.'.format(
+            size[0],
+            size[1],
+            'square' if size[0] == size[1] else 'rectangular',
+            ', '.join(str(v) for v in levels),
+            self.count,
+        )
+        _review(plan, desc)
 
 
-def shaped_stair_diagnostics():
-    import simsight_plus_core as core
+def open_planner() -> None:
     import simsight_plus_build as build
+    import simsight_plus_core as core
 
-    def work():
+    if not build.in_build_mode():
+        core.speak('Enter Build mode first.')
+        return
+    low, high = _limits()
+    _StackedHouseChoices(low, high).start()
+
+
+def shaped_stair_diagnostics() -> None:
+    import simsight_plus_build as build
+    import simsight_plus_core as core
+
+    def work() -> None:
         items = build.fetch_catalog(14, '', 'none') or []
-        _log(f'stair catalog discovery {[(str(n), p, c) for n, p, c in items]}')
+        simsight_log.line(
+            f'house planner: stair catalog discovery {[(str(n), p, c) for n, p, c in items]}'
+        )
         core.post(
             core.speak,
             f'Logged {len(items)} stair catalog entries and swatch counts. No shaped, flared, L, U or spiral stair was placed.',
@@ -561,23 +557,7 @@ def shaped_stair_diagnostics():
     threading.Thread(target=work, name='a11y_stair_discovery', daemon=True).start()
 
 
-def _original_stairs(top, climb):
-    import simsight_plus_house as house
-
-    return house._place_stairs_worker_base(top, climb)
-
-
-def _original_build(plan):
+def _original_build(plan: Any) -> Any:
     import simsight_plus_house as house
 
     return house._build_base(plan)
-
-
-def _original_point_and_act(
-    points_world, level, action, describe, height=0.0, view=None, overview=False
-):
-    import simsight_plus_build as build
-
-    return build._point_and_act_base(
-        points_world, level, action, describe, height=height, view=view, overview=overview
-    )
