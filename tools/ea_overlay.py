@@ -2,7 +2,8 @@
 bytecode (tools/ea_stubs.py writes everything else as Any).
 
 Each entry: '<module>.<Class>.<method>' or '<module>.<function>' -> the
-annotation text written in the stub. Add one only after reading the game
+annotation text written in the stub. More entries may live in
+tools/ea_overlay_<topic>.py files (same RETURNS dict); all are read. Add one only after reading the game
 code (docs/dev/EA-API.md says how, and records what was found).
 """
 

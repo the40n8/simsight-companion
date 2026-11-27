@@ -29,8 +29,21 @@ import sys
 import types
 import zipfile
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from ea_overlay import RETURNS
+
+def _overlay():
+    """Every hand-checked return type: tools/ea_overlay.py and ea_overlay_*.py."""
+    import glob
+    import importlib
+
+    here = os.path.dirname(os.path.abspath(__file__))
+    sys.path.insert(0, here)
+    returns = {}
+    for path in sorted(glob.glob(os.path.join(here, 'ea_overlay*.py'))):
+        returns.update(importlib.import_module(os.path.basename(path)[:-3]).RETURNS)
+    return returns
+
+
+RETURNS = _overlay()
 
 CO_VARARGS, CO_VARKEYWORDS = 0x04, 0x08
 FLEX = {'flexmethod', 'flexproperty'}
