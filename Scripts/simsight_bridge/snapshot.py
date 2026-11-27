@@ -21,6 +21,10 @@ from .state import _in_game, _logged, _state
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from server.client import Client
+    from sims.household import Household
+    from sims.sim_info import SimInfo
+
     from .state import Json
 
 
@@ -58,7 +62,7 @@ def _add_part(entry: Json, key: str, part: Callable[[], Any]) -> None:
             entry[key] = value
 
 
-def _sim(info: Any, client: Any) -> Json:
+def _sim(info: SimInfo, client: Client | None) -> Json:
     sim = info.get_sim_instance()
     room = _room_ref(sim) if sim is not None else None
     entry: Json = {
@@ -101,13 +105,15 @@ def build_state() -> Json:
 
     if not _in_game():
         return {'inGame': False, 'narration': _narration()}
-    household = services.active_household()
-    client = services.client_manager().get_first_client()
+    household: Household = services.active_household()
+    client: Client | None = services.client_manager().get_first_client()
+    # A distributor Field on Household (a property the stubs show as a method).
+    name: Any = household.name
     return {
         'inGame': True,
         'clock': _clock(),
         'funds': str(int(household.funds.money)),
-        'householdName': household.name or '',
+        'householdName': name or '',
         'sims': [_sim(info, client) for info in household.sim_info_gen()],
         'narration': _narration(),
         'dialogs': _open_dialogs(),

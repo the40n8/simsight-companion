@@ -13,6 +13,9 @@ import simsight_log
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+    from server.client import Client
+    from sims.sim import Sim
+
     Json = dict[str, Any]
     # (ok, reason) or (ok, reason, extra fields for the result message)
     Answer = tuple[Any, ...]
@@ -86,7 +89,7 @@ def _in_game() -> bool:
     )
 
 
-def _sim_and_client() -> tuple[Any, Any]:
+def _sim_and_client() -> tuple[Sim | None, Client | None]:
     import services
 
     sim = services.get_active_sim()

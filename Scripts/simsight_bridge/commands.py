@@ -205,9 +205,10 @@ def _set_speed(name: str) -> bool:
         from server_commands import clock_commands
 
         clock_commands.set_speed(name)
+    except Exception:
+        simsight_log.error('bridge: clock.setspeed (the clock is set directly)')
+    else:
         return True
-    except Exception as ex:
-        log(f'clock.setspeed failed, using the clock directly: {ex!r}')
     import services
     from clock import ClockSpeedMode, GameSpeedChangeSource
 

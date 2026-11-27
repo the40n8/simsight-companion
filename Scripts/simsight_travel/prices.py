@@ -32,12 +32,14 @@ def _lot_values(zone_id: int) -> list[tuple[str, Any]]:
         if lot is not None:
             found.append(('zone', lot.furnished_lot_value))
     except Exception as ex:
+        simsight_log.error('travel: zone lot value')
         found.append(('zone', f'error {ex!r}'))
     try:
         import build_buy
 
         found.append(('build_buy', build_buy.get_lot_value(zone_id, True)[0]))
     except Exception as ex:
+        simsight_log.error('travel: build_buy lot value')
         found.append(('build_buy', f'error {ex!r}'))
     return found
 
@@ -145,7 +147,8 @@ def a11y_lot_value(zone: str = '0', _connection: Any = None) -> bool:
         line = f'travel lot value: zone {zone_id} sources {_lot_values(zone_id)} price {_daily_price(zone_id)}'
         simsight_log.line(line)
         output(line)
-        return True
     except Exception:
         simsight_log.error('travel: simsight.lot_value')
         return False
+    else:
+        return True

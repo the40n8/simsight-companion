@@ -123,10 +123,10 @@ def write_line(data: bytes) -> bool:
         try:
             _state.proc.stdin.write(data + b'\n')
             _state.proc.stdin.flush()
-            return True
         except (OSError, ValueError) as ex:  # the bridge exited: alive() notices
             log(f'write failed: {ex!r}')
             return False
+        return True
 
 
 def send(message: Json) -> bool:
@@ -179,7 +179,7 @@ class SpeechPipe:
     def kill(self) -> None:
         """The bridge keeps running: it serves the phone too."""
 
-    def wait(self, timeout: float | None = None) -> int | None:
+    def wait(self, timeout: float | None = None) -> int | None:  # noqa: ARG002 - Popen.wait's signature
         """Nothing to wait for (kill() leaves the bridge running)."""
         return self.poll()
 
@@ -239,10 +239,10 @@ def _open_on_mac(url: str, said: str) -> bool:
         else:
             return False
         speech.speak(said, explicit=True)
-        return True
     except Exception:
         simsight_log.error(f'bridge: open {url}')
         return False
+    return True
 
 
 def open_pairing_page() -> bool:

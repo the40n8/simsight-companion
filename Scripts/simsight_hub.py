@@ -432,7 +432,7 @@ def _sellable(obj: Any) -> bool:
 
 def _sell_price(sim: Any, obj: Any, count: int) -> int:
     # sim_inventory_sell_multiple: current_value * count * sell modifier, rounded.
-    return int(round(obj.current_value * count * sim.sim_info.get_item_sell_price_modifier(obj)))
+    return round(obj.current_value * count * sim.sim_info.get_item_sell_price_modifier(obj))
 
 
 def _sell_rows(sim: Any, obj: Any, obj_id: int) -> list[Row]:
@@ -609,8 +609,8 @@ def sell_window(sim_id: int, obj_id: int) -> bool:
     name = LocalizationHelperTuning.get_object_name(obj)
     dialog = _state.sell_factory.default(
         sim,
-        title=lambda *args, **kwargs: name,
-        text=lambda *args, **kwargs: menu.raw_text(lang.t('sell window instructions')),
+        title=lambda *_args, **_kwargs: name,
+        text=lambda *_args, **_kwargs: menu.raw_text(lang.t('sell window instructions')),
     )
     dialog.inventory_object_id = sim.id
     dialog.use_dialog_pick_response = False
@@ -685,7 +685,9 @@ def _guests(situation: Any) -> list[Any]:
 def _event_detail(situation: Any) -> str:
     parts = [lang.t('event guests').format(len(_guests(situation)))]
     try:
-        minutes = int(situation._get_remaining_time_in_minutes())
+        # As Situation._get_remaining_time_in_minutes: None without an end time.
+        span = situation.get_remaining_time()
+        minutes = int(span.in_minutes()) if span is not None else 0
         if minutes > 0:
             parts.append(lang.t('event minutes left').format(minutes))
     except (AttributeError, TypeError, ValueError):
@@ -867,7 +869,8 @@ def build_actions() -> bool:
     if not build.controls_enabled():
         return build.refuse_disabled()
     if build.build_zone() is None:
-        build._say('Enter Build mode first.', 'Najpierw włącz tryb budowania.')
+        # simsight_build's own voice (simsight_plus_build may replace it).
+        build._say('Enter Build mode first.', 'Najpierw włącz tryb budowania.')  # noqa: SLF001
         return False
     rows: list[Row] = [
         (menu.raw_text(lang.t(label)), None, lambda value=action: _build_action(value))

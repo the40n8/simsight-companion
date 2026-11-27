@@ -5,15 +5,20 @@ from __future__ import annotations
 
 
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import simsight_log
+import simsight_patch
 
 from .commands import _handle
 from .pipe import _read_chunk, alive, send, start
 from .snapshot import _publish_state
 from .state import _state, log
 from .text import _request_localization
+
+
+if TYPE_CHECKING:
+    from simsight_patch import Function
 
 
 STATE_INTERVAL = 1.0  # seconds between state snapshots (sent only if changed)
@@ -47,20 +52,18 @@ def _tick() -> None:
 def _install_tick() -> None:
     import sims4.core_services as core
 
-    original = core.on_tick
-    if getattr(original, '_simsight_bridge', False):
-        return
+    def make(original: Function) -> Function:
+        def on_tick(*args: Any, **kwargs: Any) -> Any:
+            result = original(*args, **kwargs)
+            try:
+                _tick()
+            except Exception:
+                simsight_log.error('bridge: tick')
+            return result
 
-    def on_tick(*args: Any, **kwargs: Any) -> Any:
-        result = original(*args, **kwargs)
-        try:
-            _tick()
-        except Exception:
-            simsight_log.error('bridge: tick')
-        return result
+        return on_tick
 
-    setattr(on_tick, '_simsight_bridge', True)  # noqa: B010 - marker on a function
-    core.on_tick = on_tick
+    simsight_patch.wrap(core, 'on_tick', make)
 
 
 def _read_commands() -> None:

@@ -15,6 +15,8 @@ from .text import object_name
 
 
 if TYPE_CHECKING:
+    from sims.sim import Sim
+
     from .state import Json
 
 
@@ -112,14 +114,14 @@ def _problem_kind(obj: Any, types: _ProblemTypes) -> str | None:
     return None
 
 
-def _problem(obj: Any, sim: Any, types: _ProblemTypes) -> Json | None:
+def _problem(obj: Any, sim: Sim | None, types: _ProblemTypes) -> Json | None:
     entry: Json | None = None
     with _logged('problem object'):
         kind = _problem_kind(obj, types) if _problem_listable(obj) else None
         if kind is not None:
             entry = {'kind': kind, 'targetId': str(obj.id), 'name': object_name(obj)}
             if sim is not None:
-                entry['distance'] = int(round(_distance(obj.position, sim.position)))
+                entry['distance'] = round(_distance(obj.position, sim.position))
     return entry
 
 

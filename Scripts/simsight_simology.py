@@ -103,12 +103,16 @@ def _milestone_entries(tracker: Any, info: Any) -> list[Entry]:
     from event_testing.resolver import SingleSimResolver
 
     resolver = SingleSimResolver(info)
+    # As EA's own panel (send_all_milestones_update_to_client): the tracker
+    # has no public accessor for these two tables.
+    active = tracker._active_milestones_data  # noqa: SLF001
+    archived = tracker._archived_milestones_data  # noqa: SLF001
     entries = [
         (milestone, data)
-        for milestone, data in list(tracker._active_milestones_data.items())
+        for milestone, data in list(active.items())
         if _visible(tracker, milestone, resolver)
     ]
-    entries.extend(list(tracker._archived_milestones_data.items()))
+    entries.extend(list(archived.items()))
     return entries
 
 
@@ -116,7 +120,9 @@ def _visible(tracker: Any, milestone: Any, resolver: Any) -> bool:
     try:
         return bool(tracker.is_milestone_visible(milestone, resolver))
     except Exception:
-        return False  # its tuned tests fail to run: EA's panel would not show it
+        # Its tuned tests fail to run: EA's panel would not show it either.
+        simsight_log.error('simology: milestone visibility')
+        return False
 
 
 def _state(data: Any) -> str:
@@ -191,8 +197,8 @@ def milestones_window() -> Any:
         return False
     try:
         groups = _read(info)
-    except Exception as ex:
-        simsight_log.line(f'simology: milestones unavailable ({ex!r})')
+    except Exception:
+        simsight_log.error('simology: milestones unavailable')
         _say('action unavailable')
         return False
     if not groups:
@@ -226,8 +232,8 @@ def milestone_category(sim_id: Any, category: Any) -> Any:
         return False
     try:
         items = (_read(info) or {}).get(category, [])
-    except Exception as ex:
-        simsight_log.line(f'simology: milestone category unavailable ({ex!r})')
+    except Exception:
+        simsight_log.error('simology: milestone category unavailable')
         _say('action unavailable')
         return False
     rows: list[Row] = []
@@ -255,7 +261,9 @@ def _display(stat_type: Any, attr: str) -> Any:
     try:
         return getattr(stat_type, attr)
     except Exception:
-        return None  # tuning that fails to load reads as missing, row skipped
+        # Tuning that fails to load reads as missing: the row is skipped.
+        simsight_log.error(f'simology: tuning {attr}')
+        return None
 
 
 def _life_skills(info: Any) -> list[Any]:
@@ -288,7 +296,7 @@ def _range_trait(stat_type: Any, value: float, info: Any) -> tuple[Any, str]:
 
 def value_text(value: float, low: float, high: float) -> str:
     """'35 on a scale from -100 to 100'."""
-    return lang.t('value on scale').format(int(round(value)), int(round(low)), int(round(high)))
+    return lang.t('value on scale').format(round(value), round(low), round(high))
 
 
 def value_detail(stat: Any, info: Any) -> Any:
@@ -318,8 +326,8 @@ def values_window() -> Any:
         return False
     try:
         stats = _life_skills(info)
-    except Exception as ex:
-        simsight_log.line(f'simology: character values unavailable ({ex!r})')
+    except Exception:
+        simsight_log.error('simology: character values unavailable')
         _say('action unavailable')
         return False
     rows: list[Row] = []
@@ -329,8 +337,8 @@ def values_window() -> Any:
             continue
         try:
             detail = value_detail(stat, info)
-        except Exception as ex:
-            simsight_log.line(f'simology: value {type(stat).__name__} unreadable ({ex!r})')
+        except Exception:
+            simsight_log.error('simology: character value unreadable')
             continue
         # Reading only: Enter reopens the list.
         rows.append((name, detail, values_window))

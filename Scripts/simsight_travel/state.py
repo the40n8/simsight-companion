@@ -14,6 +14,8 @@ import simsight_speech as speech
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from ui.ui_dialog_service import UiDialogService
+
     # A picker row: (localized name, localized description or None, tag).
     Row = tuple[Any, Any, Any]
     # A world entry: (world key, name, place count, localized label or None).
@@ -191,22 +193,25 @@ def _zone_loaded() -> bool:
         return False
 
 
-def _service() -> Any:
+def _service() -> UiDialogService | None:
+    """EA's dialog service, or None without a zone (services.ui_dialog_service()
+    reads current_zone().ui_dialog_service and raises AttributeError then)."""
     import services
 
-    return services.ui_dialog_service()
+    try:
+        service: UiDialogService | None = services.ui_dialog_service()
+    except AttributeError:
+        return None  # no zone (loading or unloading)
+    return service
 
 
 def _dialog_active(dialog: Any) -> bool:
     """True while EA still holds this exact dialog as active."""
-    try:
-        service = _service()
-        lookup = getattr(service, 'get_dialog', None)
-        if lookup is not None:
-            return lookup(dialog.dialog_id) is dialog
-        return service._active_dialogs.get(dialog.dialog_id) is dialog
-    except AttributeError:
+    service = _service()
+    if service is None:
         return False  # no dialog service (zone unloading)
+    try:
+        return service.get_dialog(dialog.dialog_id) is dialog
     except Exception:
         simsight_log.error('travel: dialog lookup')
         return False
@@ -221,7 +226,7 @@ def _ui(message: str) -> bool:
         distributor.system.Distributor.instance().add_op_with_no_owner(
             distributor.ops.SendUIMessage(message)
         )
-        return True
-    except Exception as ex:
-        simsight_log.line(f'travel: ui message failed ({ex!r})')
+    except Exception:
+        simsight_log.error('travel: ui message failed')
         return False
+    return True

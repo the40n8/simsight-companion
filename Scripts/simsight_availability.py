@@ -253,10 +253,11 @@ def state(obj_or_id: Any) -> str:
         if _state.busy():
             _ensure_ticking(time.monotonic())
         verdict = _state.verdicts.get(obj_id)
-        return PENDING if verdict is None else verdict.state
     except Exception:
         simsight_log.error('availability: state')
         return PENDING
+    else:
+        return PENDING if verdict is None else verdict.state
 
 
 def invalidate(obj_ids: Iterable[int] | None = None) -> None:
@@ -284,12 +285,6 @@ def pause() -> None:
     the next scan shows the last filtered list at once and only rechecks
     what has come due."""
     _cancel_work()
-
-
-def on_active_sim_changed(old_sim: Any = None, new_sim: Any = None) -> None:
-    # Signature matches client.register_active_sim_changed.
-    _forget_all()
-    _state.sim_id = None
 
 
 def reset() -> None:
@@ -335,8 +330,8 @@ def _tick(token: int | None = None) -> None:
         sim = services.get_active_sim()
         client = services.client_manager().get_first_client()
         manager = services.object_manager()
-    except Exception as ex:
-        simsight_log.line(f'availability: services unavailable {ex!r}')
+    except Exception:
+        simsight_log.error('availability: services unavailable')
         _cancel_work()
         return
     if sim is None or client is None or sim.id != _state.sim_id:
@@ -375,6 +370,7 @@ def _start_next(sim: Any, client: Any, manager: Any) -> _Check | None:
     try:
         obj = manager.get(obj_id)
     except Exception as ex:
+        simsight_log.error('availability: object lookup')
         _store(obj_id, USABLE, repr(ex)[:80], True, 0.0)
         return None
     if obj is None:
@@ -448,7 +444,7 @@ class _LoggerProxy:
         self._real = real
         self._watch = watch
 
-    def exception(self, message: Any = '', *args: Any, **kwargs: Any) -> None:
+    def exception(self, message: Any = '', *_args: Any, **_kwargs: Any) -> None:
         self._watch.message = str(message)[:80]
 
     def __getattr__(self, name: str) -> Any:
@@ -488,6 +484,8 @@ def _step(check: _Check) -> Outcome | None:
     except StopIteration as done:
         outcome = done.value
     except Exception as ex:
+        # A native test that raises: the object stays listed, as usable.
+        simsight_log.error('availability: check step')
         outcome = (USABLE, repr(ex)[:80], True)
     if watch.message is not None:
         outcome = (USABLE, 'swallowed: ' + watch.message, True)
@@ -551,8 +549,8 @@ class _RowPass(NamedTuple):
 def _int_or_zero(read: Callable[[], Any]) -> int:
     try:
         return int(read())
-    except Exception:
-        return 0  # the game's own default when the value is missing
+    except (AttributeError, TypeError, ValueError):
+        return 0  # no active lot, or an object without a level: the game's own default
 
 
 def _place(sim: Any, client: Any, obj: Any) -> _Place:
@@ -780,4 +778,5 @@ def a11y_availability(_connection: Any = None) -> None:
             + ', '.join(f'{obj_id} {verdict.cost_ms:.1f} ms' for obj_id, verdict in slow)
         )
     except Exception as ex:
+        simsight_log.error('availability: simsight.availability')
         output(f'availability: listing failed {ex!r}')

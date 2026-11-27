@@ -13,6 +13,8 @@ from .text import classify, object_name
 
 
 if TYPE_CHECKING:
+    from sims.sim import Sim
+
     from .state import Answer, Json
 
 
@@ -31,7 +33,7 @@ def _stack_count(obj: Any) -> int:
         return 1  # not a stack
 
 
-def _inventory_items(sim: Any) -> list[Any]:
+def _inventory_items(sim: Sim) -> list[Any]:
     seen, out = set(), []
     for obj in list(sim.inventory_component or ()):
         try:
@@ -56,12 +58,12 @@ def _destination(holder: Any, item: Any, d: float) -> Json | None:
                 'name': object_name(holder),
                 'group': group,
                 'kind': kind,
-                'distance': int(round(d)),
+                'distance': round(d),
             }
     return row
 
 
-def _destinations(sim: Any, item: Any, holders: list[tuple[float, Any]]) -> list[Json]:
+def _destinations(item: Any, holders: list[tuple[float, Any]]) -> list[Json]:
     out = []
     for d, holder in holders:
         row = _destination(holder, item, d)
@@ -72,7 +74,7 @@ def _destinations(sim: Any, item: Any, holders: list[tuple[float, Any]]) -> list
     return out
 
 
-def _holder_distance(obj: Any, sim: Any) -> float | None:
+def _holder_distance(obj: Any, sim: Sim) -> float | None:
     """How far an object with an inventory is, or None when it does not count."""
     distance = None
     with _logged('inventory holder'):
@@ -86,7 +88,7 @@ def _holder_distance(obj: Any, sim: Any) -> float | None:
     return distance
 
 
-def _inventory_row(sim: Any, item: Any, holders: list[tuple[float, Any]]) -> Json | None:
+def _inventory_row(item: Any, holders: list[tuple[float, Any]]) -> Json | None:
     try:
         group, kind, _keywords = classify(item)
         return {
@@ -97,7 +99,7 @@ def _inventory_row(sim: Any, item: Any, holders: list[tuple[float, Any]]) -> Jso
                 'kind': kind,
             },
             'count': _stack_count(item),
-            'destinations': _destinations(sim, item, holders),
+            'destinations': _destinations(item, holders),
         }
     except Exception:
         simsight_log.error('bridge: inventory item')
@@ -118,7 +120,7 @@ def list_inventory() -> Answer:
     holders.sort(key=lambda pair: pair[0])
     items = []
     for item in _inventory_items(sim):
-        row = _inventory_row(sim, item, holders)
+        row = _inventory_row(item, holders)
         if row is not None:
             items.append(row)
     return True, '', {'inventory': items}

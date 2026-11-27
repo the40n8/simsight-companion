@@ -3,7 +3,7 @@ the push, and the companion picker answered with nobody for Go alone."""
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 
 import simsight_lang as lang
@@ -14,13 +14,16 @@ import simsight_pump as pump
 from .state import _dialog_active, _say, _state, _zone_loaded, enabled, simplified
 from .window import _fence_input, _show_picker
 
+if TYPE_CHECKING:
+    from sims.sim import Sim
+
 
 _ALONE, _WITH = 'alone', 'with'
 
 TRAVEL_AFFORDANCE = 423375  # self_SimPicker_TravelWith (Sim menu Travel)
 
 
-def _away(sim: Any) -> bool:
+def _away(sim: Sim) -> bool:
     """The Sim is on another lot than the loaded zone."""
     import services
 
@@ -50,50 +53,55 @@ def _note_alone(result: Any) -> None:
         simsight_log.line('travel: no interaction to match; the companion picker will show')
 
 
-def push_travel(sim: Any, alone: bool = False) -> str:
+def push_travel(sim: Sim, alone: bool = False) -> str:
     """EA's own Travel (the companion picker, then the map picker this
     module lists). 'ok', 'refused' or 'error'; a refusal speaks EA's reason
     when its test gives one."""
-    import services
-
     _state.alone = None  # a new Travel replaces any earlier Go alone
     _state.alone_claimed = False
     try:
-        import sims4.resources
-        from interactions.context import InteractionContext
-        from interactions.priority import Priority
-
-        affordance = services.get_instance_manager(sims4.resources.Types.INTERACTION).get(
-            TRAVEL_AFFORDANCE
-        )
-        if affordance is None:
-            raise ValueError('travel affordance missing')
-        client = services.client_manager().get_first_client()
-        context = InteractionContext(
-            sim, InteractionContext.SOURCE_PIE_MENU, Priority.High, client=client, pick=None
-        )
-        # 423375 is an ImmediateSuperInteraction: it runs, and EA shows its
-        # companion picker, inside this push (2026-09-26 live, BFF household:
-        # the picker appeared before the push returned and was not claimed).
-        _state.alone_push = sim.sim_id if alone else None
-        try:
-            result = sim.push_super_affordance(affordance, sim, context)
-        finally:
-            _state.alone_push = None
-        if not result:
-            simsight_log.line(f'travel: keyboard entry refused: {result}')
-            say_refusal(result, sim)
-            return 'refused'
-        if alone:
-            _note_alone(result)
-        return 'ok'
-    except Exception as ex:
-        simsight_log.line(f'travel: keyboard entry failed: {ex!r}')
+        return _push_travel(sim, alone)
+    except Exception:
+        simsight_log.error('travel: keyboard entry failed')
         _say('action unavailable')
         return 'error'
 
 
-def say_refusal(result: Any, sim: Any) -> Any:
+def _push_travel(sim: Sim, alone: bool) -> str:
+    import services
+    import sims4.resources
+    from interactions.context import InteractionContext
+    from interactions.priority import Priority
+
+    affordance = services.get_instance_manager(sims4.resources.Types.INTERACTION).get(
+        TRAVEL_AFFORDANCE
+    )
+    if affordance is None:
+        simsight_log.line('travel: keyboard entry failed: travel affordance missing')
+        _say('action unavailable')
+        return 'error'
+    client = services.client_manager().get_first_client()
+    context = InteractionContext(
+        sim, InteractionContext.SOURCE_PIE_MENU, Priority.High, client=client, pick=None
+    )
+    # 423375 is an ImmediateSuperInteraction: it runs, and EA shows its
+    # companion picker, inside this push (2026-09-26 live, BFF household:
+    # the picker appeared before the push returned and was not claimed).
+    _state.alone_push = sim.sim_id if alone else None
+    try:
+        result = sim.push_super_affordance(affordance, sim, context)
+    finally:
+        _state.alone_push = None
+    if not result:
+        simsight_log.line(f'travel: keyboard entry refused: {result}')
+        say_refusal(result, sim)
+        return 'refused'
+    if alone:
+        _note_alone(result)
+    return 'ok'
+
+
+def say_refusal(result: Any, sim: Sim) -> Any:
     """The game's own reason for a refused Travel (for example a social
     event in progress), after the spoken line."""
     import simsight_native as native
@@ -120,7 +128,7 @@ def _front_picked(reply: Any, sim_id: int) -> None:
         _say('action unavailable')
 
 
-def show_front(sim: Any) -> bool:
+def show_front(sim: Sim) -> bool:
     """Simplified menus: Go alone or Choose who comes, before EA's own
     companion picker. Escape closes it and nothing is pushed."""
     try:
@@ -152,10 +160,11 @@ def show_front(sim: Any) -> bool:
         _fence_input()
         dialog.show_dialog()
         _state.front_id = dialog.dialog_id
-        return True
-    except Exception as ex:
-        simsight_log.line(f'travel: front window failed ({ex!r})')
+    except Exception:
+        simsight_log.error('travel: front window failed')
         return False
+    else:
+        return True
 
 
 def _front_chosen(sim_id: int, alone: bool) -> bool:
@@ -226,11 +235,13 @@ def _claims(dialog: Any) -> bool:
     return False
 
 
-def _native_sim_picker(dialog: Any, msg_type: Any, dialog_msg: Any, kwargs: dict[str, Any]) -> Any:
+def _native_sim_picker(
+    dialog: Any, msg_type: Any, dialog_msg: Any, kwargs: dict[str, Any], more: tuple[Any, ...] = ()
+) -> Any:
     original = _state.original_sim_distribute
     if original is None:
         return None  # never installed: nothing replaced EA's picker
-    return original(dialog, msg_type, dialog_msg, **kwargs)
+    return original(dialog, msg_type, dialog_msg, *more, **kwargs)
 
 
 def _sim_distribute(dialog: Any, msg_type: Any, dialog_msg: Any, **kwargs: Any) -> Any:

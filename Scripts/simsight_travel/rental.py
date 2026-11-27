@@ -2,18 +2,24 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 
 import simsight_log
 
 from .state import _Pending, _dialog_active, _funds, _say, _service
 
+if TYPE_CHECKING:
+    from sims.household import Household
+    from sims.sim_info import SimInfo
+    from travel_group.travel_group_manager import TravelGroupManager
+    from ui.ui_dialog_service import UiDialogService
 
-def _party(dialog: Any) -> list[Any]:
+
+def _party(dialog: Any) -> list[SimInfo]:
     """Sim infos the request travels with: the actor plus companions."""
     sims = [getattr(dialog, 'owner', None), *list(getattr(dialog, 'traveling_sims', None) or ())]
-    infos: list[Any] = []
+    infos: list[SimInfo] = []
     for sim in sims:
         info = getattr(sim, 'sim_info', None) if sim is not None else None
         if info is None or info in infos:
@@ -22,7 +28,7 @@ def _party(dialog: Any) -> list[Any]:
     return infos
 
 
-def _grouped(info: Any) -> bool:
+def _grouped(info: SimInfo) -> bool:
     """EA's manager drops every Sim whose household already has a member in
     a travel group, so the whole party is checked at household level."""
     household = getattr(info, 'household', None)
@@ -32,7 +38,7 @@ def _grouped(info: Any) -> bool:
     return bool(info.is_in_travel_group())
 
 
-def _created_group(manager: Any, party: list[Any], zone_id: int) -> Any:
+def _created_group(manager: TravelGroupManager, party: list[SimInfo], zone_id: int) -> Any:
     """The travel group the rental just created for this party, verified by
     membership and zone; None when it cannot be identified."""
     try:
@@ -46,13 +52,16 @@ def _created_group(manager: Any, party: list[Any], zone_id: int) -> Any:
             return None
         if any(info not in group for info in party):
             return None
-        return group
     except Exception:
         simsight_log.error('travel: created travel group')
         return None
+    else:
+        return group
 
 
-def _rollback_rental(manager: Any, group: Any, household: Any, zone_id: int, cost: int) -> bool:
+def _rollback_rental(
+    manager: TravelGroupManager, group: Any, household: Household, zone_id: int, cost: int
+) -> bool:
     """Undo a rental whose dialog answer was refused: release the exact
     group created for this request and return the money to the household
     that paid. Anything unverifiable is reported, never guessed."""
@@ -68,10 +77,11 @@ def _rollback_rental(manager: Any, group: Any, household: Any, zone_id: int, cos
 
             household.funds.add(cost, Consts_pb2.FUNDS_MONEY_VACATION, count_as_earnings=False)
         simsight_log.line(f'travel: rental of zone {zone_id} rolled back, {cost} returned')
-        return True
-    except Exception as ex:
-        simsight_log.line(f'travel: rental rollback failed for zone {zone_id} ({ex!r})')
+    except Exception:
+        simsight_log.error('travel: rental rollback failed')
         return False
+    else:
+        return True
 
 
 class _Rental:
@@ -79,13 +89,15 @@ class _Rental:
 
     __slots__ = ('manager', 'payer', 'service')
 
-    def __init__(self, manager: Any, payer: Any, service: Any) -> None:
+    def __init__(
+        self, manager: TravelGroupManager, payer: Household, service: UiDialogService
+    ) -> None:
         self.manager = manager
         self.payer = payer
         self.service = service
 
 
-def _rental_refusal(party: list[Any], cost: int) -> str | None:
+def _rental_refusal(party: list[SimInfo], cost: int) -> str | None:
     """The spoken term when the party may not rent, after logging why."""
     if not party:
         raise ValueError('no travelling Sims')
@@ -117,7 +129,7 @@ def _rent(pending: _Pending, zone_id: int, days: int, cost: int) -> _Rental | No
             _say(refusal)
             return None
         service = _service()
-        if not service.dialog_pick_result(dialog.dialog_id, [zone_id]):
+        if service is None or not service.dialog_pick_result(dialog.dialog_id, [zone_id]):
             simsight_log.line(
                 f'travel: zone {zone_id} refused by dialog {dialog.dialog_id} before renting; request cancelled'
             )
@@ -137,8 +149,8 @@ def _rent(pending: _Pending, zone_id: int, days: int, cost: int) -> _Rental | No
             end_timestamp=end,
             cost=cost,
         )
-    except Exception as ex:
-        simsight_log.line(f'travel: vacation setup failed ({ex!r}); request cancelled')
+    except Exception:
+        simsight_log.error('travel: vacation setup failed; request cancelled')
         _say('action unavailable')
         return None
     if not created:
@@ -148,13 +160,13 @@ def _rent(pending: _Pending, zone_id: int, days: int, cost: int) -> _Rental | No
     return _Rental(manager, payer, service)
 
 
-def _answer_ok(dialog: Any, service: Any) -> bool:
+def _answer_ok(dialog: Any, service: UiDialogService) -> bool:
     try:
         from ui.ui_dialog import ButtonType
 
         return _dialog_active(dialog) and bool(
             service.dialog_respond(dialog.dialog_id, ButtonType.DIALOG_RESPONSE_OK)
         )
-    except Exception as ex:
-        simsight_log.line(f'travel: answering dialog {dialog.dialog_id} failed ({ex!r})')
+    except Exception:
+        simsight_log.error('travel: answering a dialog failed')
         return False

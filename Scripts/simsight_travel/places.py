@@ -90,8 +90,8 @@ def _region_table() -> dict[Any, tuple[bool, Any]]:
                         bool(getattr(region_data, 'is_player_facing', True)),
                         getattr(region_data, 'region_name', None),
                     )
-    except Exception as ex:
-        simsight_log.line(f'travel: region table unavailable ({ex!r})')
+    except Exception:
+        simsight_log.error('travel: region table unavailable')
     return table
 
 
@@ -350,12 +350,11 @@ def _needs_native_map(place: _Place) -> bool:
         if residential is None:
             residential = _residential(place.zone_id)
         minimum = _VENUE_BUSINESS_MIN if residential is False else _RESIDENTIAL_BUSINESS_MIN
-        return count >= minimum
-    except Exception as ex:
-        simsight_log.line(
-            f'travel: small business check failed for zone {place.zone_id} ({ex!r}); native map kept'
-        )
+    except Exception:
+        simsight_log.error('travel: small business check failed; native map kept')
         return True
+    else:
+        return count >= minimum
 
 
 # --------------------------------------------------------------- commands
@@ -369,6 +368,7 @@ def _hidden_flag(zone_id: int) -> Any:
         world_desc = services.get_world_description_id(proto.world_id)
         return services.get_hide_from_lot_picker(proto.lot_id, world_desc)
     except Exception as ex:
+        simsight_log.error('travel: probe hide flag')
         return f'error {ex!r}'  # a diagnostic: the failure is the answer
 
 
@@ -389,7 +389,8 @@ def a11y_travel_probe(_connection: Any = None) -> bool:
                 f'travel probe: zone {place.zone_id} name {place.name!r} world {place.world_name!r} region {place.region!r} facing {place.visible} hide {_hidden_flag(place.zone_id)} venue {place.venue is not None} residential {place.residential} household {place.household!r} master {place.master}'
             )
         output(f'a11y travel probe: {len(rows)} rows logged')
-        return True
     except Exception:
         simsight_log.error('travel: simsight.travel_probe')
         return False
+    else:
+        return True
