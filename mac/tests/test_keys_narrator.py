@@ -39,6 +39,7 @@ module('zone', Zone=type('Zone', (), {'on_loading_screen_animation_finished': la
 
 import simsight_menu as menu  # noqa: E402
 import simsight_narrator as narrator  # noqa: E402
+from simsight_narrator import fields, state  # noqa: E402
 
 
 class CommandTypesTest(unittest.TestCase):
@@ -66,33 +67,31 @@ class SegmentsTest(unittest.TestCase):
         payload = '\x01'.join(
             ['10|0|Eco Footprint', '30|0|Eco Footprint:', '50|0|Neutral', '70|5|b', '70|0|a']
         )
-        self.assertEqual(
-            narrator._fields_to_segments(payload), ['Eco Footprint: Neutral', 'a', 'b']
-        )
+        self.assertEqual(fields._fields_to_segments(payload), ['Eco Footprint: Neutral', 'a', 'b'])
 
     def test_equal_x_keeps_posted_order(self):
         payload = '\x01'.join(['Increase', 'Chair', '3'])
-        self.assertEqual(narrator._fields_to_segments(payload), ['Increase', 'Chair', '3'])
+        self.assertEqual(fields._fields_to_segments(payload), ['Increase', 'Chair', '3'])
 
     def test_placeholders_dropped(self):
         payload = '\x01'.join(['0|0|1234567890', '0|5|txtSimName', '0|9|%', '0|12|Name'])
-        self.assertEqual(narrator._fields_to_segments(payload), ['Name'])
+        self.assertEqual(fields._fields_to_segments(payload), ['Name'])
 
     def test_moodlet_order(self):
         segments = ['Happy', 'Feeling good', '(From a nap)', 'Happy +1', '4 hours']
         self.assertEqual(
-            narrator._order_segments(segments),
+            fields._order_segments(segments),
             ['Happy', 'Happy +1', '4 hours', '(From a nap)', 'Feeling good'],
         )
 
     def test_source_last(self):
-        self.assertEqual(narrator._order_segments(['(From x)', 'a', 'b']), ['a', 'b', '(From x)'])
+        self.assertEqual(fields._order_segments(['(From x)', 'a', 'b']), ['a', 'b', '(From x)'])
 
 
 class MoodTest(unittest.TestCase):
     def setUp(self):
         del SPOKEN[:]
-        narrator._state.mood_reading = None
+        state._state.mood_reading = None
 
     def record(self, *fields):
         narrator.a11y_mood_enc('\x01'.join(fields))

@@ -57,7 +57,7 @@ for name in (
     'simsight_plus',
 ):
     module(name)
-module('simsight_pump', post=lambda fn, *args: POSTED.append((fn.__name__,) + args) or True)
+module('simsight_pump', post=lambda fn, *args: POSTED.append((fn.__name__, *args)) or True)
 module('simsight_startup', send_navigation=lambda message: False)
 CLOSED = []
 module('simsight_scanner', a11y_menuclosed=lambda: CLOSED.append(True))
@@ -223,7 +223,7 @@ class FakeUser32:
         self.down = set()
         self.taps = set()
 
-    def GetAsyncKeyState(self, vk):
+    def GetAsyncKeyState(self, vk):  # noqa: N802 - the Windows function's name
         value = (0x8000 if vk in self.down else 0) | (1 if vk in self.taps else 0)
         self.taps.discard(vk)
         return value
