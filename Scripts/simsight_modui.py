@@ -25,19 +25,15 @@ import sys
 from typing import TYPE_CHECKING, Any
 
 import simsight_log
+import simsight_patch
 
 if TYPE_CHECKING:
     from types import FrameType
 
+    from ui.ui_dialog import UiDialog
+
 EA_PREFIXES = ('T:\\InGame', 'T:/InGame', '<')
 MAX_ROWS = 8
-
-
-class _State:
-    installed = False
-
-
-_state = _State()
 
 
 def _log(text: str) -> None:
@@ -46,7 +42,7 @@ def _log(text: str) -> None:
 
 def _source() -> tuple[str | None, str | None]:
     """(label, module) of the first mod frame that led to this dialog."""
-    frame: FrameType | None = sys._getframe(2)
+    frame: FrameType | None = sys._getframe(2)  # noqa: SLF001 - CPython's documented frame access
     while frame is not None:
         module = frame.f_globals.get('__name__', '') or ''
         filename = frame.f_code.co_filename or ''
@@ -117,26 +113,23 @@ def describe(dialog: Any, msg: Any) -> str:
 
 
 def install() -> bool:
-    if _state.installed:
-        return True
-    _state.installed = True
-    from ui.ui_dialog import UiDialog
+    from ui import ui_dialog
 
-    original = UiDialog.build_msg
+    def make(original: simsight_patch.Function) -> simsight_patch.Function:
+        def build_msg(self: UiDialog, *args: Any, **kwargs: Any) -> Any:
+            msg = original(self, *args, **kwargs)
+            if simsight_log.enabled:
+                try:
+                    module, filename = _source()
+                    if module is not None:
+                        _log(f'{module} ({filename}) {describe(self, msg)}')
+                except Exception:
+                    simsight_log.error('modui: census')
+            return msg
 
-    def build_msg(self: Any, *args: Any, **kwargs: Any) -> Any:
-        msg = original(self, *args, **kwargs)
-        if simsight_log.enabled:
-            try:
-                module, filename = _source()
-                if module is not None:
-                    _log(f'{module} ({filename}) {describe(self, msg)}')
-            except Exception:
-                simsight_log.error('modui: census')
-        return msg
+        return build_msg
 
-    build_msg.__name__ = original.__name__
-    UiDialog.build_msg = build_msg
+    simsight_patch.wrap(ui_dialog.UiDialog, 'build_msg', make)
     return True
 
 

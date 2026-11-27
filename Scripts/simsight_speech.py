@@ -34,6 +34,12 @@ def _optional_module(name: str) -> Any:
 
 atexit = _optional_module('atexit')  # kernel job ownership also covers its absence
 subprocess = _optional_module('subprocess')
+# What a child process call raises: no such program or a broken pipe
+# (OSError), or no exit in time.
+_PROCESS_ERRORS: tuple[type[BaseException], ...] = (
+    (OSError, subprocess.TimeoutExpired) if subprocess is not None else (OSError,)
+)
+_VOICE_LIST_ERRORS: tuple[type[BaseException], ...] = (*_PROCESS_ERRORS, ValueError)  # not text
 
 # macOS port: no ctypes, Prism or SAPI there. The fallback voice is the
 # simsight-say companion (AVSpeechSynthesizer), which speaks the same
@@ -186,10 +192,11 @@ def _try_init_prism() -> bool:
 
         _state.prism = Reader(PRISM_DLL_PATH, simsight_log.line)
         simsight_log.line(f'Prism loaded from {PRISM_DLL_PATH}')
-        return True
-    except Exception as ex:
+    except Exception as ex:  # the DLL's reader thread hands back whatever failed
         simsight_log.line(f'Prism initialization failed: {ex!r}')
+        simsight_log.error('speech: Prism start')
         return False
+    return True
 
 
 def screen_reader_name() -> str | None:
@@ -223,7 +230,7 @@ def _voice_options(default_voice: str) -> tuple[int, int, str]:
         rate = max(-10, min(10, int(settings.get('sapi_rate'))))
         volume = max(0, min(100, int(settings.get('sapi_volume'))))
         voice = str(settings.get('sapi_voice') or '')
-    except Exception:
+    except (TypeError, ValueError):  # a hand-edited rate or volume that is not a number
         simsight_log.error('speech: voice settings')
         return 3, 70, default_voice
     return rate, volume, voice
@@ -314,10 +321,10 @@ def _try_init_mac_say() -> bool:
             close_fds=True,
         )
         simsight_log.line('macOS speech companion started: {}'.format(' '.join(args[1:])))
-        return True
-    except Exception as ex:
+    except (OSError, ValueError) as ex:  # cannot run it, or bad arguments
         simsight_log.line(f'macOS speech companion failed: {ex!r}')
         return False
+    return True
 
 
 def _dispose_sapi_locked() -> None:
@@ -332,7 +339,7 @@ def _dispose_sapi_locked() -> None:
         if proc.poll() is None:
             proc.kill()
         proc.wait(timeout=1)
-    except Exception as ex:
+    except _PROCESS_ERRORS as ex:
         simsight_log.line(f'SAPI child cleanup failed: {ex!r}')
     finally:
         if proc.stdin is not None:
@@ -357,13 +364,21 @@ def _start_sapi_locked() -> bool:
         )
         job.assign(proc)
         _state.sapi_proc, _state.sapi_job = proc, job
-        return True
-    except Exception as ex:
-        # Never retain an unowned helper if native ownership is refused.
-        _state.sapi_proc, _state.sapi_job = proc, job
-        _dispose_sapi_locked()
-        simsight_log.line(f'SAPI backend init failed: {ex!r}')
+    except (ImportError, OSError, ValueError) as ex:  # no job object or no PowerShell
+        _abandon_sapi_locked(proc, job, ex)
         return False
+    except Exception as ex:  # whatever failed, never keep an unowned helper
+        _abandon_sapi_locked(proc, job, ex)
+        simsight_log.error('speech: SAPI start')
+        return False
+    return True
+
+
+def _abandon_sapi_locked(proc: Any, job: Any, ex: BaseException) -> None:
+    # Never retain an unowned helper if native ownership is refused.
+    _state.sapi_proc, _state.sapi_job = proc, job
+    _dispose_sapi_locked()
+    simsight_log.line(f'SAPI backend init failed: {ex!r}')
 
 
 def _try_init_sapi() -> bool:
@@ -388,7 +403,7 @@ def _write_sapi(data: bytes, action: str) -> None:
             # still be able to kill a helper that is stuck before reading stdin.
             proc.stdin.write(data)
             proc.stdin.flush()
-        except Exception as ex:
+        except (OSError, ValueError) as ex:  # the child ended (broken or closed pipe)
             simsight_log.line(f'SAPI {action} failed: {ex!r}')
 
 
@@ -446,7 +461,7 @@ def list_voices() -> list[str]:
         return []
     try:
         return _mac_voices() if IS_MAC else _windows_voices()
-    except Exception as ex:
+    except _VOICE_LIST_ERRORS as ex:
         simsight_log.line(f'voice list failed: {ex!r}')
         return []
 
@@ -676,7 +691,10 @@ def _park_if_burst(text: str, source: str, now: float) -> bool:
 
 
 def speak(
-    text: str, interrupt: bool = True, source: str = 'tooltip', explicit: bool = False
+    text: str,
+    interrupt: bool = True,  # noqa: ARG001 - callers pass it; the interrupt policy decides
+    source: str = 'tooltip',
+    explicit: bool = False,
 ) -> None:
     """Speak text through the active backend, newest-wins under flood.
 
@@ -744,8 +762,9 @@ def stop() -> None:
     if _state.prism is not None:
         try:
             _state.prism.stop()
-        except Exception as ex:
+        except Exception as ex:  # the DLL's reader thread hands back whatever failed
             simsight_log.line(f'Prism stop failed: {ex!r}')
+            simsight_log.error('speech: Prism stop')
     # Always cancel any fallback that may still be speaking after a switch.
     _write_sapi(b'I\n', 'stop')
 
@@ -819,8 +838,9 @@ def _post_caption(text: str) -> None:
         if len(text) > _CAPTION_MAX_CHARS:
             text = text[: _CAPTION_MAX_CHARS - 1] + '…'
         pump.post(_send_caption, text)
-    except Exception as ex:
+    except Exception as ex:  # speech timers call it too: nothing may escape
         simsight_log.line(f'caption: post failed: {ex!r}')
+        simsight_log.error('speech: caption post')
 
 
 def clear_caption() -> None:
@@ -885,8 +905,9 @@ def _mirror(text: str, interrupt: bool) -> None:
     if bridge is not None:
         try:
             bridge.mirror(text, interrupt)
-        except Exception as ex:
+        except Exception as ex:  # the bridge must never stop speech
             simsight_log.line(f'companion mirror failed: {ex!r}')
+            simsight_log.error('speech: companion mirror')
 
 
 def _output(text: str, interrupt: bool) -> None:
@@ -896,8 +917,9 @@ def _output(text: str, interrupt: bool) -> None:
             if _state.prism.output(text, _braille_text(text), modes.braille, interrupt):
                 restart_sapi()
                 return
-        except Exception as ex:
+        except Exception as ex:  # the DLL's reader thread hands back whatever failed
             simsight_log.line(f'Prism output failed: {ex!r}')
+            simsight_log.error('speech: Prism output')
     if modes.braille == 'only':
         return
     with _sapi_lock:

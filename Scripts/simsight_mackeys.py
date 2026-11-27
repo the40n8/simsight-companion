@@ -104,7 +104,7 @@ def _pump_alive() -> bool:
         return False
 
 
-def _needs(keys: Any, key: HeldKey, now: float) -> bool:
+def _needs(keys: Any, _key: HeldKey, _now: float) -> bool:
     keys.send_action('A11yNeeds')
     return True
 
@@ -120,7 +120,7 @@ def _chord_key(keys: Any, key: HeldKey, now: float) -> bool:
     return True
 
 
-def _plus_key(keys: Any, key: HeldKey, now: float) -> bool:
+def _plus_key(_keys: Any, key: HeldKey, _now: float) -> bool:
     import simsight_plus_core as core
 
     entry = core.HOTKEYS.get(key[1])

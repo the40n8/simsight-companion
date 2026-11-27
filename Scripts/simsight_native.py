@@ -11,14 +11,17 @@ which the notification narration reads.
 
 from __future__ import annotations
 
-from typing import Any, Iterable
+from typing import TYPE_CHECKING, Any, Iterable
 
 import simsight_lang as lang
 import simsight_log
 import simsight_speech as speech
 
+if TYPE_CHECKING:
+    from ui.ui_dialog_service import UiDialogService
 
-def _service() -> Any:
+
+def _service() -> UiDialogService:
     import services
 
     return services.ui_dialog_service()
@@ -27,12 +30,8 @@ def _service() -> Any:
 def dialog_active(dialog: Any) -> bool:
     """True while EA still holds this exact dialog as active."""
     try:
-        service = _service()
-        lookup = getattr(service, 'get_dialog', None)
-        if lookup is not None:
-            return lookup(dialog.dialog_id) is dialog
-        return service._active_dialogs.get(dialog.dialog_id) is dialog
-    except Exception:
+        return bool(_service().get_dialog(dialog.dialog_id) is dialog)
+    except AttributeError:  # no dialog service (zone unloading) or not a dialog
         simsight_log.error('native: dialog lookup')
         return False
 
@@ -88,8 +87,9 @@ def answer_picker(dialog: Any, picked_results: Iterable[Any]) -> bool:
         return False
     try:
         return _pick_and_confirm(dialog, picked)
-    except Exception as ex:
+    except Exception as ex:  # EA's picker code runs the pick: it can raise anything
         simsight_log.line(f'native: answering dialog {dialog.dialog_id} failed ({ex!r})')
+        simsight_log.error('native: answer picker')
         return False
 
 
@@ -105,10 +105,11 @@ def show_reason(tooltip: Any, sim: Any) -> bool:
             sim, text=lambda *_, **__: tooltip(sim)
         )
         notification.show_dialog()
-        return True
-    except Exception as ex:
+    except Exception as ex:  # the reason text factory is EA's tuning: anything can raise
         simsight_log.line(f'native: reason unavailable ({ex!r})')
+        simsight_log.error('native: refusal reason')
         return False
+    return True
 
 
 def say_refusal(result: Any, sim: Any) -> bool:

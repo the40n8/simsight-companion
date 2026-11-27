@@ -3,7 +3,7 @@ window, or the world (Build, the grid, the scanner) on the simulation thread."""
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 import simsight_lang as lang
 import simsight_log
@@ -15,6 +15,9 @@ from .modal import blocking_active
 from .scannermode import _toggle_scanner_mode
 from .send import _send_owned, send_action
 from .state import _DROPPED_EPOCH, _log_route, _post, _state, status
+
+if TYPE_CHECKING:
+    from server.client import Client
 
 _PHONE_BLOCKED = 'Close the current panel or dialog before opening a waiting call.'
 
@@ -241,7 +244,7 @@ def _switch_household_sim(index: int, epoch: int) -> bool:
         import services
 
         manager = services.client_manager()
-        client = manager.get_first_client() if manager is not None else None
+        client: Client | None = manager.get_first_client() if manager is not None else None
         sims = list(client.selectable_sims) if client is not None else []
     except Exception:
         simsight_log.error('keys: household lookup')

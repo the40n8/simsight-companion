@@ -26,9 +26,11 @@ module('simsight_settings', get=lambda name, fallback=None: fallback, brief=lamb
 module('simsight_speech', speak=lambda *a, **k: None)
 module('simsight_availability', reset=lambda: None, pause=lambda: None)
 
+import simsight_buycat as buycat  # noqa: E402
 import simsight_catalog as catalog  # noqa: E402
 import simsight_cleanliness as cleanliness  # noqa: E402
 import simsight_scanner as scanner  # noqa: E402
+from simsight_scanner import categories, loc  # noqa: E402
 
 
 def entry(distance=0.0, bearing=0, level_delta=0):
@@ -48,15 +50,15 @@ class Bearing(unittest.TestCase):
 class Groups(unittest.TestCase):
     def test_flags_prefer_the_tag_family(self):
         # A bar reports Surfaces and Activities and Skills: EE tags mean the latter.
-        flags = scanner.buycat.GROUP_FLAG['SURFACE'] | scanner.buycat.GROUP_FLAG['ENTERTAINMENT']
-        self.assertEqual(scanner._group_of(flags, 'BuyCatEE_Bar'), 'ENTERTAINMENT')
+        flags = buycat.GROUP_FLAG['SURFACE'] | buycat.GROUP_FLAG['ENTERTAINMENT']
+        self.assertEqual(categories._group_of(flags, 'BuyCatEE_Bar'), 'ENTERTAINMENT')
 
     def test_flags_fall_back_to_catalog_order(self):
-        flags = scanner.buycat.GROUP_FLAG['LIGHTING'] | scanner.buycat.GROUP_FLAG['APPLIANCES']
-        self.assertEqual(scanner._group_of(flags, 'Func_Xmas'), 'APPLIANCES')
+        flags = buycat.GROUP_FLAG['LIGHTING'] | buycat.GROUP_FLAG['APPLIANCES']
+        self.assertEqual(categories._group_of(flags, 'Func_Xmas'), 'APPLIANCES')
 
     def test_no_flags_build(self):
-        self.assertEqual(scanner._group_of(0, 'Build_Door'), 'BUILD')
+        self.assertEqual(categories._group_of(0, 'Build_Door'), 'BUILD')
 
     def test_no_flags_live_mode_tags(self):
         cases = {
@@ -78,18 +80,18 @@ class Groups(unittest.TestCase):
         }
         for sub, group in cases.items():
             with self.subTest(sub=sub):
-                self.assertEqual(scanner._group_of(0, sub), group)
+                self.assertEqual(categories._group_of(0, sub), group)
 
     def test_subcategory_priority(self):
         names = {'Func_Xmas', 'BuyCatSS_Counter'}
-        self.assertEqual(scanner._sub_of(names), 'BuyCatSS_Counter')
-        self.assertEqual(scanner._sub_of(set()), 'MISC')
+        self.assertEqual(categories._sub_of(names), 'BuyCatSS_Counter')
+        self.assertEqual(categories._sub_of(set()), 'MISC')
 
 
 class Words(unittest.TestCase):
     def test_clean_text_drops_gaps_left_by_missing_names(self):
-        self.assertEqual(scanner._clean_text(['', ', here', '. 1 of 2.']), 'here. 1 of 2.')
-        self.assertEqual(scanner._clean_text(['Bed ', ', here']), 'Bed, here')
+        self.assertEqual(loc._clean_text(['', ', here', '. 1 of 2.']), 'here. 1 of 2.')
+        self.assertEqual(loc._clean_text(['Bed ', ', here']), 'Bed, here')
 
     def test_place(self):
         self.assertEqual(scanner.place_part(entry(0.4)), 'here')

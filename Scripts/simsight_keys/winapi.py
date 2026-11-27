@@ -18,8 +18,11 @@ try:
     import ctypes as _loaded_ctypes
 
     ctypes = _loaded_ctypes
-except Exception as _import_ex:
+except ImportError as _import_ex:  # the Mac game ships no ctypes
     _ctypes_error = repr(_import_ex)
+except Exception as _import_ex:  # a broken bundled ctypes: keys still load, without it
+    _ctypes_error = repr(_import_ex)
+    simsight_log.error('keys: ctypes load')
 
 # What a ctypes call into user32/kernel32 raises when it fails.
 _CTYPES_ERRORS: tuple[type[BaseException], ...] = (

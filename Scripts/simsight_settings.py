@@ -503,13 +503,14 @@ def _save() -> bool:
         with open(tmp, 'w', encoding='utf-8') as handle:
             handle.write(content)
         os.replace(tmp, PATH)
-        return True
-    except Exception as ex:
-        # Log only (per user decision, no audible warning). MCCC's most-
-        # reported settings failure is this exact class: OneDrive write-
-        # permission errors on the Mods folder.
+    except (OSError, ValueError, OverflowError) as ex:
+        # The file (OSError) or a hand-edited delay that is not a finite
+        # number (_fmt_seconds). Log only (per user decision, no audible
+        # warning). MCCC's most-reported settings failure is this exact
+        # class: OneDrive write-permission errors on the Mods folder.
         simsight_log.line(f'settings: save failed: {ex!r}')
         return False
+    return True
 
 
 def get(name: str, fallback: Any = None) -> Any:

@@ -6,7 +6,7 @@ from __future__ import annotations
 from collections import deque
 import threading
 import time
-from typing import Any
+from typing import Any, ClassVar
 
 import simsight_log
 
@@ -186,8 +186,8 @@ class _HookOwner:
         _hook.proc = _hook_callback_factory(user32, kernel32)
         self.module = kernel32.GetModuleHandleW(None)
 
-        class MSG(ctypes.Structure):
-            _fields_ = [
+        class MSG(ctypes.Structure):  # type: ignore[misc]  # ctypes is Any: loaded only on Windows
+            _fields_: ClassVar[list[tuple[str, Any]]] = [
                 ('hwnd', ctypes.c_void_p),
                 ('message', ctypes.c_uint),
                 ('wParam', ctypes.c_size_t),
