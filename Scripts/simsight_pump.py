@@ -31,9 +31,13 @@ from __future__ import annotations
 import importlib
 import threading
 import time
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 import simsight_log
+import simsight_patch
+
+if TYPE_CHECKING:
+    from simsight_patch import Function
 
 _INTERVAL_SECONDS = 0.02  # the game ticks at about 60 Hz; finer buys nothing
 _STALE_SECONDS = 2.0  # silence longer than this means the alarm is gone
@@ -107,8 +111,8 @@ def _tell(module_name: str, functions: tuple[str, ...], what: str) -> None:
         module = importlib.import_module(module_name)
         for function in functions:
             getattr(module, function)()
-    except Exception as ex:
-        simsight_log.line(f'pump: {what} failed: {ex!r}')
+    except Exception:
+        simsight_log.error(f'pump: {what} failed')
 
 
 def _tell_zone_started() -> None:
@@ -130,11 +134,12 @@ def start() -> bool:
         _state.last_drain = time.monotonic()
         simsight_log.line('pump: started')
         _tell_zone_started()
-        return True
-    except Exception as ex:
+    except Exception:
         _state.handle = None
-        simsight_log.line(f'pump: start failed: {ex!r}')
+        simsight_log.error('pump: start failed')
         return False
+    else:
+        return True
 
 
 def stop() -> None:
@@ -168,20 +173,21 @@ def status() -> str:
 def _install_zone_hook() -> None:
     import zone
 
-    original = zone.Zone.on_loading_screen_animation_finished
+    def make(original: Function) -> Function:
+        def a11y_pump_on_loading_screen_animation_finished(*args: Any, **kwargs: Any) -> Any:
+            result = original(*args, **kwargs)
+            try:
+                start()
+            except Exception:
+                simsight_log.error('pump: zone start')
+            return result
 
-    def a11y_pump_on_loading_screen_animation_finished(self: Any, *args: Any, **kwargs: Any) -> Any:
-        result = original(self, *args, **kwargs)
-        try:
-            start()
-        except Exception:
-            simsight_log.error('pump: zone start')
-        return result
+        return a11y_pump_on_loading_screen_animation_finished
 
-    zone.Zone.on_loading_screen_animation_finished = a11y_pump_on_loading_screen_animation_finished
+    simsight_patch.wrap(zone.Zone, 'on_loading_screen_animation_finished', make)
 
 
 try:
     _install_zone_hook()
-except Exception as _zone_ex:
-    simsight_log.line(f'pump: zone hook install failed: {_zone_ex!r}')
+except Exception:
+    simsight_log.error('pump: zone hook install failed')

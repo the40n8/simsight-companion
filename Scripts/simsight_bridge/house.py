@@ -14,6 +14,10 @@ from .state import _logged, _on_active_lot, _sim_and_client, _state
 
 
 if TYPE_CHECKING:
+    from server.client import Client
+    from sims.household import Household
+    from sims.sim import Sim
+
     from .state import Answer, Json
 
 
@@ -64,7 +68,7 @@ def _room_ref(obj: Any) -> Json | None:
     }
 
 
-def _visitor(sim: Any, members: set[Any]) -> Json | None:
+def _visitor(sim: Sim, members: set[Any]) -> Json | None:
     """A Sim on the lot who is not in the household, or None."""
     entry: Json | None = None
     with _logged('visitor'):
@@ -77,7 +81,7 @@ def _visitor(sim: Any, members: set[Any]) -> Json | None:
     return entry
 
 
-def _visitors(household: Any) -> list[Json]:
+def _visitors(household: Household) -> list[Json]:
     """Sims on the lot who are not in the household."""
     import services
 
@@ -90,7 +94,7 @@ def _visitors(household: Any) -> list[Json]:
     return out[:10]
 
 
-def _bills_owed(household: Any) -> int:
+def _bills_owed(household: Household) -> int:
     try:
         owed = household.bills_manager.current_payment_owed
         owed = owed() if callable(owed) else owed
@@ -104,12 +108,14 @@ def _camera_follows() -> str:
         import camera
     except ImportError:
         return ''  # outside the game (offline checks)
-    if getattr(camera, '_follow_mode', False) and getattr(camera, '_sim_id', None):
-        return str(camera._sim_id)
+    # The camera module keeps who it follows in private globals only.
+    followed = getattr(camera, '_sim_id', None)
+    if getattr(camera, '_follow_mode', False) and followed:
+        return str(followed)
     return ''
 
 
-def _close_camera(sim: Any, client: Any) -> None:
+def _close_camera(sim: Sim, client: Client | None) -> None:
     """Put the camera close behind the Sim's back."""
     import camera
     import sims4.math

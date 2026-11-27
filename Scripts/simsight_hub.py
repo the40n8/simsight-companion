@@ -19,6 +19,9 @@ import simsight_pump as pump
 import simsight_speech as speech
 
 if TYPE_CHECKING:
+    from sims.household import Household
+    from sims.sim import Sim
+
     # A window row: (localized name, localized description, callback). The
     # callback is called with no arguments; Callable[...] lets rows bind
     # their values as lambda defaults.
@@ -202,7 +205,7 @@ def household() -> bool:
     return show_window('household sims', 'choose a sim', rows)
 
 
-def funds_text(household: Any = None) -> str:
+def funds_text(household: Household | None = None) -> str:
     """'Household funds: 12,345 simoleons' for the active household."""
     if household is None:
         import services
@@ -262,7 +265,7 @@ def self_interactions() -> bool:
     return True
 
 
-def queue_entries(sim: Any) -> list[tuple[Any, Any, str]]:
+def queue_entries(sim: Sim) -> list[tuple[Any, Any, str]]:
     """The icons of EA's interaction queue, from the same UIManager records
     the client draws: running (super, group and posture) first, then queued
     in order. Each is (info, interaction or None, state)."""
@@ -278,7 +281,7 @@ def queue_entries(sim: Any) -> list[tuple[Any, Any, str]]:
     ]
 
 
-def _queue_interaction(sim: Any, interaction_id: int) -> Any:
+def _queue_interaction(sim: Sim, interaction_id: int) -> Any:
     # interactions.cancel_si looks an id up the same two ways.
     interaction = sim.find_interaction_by_id(interaction_id)
     return interaction if interaction is not None else sim.find_continuation_by_id(interaction_id)
@@ -430,12 +433,12 @@ def _sellable(obj: Any) -> bool:
     return not (check is not None and check())
 
 
-def _sell_price(sim: Any, obj: Any, count: int) -> int:
+def _sell_price(sim: Sim, obj: Any, count: int) -> int:
     # sim_inventory_sell_multiple: current_value * count * sell modifier, rounded.
-    return int(round(obj.current_value * count * sim.sim_info.get_item_sell_price_modifier(obj)))
+    return round(obj.current_value * count * sim.sim_info.get_item_sell_price_modifier(obj))
 
 
-def _sell_rows(sim: Any, obj: Any, obj_id: int) -> list[Row]:
+def _sell_rows(sim: Sim, obj: Any, obj_id: int) -> list[Row]:
     """The selling rows of the item menu."""
     sim_id = sim.id
     if not _sellable(obj):
@@ -609,8 +612,8 @@ def sell_window(sim_id: int, obj_id: int) -> bool:
     name = LocalizationHelperTuning.get_object_name(obj)
     dialog = _state.sell_factory.default(
         sim,
-        title=lambda *args, **kwargs: name,
-        text=lambda *args, **kwargs: menu.raw_text(lang.t('sell window instructions')),
+        title=lambda *_args, **_kwargs: name,
+        text=lambda *_args, **_kwargs: menu.raw_text(lang.t('sell window instructions')),
     )
     dialog.inventory_object_id = sim.id
     dialog.use_dialog_pick_response = False
@@ -685,7 +688,9 @@ def _guests(situation: Any) -> list[Any]:
 def _event_detail(situation: Any) -> str:
     parts = [lang.t('event guests').format(len(_guests(situation)))]
     try:
-        minutes = int(situation._get_remaining_time_in_minutes())
+        # As Situation._get_remaining_time_in_minutes: None without an end time.
+        span = situation.get_remaining_time()
+        minutes = int(span.in_minutes()) if span is not None else 0
         if minutes > 0:
             parts.append(lang.t('event minutes left').format(minutes))
     except (AttributeError, TypeError, ValueError):
@@ -867,7 +872,8 @@ def build_actions() -> bool:
     if not build.controls_enabled():
         return build.refuse_disabled()
     if build.build_zone() is None:
-        build._say('Enter Build mode first.', 'Najpierw włącz tryb budowania.')
+        # simsight_build's own voice (simsight_plus_build may replace it).
+        build._say('Enter Build mode first.', 'Najpierw włącz tryb budowania.')  # noqa: SLF001
         return False
     rows: list[Row] = [
         (menu.raw_text(lang.t(label)), None, lambda value=action: _build_action(value))

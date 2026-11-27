@@ -57,6 +57,7 @@ def _value(read: Callable[[], Any], default: Any = None) -> Any:
     try:
         return read()
     except Exception:
+        simsight_log.error('business: value unreadable')
         return default
 
 
@@ -83,7 +84,8 @@ def business_lines(manager: Any) -> list[str]:
     lines.append(
         lang.t('business today').format(
             _value(lambda: manager.daily_items_sold, 0),
-            _value(lambda: manager._customer_manager.session_customers_served, 0),
+            # BusinessManager has no public accessor for today's customers.
+            _value(lambda: manager._customer_manager.session_customers_served, 0),  # noqa: SLF001
             _money(_value(lambda: manager.daily_revenue, 0)),
             _money(
                 _value(lambda: manager.get_daily_outgoing_costs(include_employee_wages=False), 0)
@@ -93,7 +95,7 @@ def business_lines(manager: Any) -> list[str]:
     )
     markup = _value(lambda: manager.markup_multiplier)
     if markup is not None:
-        lines.append(lang.t('business markup').format(int(round((float(markup) - 1.0) * 100))))
+        lines.append(lang.t('business markup').format(round((float(markup) - 1.0) * 100)))
     employees = _value(lambda: manager.employee_count)
     if employees is not None:
         wages = _value(manager.get_total_employee_wages_per_hour, 0)

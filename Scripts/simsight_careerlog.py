@@ -25,9 +25,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 import simsight_log
+import simsight_patch
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+    from simsight_patch import Function
 
     # Called after the wrapped method: (self or class, args, kwargs).
     After = Callable[[Any, tuple[Any, ...], dict[str, Any]], None]
@@ -147,29 +150,38 @@ def _after_safely(where: str, after: After, owner: Any, args: Any, kwargs: Any) 
 
 
 def _wrap_method(cls: Any, name: str, after: After) -> None:
-    original = getattr(cls, name)
     where = f'{cls.__name__}.{name}'
 
-    def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
-        result = original(self, *args, **kwargs)
-        _after_safely(where, after, self, args, kwargs)
-        return result
+    def make(original: Function) -> Function:
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            result = original(*args, **kwargs)
+            if args:  # (self, ...) as EA calls it
+                _after_safely(where, after, args[0], args[1:], kwargs)
+            return result
 
-    wrapper.__name__ = original.__name__
-    setattr(cls, name, wrapper)
+        wrapper.__name__ = original.__name__
+        return wrapper
+
+    simsight_patch.wrap(cls, name, make)
 
 
 def _wrap_classmethod(cls: Any, name: str, after: After) -> None:
-    original = getattr(cls, name).__func__
     where = f'{cls.__name__}.{name}'
 
-    def wrapper(klass: Any, *args: Any, **kwargs: Any) -> Any:
-        result = original(klass, *args, **kwargs)
-        _after_safely(where, after, klass, args, kwargs)
-        return result
+    def make(original: Function) -> Function:
+        func = getattr(original, '__func__', original)  # the class method's own function
 
-    wrapper.__name__ = original.__name__
-    setattr(cls, name, classmethod(wrapper))
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            # (cls, ...): the class it is called on, a subclass included
+            result = func(*args, **kwargs)
+            if args:
+                _after_safely(where, after, args[0], args[1:], kwargs)
+            return result
+
+        wrapper.__name__ = func.__name__
+        return classmethod(wrapper)  # type: ignore[return-value]  # set on the class as EA's was
+
+    simsight_patch.wrap(cls, name, make)
 
 
 def _sickness_applied(klass: Any, args: tuple[Any, ...], kwargs: dict[str, Any]) -> None:
@@ -200,7 +212,7 @@ def _sickness_applied(klass: Any, args: tuple[Any, ...], kwargs: dict[str, Any])
 
 
 def _tracker_event(label: str) -> After:
-    def after(tracker: Any, args: tuple[Any, ...], kwargs: dict[str, Any]) -> None:
+    def after(tracker: Any, args: tuple[Any, ...], _kwargs: dict[str, Any]) -> None:
         value = args[0] if args else None
         shown = _short(value) if isinstance(value, (int, float)) else _name(value)
         _log('{} {}: {}'.format(_who(getattr(tracker, '_sim_info', None)), label, shown))
@@ -217,8 +229,9 @@ def _install_sickness() -> None:
         _wrap_method(SicknessTracker, method, _tracker_event(label))
 
 
-def _balloon(request: Any, args: tuple[Any, ...], kwargs: dict[str, Any]) -> None:
-    sim = request._sim
+def _balloon(request: Any, _args: tuple[Any, ...], _kwargs: dict[str, Any]) -> None:
+    # BalloonRequest only offers its Sim as the private _sim property.
+    sim = request._sim  # noqa: SLF001
     if _sick(sim):
         _log(
             'balloon on {}: icon={} overlay={} type={} category_icon={} icon_info={}'.format(
@@ -239,7 +252,7 @@ def _headline(klass: Any, args: tuple[Any, ...], kwargs: dict[str, Any]) -> None
 
 
 def _effect(label: str) -> After:
-    def after(play: Any, args: tuple[Any, ...], kwargs: dict[str, Any]) -> None:
+    def after(play: Any, _args: tuple[Any, ...], _kwargs: dict[str, Any]) -> None:
         target = getattr(play, 'target', None)
         if _sick(target):
             _log(
@@ -265,7 +278,7 @@ def _install_cues() -> None:
     _wrap_method(PlayEffect, 'start_one_shot', _effect('one shot'))
 
 
-def _patient_changed(situation: Any, args: tuple[Any, ...], kwargs: dict[str, Any]) -> None:
+def _patient_changed(situation: Any, args: tuple[Any, ...], _kwargs: dict[str, Any]) -> None:
     state = args[0] if args else None
     patient = situation.get_patient() if hasattr(situation, 'get_patient') else None
     state_name = _name(type(state)) if state is not None else None
@@ -290,9 +303,11 @@ def install() -> bool:
 def _install_part(part: Callable[[], None]) -> None:
     try:
         part()
-    except Exception as ex:
+    except ImportError as ex:
         # A pack the player does not own: its classes are missing.
         simsight_log.line(f'doctor: {part.__name__} unavailable ({ex!r})')
+    except Exception:
+        simsight_log.error(f'doctor: {part.__name__} unavailable')
 
 
 try:

@@ -35,6 +35,9 @@ import simsight_settings as settings
 if TYPE_CHECKING:
     from collections.abc import Callable, Generator, Iterable
 
+    from server.client import Client
+    from sims.sim import Sim
+
     # (state, why, failed) once a check is finished.
     Outcome = tuple[str, str, bool]
     # A check: pauses (yields None) after each native test, returns its outcome.
@@ -253,10 +256,11 @@ def state(obj_or_id: Any) -> str:
         if _state.busy():
             _ensure_ticking(time.monotonic())
         verdict = _state.verdicts.get(obj_id)
-        return PENDING if verdict is None else verdict.state
     except Exception:
         simsight_log.error('availability: state')
         return PENDING
+    else:
+        return PENDING if verdict is None else verdict.state
 
 
 def invalidate(obj_ids: Iterable[int] | None = None) -> None:
@@ -284,12 +288,6 @@ def pause() -> None:
     the next scan shows the last filtered list at once and only rechecks
     what has come due."""
     _cancel_work()
-
-
-def on_active_sim_changed(old_sim: Any = None, new_sim: Any = None) -> None:
-    # Signature matches client.register_active_sim_changed.
-    _forget_all()
-    _state.sim_id = None
 
 
 def reset() -> None:
@@ -335,8 +333,8 @@ def _tick(token: int | None = None) -> None:
         sim = services.get_active_sim()
         client = services.client_manager().get_first_client()
         manager = services.object_manager()
-    except Exception as ex:
-        simsight_log.line(f'availability: services unavailable {ex!r}')
+    except Exception:
+        simsight_log.error('availability: services unavailable')
         _cancel_work()
         return
     if sim is None or client is None or sim.id != _state.sim_id:
@@ -347,7 +345,7 @@ def _tick(token: int | None = None) -> None:
     _work(sim, client, manager)
 
 
-def _work(sim: Any, client: Any, manager: Any) -> None:
+def _work(sim: Sim, client: Client, manager: Any) -> None:
     """Run checks until this tick's time budget is spent."""
     run = _state.run
     started = time.perf_counter()
@@ -369,12 +367,13 @@ def _work(sim: Any, client: Any, manager: Any) -> None:
         _log_run()
 
 
-def _start_next(sim: Any, client: Any, manager: Any) -> _Check | None:
+def _start_next(sim: Sim, client: Client, manager: Any) -> _Check | None:
     """Start checking the next queued object; None when it is gone."""
     obj_id = _state.queue.pop(0)
     try:
         obj = manager.get(obj_id)
     except Exception as ex:
+        simsight_log.error('availability: object lookup')
         _store(obj_id, USABLE, repr(ex)[:80], True, 0.0)
         return None
     if obj is None:
@@ -448,7 +447,7 @@ class _LoggerProxy:
         self._real = real
         self._watch = watch
 
-    def exception(self, message: Any = '', *args: Any, **kwargs: Any) -> None:
+    def exception(self, message: Any = '', *_args: Any, **_kwargs: Any) -> None:
         self._watch.message = str(message)[:80]
 
     def __getattr__(self, name: str) -> Any:
@@ -488,6 +487,8 @@ def _step(check: _Check) -> Outcome | None:
     except StopIteration as done:
         outcome = done.value
     except Exception as ex:
+        # A native test that raises: the object stays listed, as usable.
+        simsight_log.error('availability: check step')
         outcome = (USABLE, repr(ex)[:80], True)
     if watch.message is not None:
         outcome = (USABLE, 'swallowed: ' + watch.message, True)
@@ -551,11 +552,11 @@ class _RowPass(NamedTuple):
 def _int_or_zero(read: Callable[[], Any]) -> int:
     try:
         return int(read())
-    except Exception:
-        return 0  # the game's own default when the value is missing
+    except (AttributeError, TypeError, ValueError):
+        return 0  # no active lot, or an object without a level: the game's own default
 
 
-def _place(sim: Any, client: Any, obj: Any) -> _Place:
+def _place(sim: Sim, client: Client, obj: Any) -> _Place:
     import services
 
     lot_id = _int_or_zero(lambda: services.active_lot().lot_id)
@@ -572,7 +573,7 @@ def _place(sim: Any, client: Any, obj: Any) -> _Place:
     return _Place(sim, client, obj, lot_id, level, parameters, location, surface, targets)
 
 
-def _evaluation(sim: Any, client: Any, obj: Any, check: _Check) -> Evaluation:
+def _evaluation(sim: Sim, client: Client, obj: Any, check: _Check) -> Evaluation:
     """Generator: pauses after each native test, returns (state, why, failed).
     check.phase and check.at name the work the latest step did."""
     from interactions import choices
@@ -742,7 +743,7 @@ def status() -> str:
     )
 
 
-def _nearest(sim: Any, manager: Any) -> list[tuple[float, Any, _Verdict]]:
+def _nearest(sim: Sim | None, manager: Any) -> list[tuple[float, Any, _Verdict]]:
     """(squared distance, object, verdict) of every known object, nearest first."""
     rows = []
     for obj_id, verdict in _state.verdicts.items():
@@ -780,4 +781,5 @@ def a11y_availability(_connection: Any = None) -> None:
             + ', '.join(f'{obj_id} {verdict.cost_ms:.1f} ms' for obj_id, verdict in slow)
         )
     except Exception as ex:
+        simsight_log.error('availability: simsight.availability')
         output(f'availability: listing failed {ex!r}')

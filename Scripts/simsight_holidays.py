@@ -17,11 +17,15 @@ is gone. Without Seasons there is no holiday service and nothing happens.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import simsight_log
+import simsight_patch
 
-_WRAPPED = '_a11y_wrapped'  # marks our activate_holiday wrapper
+if TYPE_CHECKING:
+    from holidays.holiday_service import HolidayService
+    from simsight_patch import Function
+
 _pending_load: list[Any] = []  # holiday ids active at load, announced after it
 
 
@@ -42,14 +46,18 @@ def _text(value: Any) -> Any:
         pass  # outside the game: treat it as a factory or a plain value
     try:
         return value() if callable(value) else value
-    except Exception:
+    except TypeError:
         return None  # a factory that needs arguments: no text for it
+    except Exception:
+        simsight_log.error('holidays: text factory')
+        return None
 
 
 def _tradition_line(tradition: Any, loc: Any) -> Any:
     """A tradition's name, with its description when it has one, or None."""
     try:
-        data = tradition._display_data
+        # Traditions tune their name and description only as _display_data.
+        data = tradition._display_data  # noqa: SLF001
         name = _text(data.instance_display_name)
         description = _text(getattr(data, 'instance_display_description', None))
     except AttributeError:
@@ -59,15 +67,15 @@ def _tradition_line(tradition: Any, loc: Any) -> Any:
     return loc.get_name_value_pair(name, description) if description is not None else name
 
 
-def _time_off(service: Any, holiday_id: Any) -> list[str]:
+def _time_off(service: HolidayService, holiday_id: Any) -> list[str]:
     off = []
     try:
         if service.get_holiday_time_off_work(holiday_id):
             off.append('work')
         if service.get_holiday_time_off_school(holiday_id):
             off.append('school')
-    except Exception as ex:
-        _log(f'time off lookup failed: {ex!r}')
+    except Exception:
+        simsight_log.error('holidays: time off lookup')
     return off
 
 
@@ -76,7 +84,7 @@ def _message(holiday_id: Any) -> tuple[Any, Any] | None:
     import services
     from sims4.localization import LocalizationHelperTuning as Loc
 
-    service = services.holiday_service()
+    service: HolidayService | None = services.holiday_service()  # None without Seasons
     if service is None:
         return None
     title = _text(service.get_holiday_display_name(holiday_id))
@@ -113,14 +121,15 @@ def announce(holiday_id: Any) -> bool:
             return False
         title, text = message
         dialog = UiDialogNotification.TunableFactory().default(
-            services.active_sim_info(), text=lambda *a, **k: text, title=lambda *a, **k: title
+            services.active_sim_info(), text=lambda *_a, **_k: text, title=lambda *_a, **_k: title
         )
         dialog.show_dialog()
         _log(f'announced holiday {holiday_id}')
-        return True
     except Exception:
         simsight_log.error(f'holidays: announcement for {holiday_id}')
         return False
+    else:
+        return True
 
 
 def _is_active_household(tracker: Any) -> bool:
@@ -128,8 +137,8 @@ def _is_active_household(tracker: Any) -> bool:
         import services
 
         household = services.active_household()
-    except Exception:
-        return False  # no household service yet (loading)
+    except AttributeError:
+        return False  # no client manager yet (loading)
     return household is not None and getattr(tracker, '_owner', None) is household
 
 
@@ -161,29 +170,33 @@ def _announce_after_load() -> None:
 def _install() -> None:
     from holidays.holiday_tracker import HolidayTracker
 
-    original = HolidayTracker.activate_holiday
-    if getattr(original, _WRAPPED, False):
-        return
+    import zone
 
-    def a11y_activate_holiday(self: Any, holiday_id: Any, *args: Any, **kwargs: Any) -> Any:
-        result = original(self, holiday_id, *args, **kwargs)
+    simsight_patch.wrap(HolidayTracker, 'activate_holiday', _make_activate)
+    simsight_patch.wrap(zone.Zone, 'on_loading_screen_animation_finished', _make_loaded)
+    _log('holiday announcements installed')
+
+
+def _make_activate(original: Function) -> Function:
+    def a11y_activate_holiday(*args: Any, **kwargs: Any) -> Any:
+        result = original(*args, **kwargs)
         try:
-            _on_activate(self, holiday_id, args, kwargs)
+            _activated(*args, **kwargs)
         except Exception:
             simsight_log.error('holidays: activate hook')
         return result
 
-    setattr(a11y_activate_holiday, _WRAPPED, True)
-    HolidayTracker.activate_holiday = a11y_activate_holiday
+    return a11y_activate_holiday
 
-    import zone
 
-    loaded = zone.Zone.on_loading_screen_animation_finished
+def _activated(tracker: Any, holiday_id: Any, *args: Any, **kwargs: Any) -> None:
+    """HolidayTracker.activate_holiday(self, holiday_id, from_load=False)."""
+    _on_activate(tracker, holiday_id, args, kwargs)
 
-    def a11y_holidays_on_loading_screen_animation_finished(
-        self: Any, *args: Any, **kwargs: Any
-    ) -> Any:
-        result = loaded(self, *args, **kwargs)
+
+def _make_loaded(original: Function) -> Function:
+    def a11y_holidays_on_loading_screen_animation_finished(*args: Any, **kwargs: Any) -> Any:
+        result = original(*args, **kwargs)
         try:
             _announce_after_load()
         except Exception:
@@ -192,13 +205,12 @@ def _install() -> None:
             del _pending_load[:]
         return result
 
-    zone.Zone.on_loading_screen_animation_finished = (
-        a11y_holidays_on_loading_screen_animation_finished
-    )
-    _log('holiday announcements installed')
+    return a11y_holidays_on_loading_screen_animation_finished
 
 
 try:
     _install()
-except Exception as _ex:
-    _log(f'not installed: {_ex!r}')
+except ImportError as _ex:
+    _log(f'not installed: {_ex!r}')  # no holidays module in this game
+except Exception:
+    simsight_log.error('holidays: not installed')

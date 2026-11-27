@@ -4,14 +4,19 @@ from __future__ import annotations
 
 
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import simsight_log
+import simsight_patch
 import simsight_names as names
 
 from .pipe import send
 from .state import _logged, _state, log
 from .text import _pretty, object_name, text_of
+
+
+if TYPE_CHECKING:
+    from simsight_patch import Function
 
 
 # ---------------------------------------------------------------- blocked Sims
@@ -26,26 +31,17 @@ ROUTE_REPEAT = 10.0  # seconds before the same Sim and action is reported again
 def _install_route_fail() -> None:
     from interactions.utils import route_fail
 
-    original = route_fail.route_failure
-    if getattr(original, '_simsight_phone', False):
-        return
+    def make(original: Function) -> Function:
+        def route_failure(*args: Any, **kwargs: Any) -> Any:
+            try:
+                _report_route_fail(*args, **kwargs)
+            except Exception:
+                simsight_log.error('bridge: route failure report')
+            return original(*args, **kwargs)
 
-    def route_failure(
-        sim: Any,
-        interaction: Any,
-        failure_reason: Any,
-        failure_object_id: Any,
-        *args: Any,
-        **kwargs: Any,
-    ) -> Any:
-        try:
-            _report_route_fail(sim, interaction, failure_reason, failure_object_id)
-        except Exception:
-            simsight_log.error('bridge: route failure report')
-        return original(sim, interaction, failure_reason, failure_object_id, *args, **kwargs)
+        return route_failure
 
-    setattr(route_failure, '_simsight_phone', True)  # noqa: B010 - marker on a function
-    route_fail.route_failure = route_failure
+    simsight_patch.wrap(route_fail, 'route_failure', make)
 
 
 def _action_name(interaction: Any) -> str:
@@ -74,8 +70,14 @@ def _failure_object_name(failure_object_id: Any) -> str:
 
 
 def _report_route_fail(
-    sim: Any, interaction: Any, failure_reason: Any, failure_object_id: Any
+    sim: Any,
+    interaction: Any,
+    failure_reason: Any,
+    failure_object_id: Any,
+    *_more: Any,
+    **_named: Any,
 ) -> None:
+    """Takes route_failure's own arguments (more may come with a game update)."""
     import services
 
     household = services.active_household()

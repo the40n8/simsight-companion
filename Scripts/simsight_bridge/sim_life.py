@@ -14,10 +14,14 @@ from .text import _pretty, text_of
 
 
 if TYPE_CHECKING:
+    from careers.career_base import CareerBase
+    from relationships.relationship_tracker import RelationshipTracker
+    from sims.sim_info import SimInfo
+
     from .state import Json
 
 
-def _career_title(career: Any, info: Any) -> str:
+def _career_title(career: CareerBase, info: SimInfo) -> str:
     title = ''
     with _logged('career title'):
         title = text_of(career.current_level_tuning.get_title(info))
@@ -28,7 +32,7 @@ def _career_title(career: Any, info: Any) -> str:
     return title or _pretty(type(career).__name__, ('career_',))
 
 
-def _career(info: Any, entry: Json) -> None:
+def _career(info: SimInfo, entry: Json) -> None:
     """Job or school (the first one), whether the Sim is there now, until when, next shift."""
     import services
     import simsight_plus_time as t
@@ -83,7 +87,7 @@ def _objectives(aspiration: Any, tracker: Any) -> list[Json]:
     return out
 
 
-def _aspiration_goals(info: Any, tracker: Any, goals: Json) -> None:
+def _aspiration_goals(info: SimInfo, tracker: Any, goals: Json) -> None:
     """The aspiration and its first milestone not done yet, with its steps."""
     track = getattr(info, 'primary_aspiration', None)
     if track is None or tracker is None:
@@ -111,7 +115,7 @@ def _want(slot: Any) -> Json | None:
     return want
 
 
-def _wants(info: Any) -> list[Json]:
+def _wants(info: SimInfo) -> list[Json]:
     whims = getattr(info, 'whim_tracker', None)
     if whims is None:
         return []
@@ -129,7 +133,7 @@ def _work_tasks(level: Any) -> list[Json]:
     return tasks
 
 
-def _work_goals(info: Any, tracker: Any, goals: Json) -> None:
+def _work_goals(info: SimInfo, tracker: Any, goals: Json) -> None:
     """Work tasks and promotion steps of the first job."""
     careers = getattr(info, 'career_tracker', None)
     if careers is None:
@@ -147,7 +151,7 @@ def _work_goals(info: Any, tracker: Any, goals: Json) -> None:
                     goals['promotionSteps'] = steps
 
 
-def _goals(info: Any) -> Json:
+def _goals(info: SimInfo) -> Json:
     goals: Json = {}
     tracker = getattr(info, 'aspiration_tracker', None)
     _aspiration_goals(info, tracker, goals)
@@ -161,7 +165,7 @@ def _goals(info: Any) -> Json:
 MAX_RELATIONSHIPS = 12
 
 
-def _bit_label(bit: Any, other: Any, info: Any) -> str:
+def _bit_label(bit: Any, other: SimInfo, info: SimInfo) -> str:
     """A relationship label (Father, Sister...) in the gender of the Sim it
     describes: the game's text takes that Sim as token 0, {M0.Father}{F0.Mother}."""
     name = getattr(bit, 'display_name', None)
@@ -171,7 +175,7 @@ def _bit_label(bit: Any, other: Any, info: Any) -> str:
     return text_of(name)
 
 
-def _relationship_labels(tracker: Any, other: Any, info: Any) -> list[str]:
+def _relationship_labels(tracker: RelationshipTracker, other: SimInfo, info: SimInfo) -> list[str]:
     labels: list[str] = []
     with _logged('relationship labels'):
         bits = [b for b in tracker.get_all_bits(other.sim_id) if getattr(b, 'visible', False)]
@@ -183,7 +187,9 @@ def _relationship_labels(tracker: Any, other: Any, info: Any) -> list[str]:
     return labels
 
 
-def _relationship(tracker: Any, other: Any, info: Any, tracks: tuple[Any, Any]) -> Json | None:
+def _relationship(
+    tracker: RelationshipTracker, other: SimInfo, info: SimInfo, tracks: tuple[Any, Any]
+) -> Json | None:
     """One relationship row, or None when the game hides it."""
     hidden = False
     with _logged('relationship hidden'):
@@ -194,11 +200,11 @@ def _relationship(tracker: Any, other: Any, info: Any, tracks: tuple[Any, Any]) 
     f = r = 0
     with _logged('relationship score'):
         f = (
-            int(round(tracker.get_relationship_score(other.sim_id, friendship) or 0))
+            round(tracker.get_relationship_score(other.sim_id, friendship) or 0)
             if friendship
             else 0
         )
-        r = int(round(tracker.get_relationship_score(other.sim_id, romance) or 0)) if romance else 0
+        r = round(tracker.get_relationship_score(other.sim_id, romance) or 0) if romance else 0
     return {
         'simId': str(other.sim_id),
         'name': names.full_name(other).strip(),
@@ -208,7 +214,7 @@ def _relationship(tracker: Any, other: Any, info: Any, tracks: tuple[Any, Any]) 
     }
 
 
-def _relationships(info: Any) -> list[Json]:
+def _relationships(info: SimInfo) -> list[Json]:
     """Strongest relationships first: friendship, romance and the game's labels."""
     from relationships.relationship_track import RelationshipTrack
 
@@ -230,13 +236,14 @@ def _relationships(info: Any) -> list[Json]:
     return [row for _score, row in rows[:MAX_RELATIONSHIPS]]
 
 
-def _performance(career: Any) -> int | None:
+def _performance(career: CareerBase) -> int | None:
     """Work performance towards the next promotion, 0-100, or None."""
     try:
         value = float(career.work_performance)
-        goal = float(career._get_promote_performance_level())
+        # No public accessor in EA's CareerBase for the promotion threshold.
+        goal = float(career._get_promote_performance_level())  # noqa: SLF001
     except (AttributeError, TypeError, ValueError):
         return None  # careers without performance (school, odd jobs)
     if goal <= 0:
         return None
-    return max(0, min(100, int(round(100.0 * value / goal))))
+    return max(0, min(100, round(100.0 * value / goal)))

@@ -80,10 +80,11 @@ def receive(text: str = '') -> bool:
         _log(f'native HUD status={status} event={job.event}')
         if status != 'opened':
             _unavailable()
-        return status == 'opened'
-    except Exception as exc:
-        _log('invalid native reply: ' + str(exc))
+    except Exception:
+        simsight_log.error('event goals: invalid native reply')
         return False
+    else:
+        return status == 'opened'
 
 
 def _register() -> None:

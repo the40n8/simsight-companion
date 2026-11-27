@@ -26,6 +26,7 @@ import simsight_names as names
 import simsight_speech as speech
 
 if TYPE_CHECKING:
+    from sims.sim_info import SimInfo
     from simsight_hub import Row
 
     Entry = tuple[Any, Any]  # (milestone tuning, its tracker data)
@@ -38,7 +39,7 @@ def _say(term: str) -> None:
     speech.speak(lang.t(term), explicit=True)
 
 
-def _no_rows(term: str, info: Any) -> bool:
+def _no_rows(term: str, info: SimInfo) -> bool:
     speech.speak(lang.t(term).format(names.full_name(info)), explicit=True)
     return False
 
@@ -60,7 +61,7 @@ def values_available() -> bool:
     return _pack('GP05')
 
 
-def _active_info() -> Any:
+def _active_info() -> SimInfo | None:
     import services
 
     client = services.client_manager().get_first_client()
@@ -94,21 +95,25 @@ def age_name(age: Any) -> str:
 # ------------------------------------------------------------------ milestones
 
 
-def _tracker(info: Any) -> Any:
+def _tracker(info: SimInfo | None) -> Any:
     return getattr(info, 'developmental_milestone_tracker', None) if info is not None else None
 
 
-def _milestone_entries(tracker: Any, info: Any) -> list[Entry]:
+def _milestone_entries(tracker: Any, info: SimInfo) -> list[Entry]:
     """(milestone, data) pairs EA's panel shows, active and archived."""
     from event_testing.resolver import SingleSimResolver
 
     resolver = SingleSimResolver(info)
+    # As EA's own panel (send_all_milestones_update_to_client): the tracker
+    # has no public accessor for these two tables.
+    active = tracker._active_milestones_data  # noqa: SLF001
+    archived = tracker._archived_milestones_data  # noqa: SLF001
     entries = [
         (milestone, data)
-        for milestone, data in list(tracker._active_milestones_data.items())
+        for milestone, data in list(active.items())
         if _visible(tracker, milestone, resolver)
     ]
-    entries.extend(list(tracker._archived_milestones_data.items()))
+    entries.extend(list(archived.items()))
     return entries
 
 
@@ -116,7 +121,9 @@ def _visible(tracker: Any, milestone: Any, resolver: Any) -> bool:
     try:
         return bool(tracker.is_milestone_visible(milestone, resolver))
     except Exception:
-        return False  # its tuned tests fail to run: EA's panel would not show it
+        # Its tuned tests fail to run: EA's panel would not show it either.
+        simsight_log.error('simology: milestone visibility')
+        return False
 
 
 def _state(data: Any) -> str:
@@ -174,7 +181,7 @@ def _groups(entries: list[Entry]) -> dict[Any, list[Entry]]:
     return groups
 
 
-def _read(info: Any) -> dict[Any, list[Entry]] | None:
+def _read(info: SimInfo) -> dict[Any, list[Entry]] | None:
     tracker = _tracker(info)
     if tracker is None:
         return None
@@ -191,8 +198,8 @@ def milestones_window() -> Any:
         return False
     try:
         groups = _read(info)
-    except Exception as ex:
-        simsight_log.line(f'simology: milestones unavailable ({ex!r})')
+    except Exception:
+        simsight_log.error('simology: milestones unavailable')
         _say('action unavailable')
         return False
     if not groups:
@@ -226,8 +233,8 @@ def milestone_category(sim_id: Any, category: Any) -> Any:
         return False
     try:
         items = (_read(info) or {}).get(category, [])
-    except Exception as ex:
-        simsight_log.line(f'simology: milestone category unavailable ({ex!r})')
+    except Exception:
+        simsight_log.error('simology: milestone category unavailable')
         _say('action unavailable')
         return False
     rows: list[Row] = []
@@ -255,10 +262,12 @@ def _display(stat_type: Any, attr: str) -> Any:
     try:
         return getattr(stat_type, attr)
     except Exception:
-        return None  # tuning that fails to load reads as missing, row skipped
+        # Tuning that fails to load reads as missing: the row is skipped.
+        simsight_log.error(f'simology: tuning {attr}')
+        return None
 
 
-def _life_skills(info: Any) -> list[Any]:
+def _life_skills(info: SimInfo) -> list[Any]:
     from statistics.life_skill_statistic import LifeSkillStatistic
 
     tracker = getattr(info, 'commodity_tracker', None)
@@ -267,7 +276,7 @@ def _life_skills(info: Any) -> list[Any]:
     return [stat for stat in list(tracker) if isinstance(stat, LifeSkillStatistic)]
 
 
-def _range_trait(stat_type: Any, value: float, info: Any) -> tuple[Any, str]:
+def _range_trait(stat_type: Any, value: float, info: SimInfo) -> tuple[Any, str]:
     """The trait this value's tuned range gives at age up, if any."""
     for entry in getattr(stat_type, 'trait_on_age_up_list', None) or ():
         bounds = getattr(entry, 'life_skill_range', None)
@@ -288,10 +297,10 @@ def _range_trait(stat_type: Any, value: float, info: Any) -> tuple[Any, str]:
 
 def value_text(value: float, low: float, high: float) -> str:
     """'35 on a scale from -100 to 100'."""
-    return lang.t('value on scale').format(int(round(value)), int(round(low)), int(round(high)))
+    return lang.t('value on scale').format(round(value), round(low), round(high))
 
 
-def value_detail(stat: Any, info: Any) -> Any:
+def value_detail(stat: Any, info: SimInfo) -> Any:
     stat_type = type(stat)
     value = stat.get_value()
     low = getattr(stat_type, 'min_value_tuning', getattr(stat, 'min_value', 0))
@@ -318,8 +327,8 @@ def values_window() -> Any:
         return False
     try:
         stats = _life_skills(info)
-    except Exception as ex:
-        simsight_log.line(f'simology: character values unavailable ({ex!r})')
+    except Exception:
+        simsight_log.error('simology: character values unavailable')
         _say('action unavailable')
         return False
     rows: list[Row] = []
@@ -329,8 +338,8 @@ def values_window() -> Any:
             continue
         try:
             detail = value_detail(stat, info)
-        except Exception as ex:
-            simsight_log.line(f'simology: value {type(stat).__name__} unreadable ({ex!r})')
+        except Exception:
+            simsight_log.error('simology: character value unreadable')
             continue
         # Reading only: Enter reopens the list.
         rows.append((name, detail, values_window))

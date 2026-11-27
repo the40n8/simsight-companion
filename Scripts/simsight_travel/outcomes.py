@@ -34,7 +34,7 @@ def _commit(pending: _Pending, zone_id: int) -> bool:
     from ui.ui_dialog import ButtonType
 
     service = _service()
-    if not service.dialog_pick_result(dialog.dialog_id, [zone_id]):
+    if service is None or not service.dialog_pick_result(dialog.dialog_id, [zone_id]):
         simsight_log.line(
             f'travel: zone {zone_id} refused by dialog {dialog.dialog_id}; request cancelled'
         )
@@ -55,12 +55,15 @@ def _cancel_dialog(dialog: Any) -> bool:
     if not _dialog_active(dialog):
         return False
     _clear_picks(dialog)
+    service = _service()
+    if service is None:
+        return False  # no dialog service (zone unloading)
     try:
         from ui.ui_dialog import ButtonType
 
-        return bool(_service().dialog_respond(dialog.dialog_id, ButtonType.DIALOG_RESPONSE_CANCEL))
-    except Exception as ex:
-        simsight_log.line(f'travel: cancelling dialog {dialog.dialog_id} failed ({ex!r})')
+        return bool(service.dialog_respond(dialog.dialog_id, ButtonType.DIALOG_RESPONSE_CANCEL))
+    except Exception:
+        simsight_log.error('travel: cancelling a dialog failed')
         return False
 
 
@@ -78,12 +81,14 @@ def _cancel(pending: _Pending) -> bool:
     return result
 
 
-def _native_map(dialog: Any, msg_type: Any, dialog_msg: Any, kwargs: dict[str, Any]) -> Any:
+def _native_map(
+    dialog: Any, msg_type: Any, dialog_msg: Any, kwargs: dict[str, Any], more: tuple[Any, ...] = ()
+) -> Any:
     """EA's own map for this request."""
     original = _state.original_distribute
     if original is None:
         return None  # never installed: nothing replaced EA's map
-    return original(dialog, msg_type, dialog_msg, **kwargs)
+    return original(dialog, msg_type, dialog_msg, *more, **kwargs)
 
 
 def _fallback(pending: _Pending) -> bool:

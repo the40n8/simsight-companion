@@ -22,15 +22,18 @@ from typing import TYPE_CHECKING, Any
 
 import simsight_log
 import simsight_names as names
+import simsight_patch
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
+
+    from simsight_patch import Function
+    from ui.ui_dialog_service import UiDialogService
 
 _msgs: dict[int, Any] = {}  # dialog id -> UiDialogMessage the game sent
 _notes: list[list[Any]] = []  # [deadline, title proto, text proto] waiting for their words
 NOTE_WAIT = 4.0  # seconds to wait for a notification's words
 _OK, _CANCEL = 10001, 10002
-_MARK = '_simsight_phone'  # marks our wrappers on EA's functions
 
 
 def _bridge() -> Any:
@@ -53,9 +56,7 @@ def install() -> None:
     from ui.ui_dialog import UiDialog
     from ui.ui_dialog_notification import UiDialogNotification
 
-    build = UiDialog.build_msg
-    if not getattr(build, _MARK, False):
-
+    def make_build(build: Function) -> Function:
         def build_msg(self: Any, *args: Any, **kwargs: Any) -> Any:
             msg = build(self, *args, **kwargs)
             try:
@@ -65,21 +66,31 @@ def install() -> None:
                 simsight_log.error('dialogs: build_msg')
             return msg
 
-        setattr(build_msg, _MARK, True)
-        UiDialog.build_msg = build_msg
+        return build_msg
 
-    distribute = UiDialogNotification.distribute_dialog
-    if not getattr(distribute, _MARK, False):
-
-        def distribute_dialog(self: Any, dialog_type: Any, dialog_msg: Any, **kwargs: Any) -> Any:
+    def make_distribute(distribute: Function) -> Function:
+        def distribute_dialog(*args: Any, **kwargs: Any) -> Any:
             try:
-                _note(dialog_msg)
+                _distributed(*args, **kwargs)
             except Exception:
                 simsight_log.error('dialogs: notification skipped')
-            return distribute(self, dialog_type, dialog_msg, **kwargs)
+            return distribute(*args, **kwargs)
 
-        setattr(distribute_dialog, _MARK, True)
-        UiDialogNotification.distribute_dialog = distribute_dialog
+        return distribute_dialog
+
+    simsight_patch.wrap(UiDialog, 'build_msg', make_build)
+    simsight_patch.wrap(UiDialogNotification, 'distribute_dialog', make_distribute)
+
+
+def _distributed(
+    _dialog: Any,
+    dialog_type: Any,  # noqa: ARG001 - EA's parameter name, so a keyword binds here
+    dialog_msg: Any,
+    *_more: Any,
+    **_named: Any,
+) -> None:
+    """UiDialogNotification.distribute_dialog(self, dialog_type, dialog_msg, **kwargs)."""
+    _note(dialog_msg)
 
 
 # ---------------------------------------------------------------- notifications
@@ -138,7 +149,7 @@ def flush_notes() -> None:
 # ---------------------------------------------------------------- dialogs
 
 
-def _service() -> Any:
+def _service() -> UiDialogService | None:
     import services
 
     return services.ui_dialog_service()
@@ -283,8 +294,8 @@ def _rows(dialog: Any, msg: Any = None) -> list[dict[str, Any]]:
 def _object_row_or_none(row: Any) -> dict[str, Any] | None:
     try:
         return _object_row(row)
-    except Exception as ex:
-        _log(f'row skipped: {ex!r}')
+    except Exception:
+        simsight_log.error('dialogs: picker row skipped')
         return None
 
 
@@ -346,6 +357,7 @@ def active() -> list[dict[str, Any]]:
     service = _service()
     if service is None:
         return []
+    # UiDialogService has no public list of its open dialogs.
     live = dict(getattr(service, '_active_dialogs', {}) or {})
     for gone in [k for k in _msgs if k not in live]:
         del _msgs[gone]
@@ -363,8 +375,8 @@ def active() -> list[dict[str, Any]]:
 def _dialog_or_none(dialog_id: Any, dialog: Any, msg: Any) -> dict[str, Any] | None:
     try:
         return _dialog(dialog_id, dialog, msg)
-    except Exception as ex:
-        _log(f'dialog {dialog_id} unreadable: {ex!r}')
+    except Exception:
+        simsight_log.error('dialogs: dialog unreadable')
         return None
 
 
@@ -388,7 +400,7 @@ def _is_recipe_picker(msg: Any) -> bool:
     )
 
 
-def _pick(service: Any, key: int, row_ids: Iterable[Any]) -> None:
+def _pick(service: UiDialogService, key: int, row_ids: Iterable[Any]) -> None:
     picked = _row_ids(row_ids)
     if _is_recipe_picker(_msgs.get(key)):
         # Like the game's recipe window: "Use Fresh Ingredients" is ticked by
@@ -424,7 +436,7 @@ def respond(dialog_id: Any, choice_id: Any, row_ids: Any, text: str) -> tuple[bo
     except ValueError:
         return False, 'dialog_closed'
     dialog = service.get_dialog(key) if service is not None else None
-    if dialog is None:
+    if service is None or dialog is None:
         return False, 'dialog_closed'
     choice = int(choice_id)
     if choice in (_CANCEL, -1):

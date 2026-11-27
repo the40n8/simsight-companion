@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import sims4.commands
 
@@ -15,6 +15,9 @@ import simsight_settings as settings
 from .state import _Request, _say, _state, _ui, _zone_loaded, enabled, simplified
 from .outcomes import _cancel
 from .front import _away, push_travel, show_front
+
+if TYPE_CHECKING:
+    from sims.sim import Sim
 
 
 # Readiness lease for the keyboard M entry. Flash routes M to Python only
@@ -144,7 +147,7 @@ def _resend(entry: _Request) -> None:
     _send_result(epoch, request, outcome, reason)
 
 
-def _ready_sim() -> tuple[Any, str]:
+def _ready_sim() -> tuple[Sim | None, str]:
     """The active Sim when a keyboard entry may start, or (None, reason)
     after speaking why not."""
     import services
@@ -152,7 +155,7 @@ def _ready_sim() -> tuple[Any, str]:
     if not enabled() or not _zone_loaded():
         _say('action unavailable')
         return None, 'refused'
-    sim = services.get_active_sim()
+    sim: Sim | None = services.get_active_sim()
     if sim is None:
         _say('load a household first')
         return None, 'no_sim'
@@ -162,7 +165,7 @@ def _ready_sim() -> tuple[Any, str]:
     return sim, ''
 
 
-def _start_entry(sim: Any, request: int, epoch: int) -> bool:
+def _start_entry(sim: Sim, request: int, epoch: int) -> bool:
     if simplified():
         # The request is answered once our window is up; the choice pushes
         # EA's Travel on its own, like a second press of M would.

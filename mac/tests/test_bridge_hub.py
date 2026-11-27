@@ -167,10 +167,13 @@ class PhoneGroups(unittest.TestCase):
         self.assertEqual([e.name for e in found.direct], ['Move'])
 
     def test_hook_installed_once(self):
-        self.assertTrue(getattr(UiDialogService.dialog_show, '_a11y_phone_hook', False))
-        before = UiDialogService.dialog_show
-        phone._install()
-        self.assertIs(UiDialogService.dialog_show, before)
+        import simsight_patch
+
+        game = simsight_patch.original(UiDialogService, 'dialog_show')
+        self.assertIsNot(UiDialogService.dialog_show, game)
+        phone._install()  # again: still one wrapper around the game's own
+        self.assertIs(simsight_patch.original(UiDialogService, 'dialog_show'), game)
+        self.assertIs(getattr(UiDialogService.dialog_show, '__wrapped__', None), game)
 
 
 if __name__ == '__main__':

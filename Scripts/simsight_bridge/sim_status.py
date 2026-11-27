@@ -11,6 +11,13 @@ from .text import _pretty, text_of
 
 
 if TYPE_CHECKING:
+    from buffs.buff import Buff
+    from date_and_time import DateAndTime
+    from objects.components.buff_component import BuffComponent
+    from sims.sim import Sim
+    from sims.sim_info import SimInfo
+    from statistics.skill import Skill
+
     from .state import Json
 
 
@@ -34,7 +41,7 @@ def _need_level(p: float) -> str:
     return 'NEED_LEVEL_GOOD'
 
 
-def _needs(info: Any) -> list[Json]:
+def _needs(info: SimInfo) -> list[Json]:
     import simsight_plus_needs as needs
 
     out = []
@@ -50,8 +57,8 @@ def _mood_key(mood: Any) -> str:
     return re.sub(r'^mood_', '', name, flags=re.IGNORECASE).lower()
 
 
-def _mood(info: Any) -> Json | None:
-    buffs = getattr(info, 'Buffs', None)
+def _mood(info: SimInfo) -> Json | None:
+    buffs: BuffComponent | None = getattr(info, 'Buffs', None)
     if buffs is None:
         return None
     mood = buffs.get_mood()
@@ -68,7 +75,7 @@ def _mood(info: Any) -> Json | None:
     return {'key': _mood_key(mood), 'name': name, 'intensity': intensity}
 
 
-def _moodlet(buff: Any, now: Any, info: Any) -> Json:
+def _moodlet(buff: Buff, now: DateAndTime, info: SimInfo) -> Json:
     # Buff instances share the Buff class; the tuning (name, mood, text)
     # is on buff_type.
     btype = getattr(buff, 'buff_type', None) or type(buff)
@@ -97,17 +104,17 @@ def _moodlet(buff: Any, now: Any, info: Any) -> Json:
     return moodlet
 
 
-def _moodlets(info: Any) -> list[Json]:
+def _moodlets(info: SimInfo) -> list[Json]:
     import services
 
-    buffs = getattr(info, 'Buffs', None)
+    buffs: BuffComponent | None = getattr(info, 'Buffs', None)
     if buffs is None:
         return []
     now = services.time_service().sim_now
     return [_moodlet(buff, now, info) for buff in buffs if getattr(buff, 'visible', False)]
 
 
-def _actions(sim: Any) -> list[Json]:
+def _actions(sim: Sim) -> list[Json]:
     import simsight_hub as hub
 
     out = []
@@ -139,7 +146,7 @@ _SKILL_PREFIXES = (
 )
 
 
-def _skill(skill: Any) -> Json | None:
+def _skill(skill: Skill) -> Json | None:
     """A skill row, or None for hidden skills and skills not started."""
     row = None
     with _logged('skill'):
@@ -158,7 +165,7 @@ def _skill(skill: Any) -> Json | None:
     return row
 
 
-def _skills(info: Any) -> list[Json]:
+def _skills(info: SimInfo) -> list[Json]:
     out = [row for row in (_skill(skill) for skill in list(info.all_skills())) if row]
     out.sort(key=lambda s: (-s['level'], s['name']))
     return out

@@ -14,6 +14,9 @@ from .text import _pretty, classify, object_name, text_of
 
 
 if TYPE_CHECKING:
+    from server.client import Client
+    from sims.sim import Sim
+
     from .state import Answer, Json
 
 
@@ -27,7 +30,7 @@ MAX_DISTANCE = 60.0  # metres
 PHONE_ID = 'phone'  # the controlled Sim's phone, a target of its own
 
 
-def _sim_targets(sim: Any) -> list[Json]:
+def _sim_targets(sim: Sim) -> list[Json]:
     """The controlled Sim, its phone, then the other Sims, nearest first."""
     import services
 
@@ -55,13 +58,13 @@ def _sim_targets(sim: Any) -> list[Json]:
                 'name': names.full_name(other.sim_info).strip(),
                 'isSim': True,
                 'group': 'SIMS',
-                'distance': int(round(d)),
+                'distance': round(d),
             }
         )
     return targets
 
 
-def _target_distance(obj: Any, sim: Any) -> float | None:
+def _target_distance(obj: Any, sim: Sim) -> float | None:
     """How far an object the Sim can use is, or None when it does not count."""
     distance = None
     with _logged('target object'):
@@ -84,7 +87,7 @@ def _object_target(obj: Any, d: float) -> Json | None:
             'group': group,
             'kind': kind,
             'keywords': keywords,
-            'distance': int(round(d)),
+            'distance': round(d),
         }
     except Exception:
         simsight_log.error('bridge: target row')
@@ -111,7 +114,7 @@ def list_targets() -> list[Json]:
     return targets
 
 
-def _target(target_id: str, sim: Any) -> Any:
+def _target(target_id: str, sim: Sim) -> Any:
     import services
 
     try:
@@ -125,8 +128,11 @@ def _target(target_id: str, sim: Any) -> Any:
 
 def _category_root(category: Any) -> Any:
     depth = 0
-    while category is not None and getattr(category, '_parent', None) is not None and depth < 8:
-        category = category._parent
+    # PieMenuCategory tuning keeps its parent in the private _parent.
+    parent = getattr(category, '_parent', None)
+    while category is not None and parent is not None and depth < 8:
+        category = parent
+        parent = getattr(category, '_parent', None)
         depth += 1
     return category
 
@@ -146,7 +152,7 @@ def _pick_place(obj: Any) -> tuple[int, int]:
     return lot_id, level
 
 
-def _add_object_rows(menu: Any, sim: Any, client: Any, obj: Any) -> None:
+def _add_object_rows(menu: Any, sim: Sim, client: Client, obj: Any) -> None:
     """What a click on the object offers (and on what it forwards clicks to)."""
     from server.pick_info import PickInfo, PickType
 
@@ -175,8 +181,8 @@ def _add_object_rows(menu: Any, sim: Any, client: Any, obj: Any) -> None:
         if getattr(target, 'is_sim', False) and target is not sim:
             try:
                 sim.fill_choices_menu_with_si_state_aops(target, context, menu, None)
-            except Exception as ex:
-                log(f'social rows unavailable: {ex!r}')
+            except Exception:
+                simsight_log.error('bridge: social rows')
 
 
 def get_interactions(target_id: str) -> Answer:
@@ -198,7 +204,7 @@ def get_interactions(target_id: str) -> Answer:
     return _menu_rows(target_id, sim, menu)
 
 
-def _menu_row(sim: Any, option_id: Any, item: Any, categories: Any) -> Json | None:
+def _menu_row(sim: Sim, option_id: Any, item: Any, categories: Any) -> Json | None:
     """One pie menu row as the game shows it, or None when the game hides it."""
     aop = item.aop
     affordance = aop.affordance
@@ -224,7 +230,8 @@ def _menu_row(sim: Any, option_id: Any, item: Any, categories: Any) -> Json | No
     return {
         'id': str(option_id),
         'name': name or fallback,
-        'category': text_of(root._display_name(sim)) if root is not None else '',
+        # PieMenuCategory's name is only tuned as _display_name.
+        'category': text_of(root._display_name(sim)) if root is not None else '',  # noqa: SLF001
         'enabled': bool(item.result) and not modifier_tooltip,
         'reason': reason,
         # The game's own name is not known yet (the row shows the fallback).
@@ -232,7 +239,7 @@ def _menu_row(sim: Any, option_id: Any, item: Any, categories: Any) -> Json | No
     }
 
 
-def _menu_rows(target_id: str, sim: Any, menu: Any) -> Answer:
+def _menu_rows(target_id: str, sim: Sim, menu: Any) -> Answer:
     """Rows of a ChoiceMenu as the game shows them (visible, named, greyed reasons)."""
     import services
     import sims4.resources

@@ -305,8 +305,11 @@ def _distribute(dialog: Any, msg_type: Any, dialog_msg: Any, **kwargs: Any) -> A
     pending = _Pending(dialog, msg_type, dialog_msg, kwargs, mode)
     try:
         _prepare(pending)
-    except Exception as ex:
+    except ValueError as ex:  # _prepare's own reasons
         simsight_log.line(f'travel: list unavailable ({ex!r}), native map instead')
+        return _native_map(dialog, msg_type, dialog_msg, kwargs)
+    except Exception:
+        simsight_log.error('travel: list unavailable, native map instead')
         return _native_map(dialog, msg_type, dialog_msg, kwargs)
     _state.pending = pending
     if _show_worlds(pending):

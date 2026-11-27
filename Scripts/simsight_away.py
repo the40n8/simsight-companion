@@ -15,6 +15,9 @@ import simsight_names as names
 import simsight_speech as speech
 
 if TYPE_CHECKING:
+    from sims.household import Household
+    from sims.sim import Sim
+    from world.lot import Lot
     from simsight_hub import Row
 
 
@@ -22,7 +25,7 @@ def _say(term: str) -> None:
     speech.speak(lang.t(term), explicit=True)
 
 
-def _state() -> tuple[Any, Any, Any, int] | None:
+def _state() -> tuple[Sim, Household, Lot, int] | None:
     """(active Sim, household, lot, zone id) outside Build mode, when the
     active Sim belongs to the active household."""
     import services
@@ -30,9 +33,9 @@ def _state() -> tuple[Any, Any, Any, int] | None:
 
     if place.in_build_mode():
         return None
-    actor = services.get_active_sim()
-    household = services.active_household()
-    lot = services.active_lot()
+    actor: Sim | None = services.get_active_sim()
+    household: Household | None = services.active_household()
+    lot: Lot | None = services.active_lot()
     if actor is None or household is None or lot is None:
         return None
     if actor.sim_info.household is not household:
@@ -40,7 +43,7 @@ def _state() -> tuple[Any, Any, Any, int] | None:
     return actor, household, lot, services.current_zone_id()
 
 
-def _candidates(household: Any, actor_id: int) -> dict[int, Any]:
+def _candidates(household: Household, actor_id: int) -> dict[int, Any]:
     result = {}
     for info in household.sim_info_gen():
         if info.sim_id == actor_id or info.is_baby:

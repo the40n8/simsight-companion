@@ -14,15 +14,22 @@ travel list's own Go alone / Choose who comes window.
 from __future__ import annotations
 
 import functools
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 import sims4.commands
 import simsight_lang as lang
 from simsight_commands import real_annotations
 import simsight_log
 import simsight_names as names
+import simsight_patch
 import simsight_settings as settings
 import simsight_speech as speech
+
+if TYPE_CHECKING:
+    from server.client import Client
+    from sims.sim import Sim
+    from simsight_patch import Function
+    from ui.ui_dialog_service import UiDialogService
 
 _CLOSE_WAIT = 1.0  # seconds a chosen action waits for our window to close
 _MAX_WAITING = 32  # calls and texts remembered
@@ -50,7 +57,7 @@ def _note(dialog: Any, phone_ring_type: Any) -> None:
     owner_id, info = _recipient(dialog)
     if not owner_id:
         return
-    client = services.client_manager().get_first_client()
+    client: Client | None = services.client_manager().get_first_client()
     if client is None or info not in client.selectable_sims:
         return
     token = (dialog.dialog_id, owner_id)
@@ -70,8 +77,8 @@ def open_waiting(list_when_none: bool = False) -> bool:
     import distributor.ops
     import distributor.system
 
-    service = services.ui_dialog_service()
-    client = services.client_manager().get_first_client()
+    service: UiDialogService | None = services.ui_dialog_service()
+    client: Client | None = services.client_manager().get_first_client()
     if service is None or client is None:
         return False
     active = getattr(service, '_active_dialogs', {})
@@ -133,14 +140,22 @@ _state = _State()
 
 
 def _root(category: Any) -> Any:
+    # PieMenuCategory tuning keeps its parent in the private _parent.
     depth = 0
-    while category is not None and getattr(category, '_parent', None) is not None and depth < 8:
-        category = category._parent
+    parent = getattr(category, '_parent', None)
+    while category is not None and parent is not None and depth < 8:
+        category = parent
+        parent = getattr(category, '_parent', None)
         depth += 1
     return category
 
 
-def _entry(sim: Any, item: Any, categories: Any) -> tuple[Any, _Entry] | None:
+def _category_name(category: Any, sim: Sim) -> Any:
+    """A pie menu category's name: PieMenuCategory only tunes it as _display_name."""
+    return category._display_name(sim)  # noqa: SLF001
+
+
+def _entry(sim: Sim, item: Any, categories: Any) -> tuple[Any, _Entry] | None:
     """(root category or None, entry) for one choice, or None when the
     pie menu modifiers hide it."""
     aop = item.aop
@@ -164,7 +179,7 @@ def _entry(sim: Any, item: Any, categories: Any) -> tuple[Any, _Entry] | None:
     root = _root(category)
     detail = None
     if category is not None and category is not root:
-        detail = category._display_name(sim)
+        detail = _category_name(category, sim)
     elif tip is None:
         detail = affordance.get_display_tooltip(
             context=item.context, target=aop.target, **aop.interaction_parameters
@@ -177,7 +192,7 @@ def _priority(root: Any) -> float:
     return value if isinstance(value, (int, float)) else 0
 
 
-def _collect(sim: Any, client: Any) -> _PhoneList:
+def _collect(sim: Sim, client: Client) -> _PhoneList:
     """EA's own phone menu (interactions.phone_choices and
     create_pie_menu_message): the same aops, tests, visibility, names and
     reasons the phone would show."""
@@ -209,11 +224,11 @@ def _collect(sim: Any, client: Any) -> _PhoneList:
         groups[root].append(entry)
     order.sort(key=_priority)  # stable: equal priorities keep the phone's order
     return _PhoneList(
-        sim.sim_id, [(root._display_name(sim), groups[root]) for root in order], direct
+        sim.sim_id, [(_category_name(root, sim), groups[root]) for root in order], direct
     )
 
 
-def _phone_refused(sim: Any) -> bool:
+def _phone_refused(sim: Sim) -> bool:
     """The phone's own disable tests (with EA's reason) and the full
     queue, as interactions.phone_choices checks them. True when refused."""
     from event_testing.resolver import SingleSimResolver
@@ -232,7 +247,7 @@ def _phone_refused(sim: Any) -> bool:
     return False
 
 
-def _current_sim(phone_list: _PhoneList) -> tuple[Any, Any]:
+def _current_sim(phone_list: _PhoneList) -> tuple[Sim | None, Client | None]:
     """The active Sim and client, only while Simplified menus are on and
     the list still belongs to that Sim; otherwise says why and gives None."""
     import services
@@ -240,8 +255,8 @@ def _current_sim(phone_list: _PhoneList) -> tuple[Any, Any]:
     if not simplified():
         _say('action unavailable')
         return None, None
-    sim = services.get_active_sim()
-    client = services.client_manager().get_first_client()
+    sim: Sim | None = services.get_active_sim()
+    client: Client | None = services.client_manager().get_first_client()
     if sim is None or client is None or sim.sim_id != phone_list.sim_id:
         _say('sim unavailable')
         return None, None
@@ -253,8 +268,8 @@ def open_list() -> bool:
     active Sim, or the phone's own reason why there is none."""
     import services
 
-    sim = services.get_active_sim()
-    client = services.client_manager().get_first_client()
+    sim: Sim | None = services.get_active_sim()
+    client: Client | None = services.client_manager().get_first_client()
     if sim is None or client is None:
         _say('load a household first')
         return False
@@ -406,7 +421,7 @@ def _chosen(phone_list: _PhoneList, tag: tuple[Any, ...]) -> bool:
     return False
 
 
-def _refused_now(sim: Any, entry: _Entry) -> bool:
+def _refused_now(sim: Sim, entry: _Entry) -> bool:
     """The phone's own checks and the pie menu modifiers again (they can
     change while the window is open). True, said aloud, when refused."""
     import simsight_native as native
@@ -427,7 +442,7 @@ def _refused_now(sim: Any, entry: _Entry) -> bool:
     return False
 
 
-def _travel_window(sim: Any, entry: _Entry) -> bool:
+def _travel_window(sim: Sim, entry: _Entry) -> bool:
     """The travel list's own window for the phone's travel action. True when shown."""
     try:
         import simsight_travel as travel
@@ -499,7 +514,7 @@ def _execute(phone_list: _PhoneList, entry: _Entry) -> bool:
     import simsight_native as native
 
     sim, client = _current_sim(phone_list)
-    if sim is None:
+    if sim is None or client is None:
         return False
     try:
         context = client.create_interaction_context(sim)
@@ -543,22 +558,30 @@ def a11y_phone(_connection: Any = None) -> bool:
 def _install() -> None:
     from ui.ui_dialog_service import UiDialogService
 
-    original = UiDialogService.dialog_show
-    if getattr(original, '_a11y_phone_hook', False):
-        return
+    def make(original: Function) -> Function:
+        @functools.wraps(original)
+        def dialog_show(*args: Any, **kwargs: Any) -> Any:
+            result = original(*args, **kwargs)
+            try:
+                _shown(*args, **kwargs)
+            except Exception:
+                simsight_log.error('phone: announcement failed')
+            return result
 
-    @functools.wraps(original)
-    def dialog_show(self: Any, dialog: Any, phone_ring_type: Any, *args: Any, **kwargs: Any) -> Any:
-        result = original(self, dialog, phone_ring_type, *args, **kwargs)
-        try:
-            if not self.is_phone_silenced and dialog.dialog_id in self._active_dialogs:
-                _note(dialog, phone_ring_type)
-        except Exception:
-            simsight_log.error('phone: announcement failed')
-        return result
+        return dialog_show
 
-    setattr(dialog_show, '_a11y_phone_hook', True)  # noqa: B010 - a marker EA's function type does not declare
-    UiDialogService.dialog_show = dialog_show
+    simsight_patch.wrap(UiDialogService, 'dialog_show', make)
+
+
+def _shown(
+    service: UiDialogService, dialog: Any, phone_ring_type: Any, *_more: Any, **_named: Any
+) -> None:
+    """After UiDialogService.dialog_show(self, dialog, phone_ring_type, ...):
+    a call or text that the game shows now (not silenced, not queued)."""
+    # The service has no public list of its open dialogs.
+    active = getattr(service, '_active_dialogs', {})
+    if not service.is_phone_silenced and dialog.dialog_id in active:
+        _note(dialog, phone_ring_type)
 
 
 try:

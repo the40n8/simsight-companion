@@ -81,21 +81,28 @@ def _open_window(pending: _Pending, title: str, text: str, rows: list[Row], on_p
     if _state.pending is not pending:
         return False
     try:
-        menu.cancel_dialog(_state.window_id)
-        _state.window_id = None
-        dialog = menu.picker(lang.t(title), lang.t(text))
-        if dialog is None:
-            raise ValueError('no active Sim')
-        _show_picker(dialog, rows)
-        dialog.add_listener(_listener(on_pick, pending))
-        _fence_input()
-        dialog.show_dialog()
-        _state.window_id = dialog.dialog_id
-        return True
-    except Exception as ex:
-        simsight_log.line(f'travel: window failed ({ex!r}); request cancelled')
+        shown = _show_window(pending, title, text, rows, on_pick)
+    except Exception:
+        simsight_log.error('travel: window failed; request cancelled')
+        shown = False
+    if not shown:
         _cancel(pending)
+    return shown
+
+
+def _show_window(pending: _Pending, title: str, text: str, rows: list[Row], on_pick: Step) -> bool:
+    menu.cancel_dialog(_state.window_id)
+    _state.window_id = None
+    dialog = menu.picker(lang.t(title), lang.t(text))
+    if dialog is None:
+        simsight_log.line('travel: window failed (no active Sim); request cancelled')
         return False
+    _show_picker(dialog, rows)
+    dialog.add_listener(_listener(on_pick, pending))
+    _fence_input()
+    dialog.show_dialog()
+    _state.window_id = dialog.dialog_id
+    return True
 
 
 def _reply(pending: _Pending, dialog: Any) -> Any:
@@ -109,8 +116,8 @@ def _reply(pending: _Pending, dialog: Any) -> Any:
         return None
     try:
         tags = list(dialog.get_result_tags())
-    except Exception as ex:
-        simsight_log.line(f'travel: pick result failed: {ex!r}')
+    except Exception:
+        simsight_log.error('travel: pick result failed')
         tags = []
     if len(tags) != 1:
         _cancel(pending)

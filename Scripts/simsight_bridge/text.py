@@ -201,7 +201,8 @@ def classify(obj: Any) -> tuple[str, str, str]:
     if scanner is None:
         return 'MISC', '', ''
     try:
-        sub, group, names, _flags = scanner._classification(obj, time.monotonic())
+        # simsight_scanner has no public name for it (yet).
+        sub, group, names, _flags = scanner._classification(obj, time.monotonic())  # noqa: SLF001
     except Exception:
         simsight_log.error('bridge: classify')
         return 'MISC', '', ''
