@@ -15,6 +15,7 @@ module('sims4').commands = module(
 )
 
 import simsight_plus_build as build  # noqa: E402
+from simsight_plus_build import catalog, lot, rooms  # noqa: E402
 import simsight_plus_core as core  # noqa: E402
 
 # x 10..18 west to east, z 20..26 south to north: 8 by 6 meters
@@ -44,7 +45,7 @@ class FreeSpotsTest(unittest.TestCase):
         spots = build.free_spots(grid_with_house(), 2, 2)
         self.assertTrue(spots)
         e, n = spots[0]
-        text = build._touch_text(grid_with_house(), e, n, 2, 2)
+        text = lot._touch_text(grid_with_house(), e, n, 2, 2)
         self.assertTrue(text.startswith('joins the house on its'), text)
 
     def test_spots_stay_inside_the_edge_and_free(self):
@@ -62,17 +63,18 @@ class FreeSpotsTest(unittest.TestCase):
 
     def test_touch_text(self):
         grid = grid_with_house()
-        self.assertEqual(build._touch_text(grid, 3, 1, 2, 2), 'joins the house on its west side')
-        self.assertEqual(build._touch_text(grid, 5, 3, 2, 2), 'stands on its own')
+        self.assertEqual(lot._touch_text(grid, 3, 1, 2, 2), 'joins the house on its west side')
+        self.assertEqual(lot._touch_text(grid, 5, 3, 2, 2), 'stands on its own')
 
 
 class RoomWallsTest(unittest.TestCase):
     def setUp(self):
-        self._frame = build.frame
-        build.frame = lambda: build.Frame(LOT)
+        # Patched where room_box, room_walls and wall_cell_point look it up.
+        self._frame = rooms.frame
+        rooms.frame = lambda: build.Frame(LOT)
 
     def tearDown(self):
-        build.frame = self._frame
+        rooms.frame = self._frame
 
     def test_walls_of_a_two_by_one_room(self):
         f = build.Frame(LOT)
@@ -103,7 +105,7 @@ class FlashReplyTest(unittest.TestCase):
         self.assertEqual(build.catalog_state['total'], 2)
         self.assertEqual(build.catalog_state['items'], [('Oak door', 350, 3), ('Plain', 12, 1)])
         build.flash_reply_base('catend|5')
-        self.assertEqual(self.posted, [build._show_catalog])
+        self.assertEqual(self.posted, [catalog._show_catalog])
 
     def test_old_serial_is_ignored(self):
         build.flash_reply_base('cat|4|0|1|Old~1~1')

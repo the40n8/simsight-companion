@@ -20,6 +20,7 @@ module('zone', Zone=type('Zone', (), {'on_loading_screen_animation_finished': la
 
 import simsight_log  # noqa: E402
 import simsight_plus_build as build  # noqa: E402
+from simsight_plus_build import catalog as build_catalog  # noqa: E402
 import simsight_plus_core as core  # noqa: E402
 import simsight_plus_furnish as furnish  # noqa: E402
 import simsight_steps as steps  # noqa: E402
@@ -101,6 +102,7 @@ class FurnishTest(unittest.TestCase):
             n: getattr(furnish, n) for n in ('ITEMS', '_spots', '_placer', '_face_into_room')
         }
         self.saved_build = {n: getattr(build, n) for n in ('send_ui', 'funds')}
+        self.saved_send_ui = build_catalog.send_ui
         furnish.ITEMS = {
             'double bed': ('Double bed', 'BEDS', ('Killer Queen Double Bed',), ('single',)),
             'lamp': ('Lamp', 'LAMPS', ('None of these',), ('bunk',)),
@@ -116,12 +118,14 @@ class FurnishTest(unittest.TestCase):
             setattr(furnish, n, v)
         for n, v in self.saved_build.items():
             setattr(build, n, v)
+        build_catalog.send_ui = self.saved_send_ui
         build.busy[0] = False
 
     def world(self):
         w = World({'BEDS': BEDS, 'LAMPS': LAMPS}, [900, 0, 0, 80])
         build.send_ui = w.send_ui
         build.funds = w.funds
+        build_catalog.send_ui = w.send_ui  # where the catalog steps look it up
         furnish._placer = lambda place, room, spot: lambda: w.place(spot)
         furnish._face_into_room = lambda place, room: w.events.append(('face',))
         return w
