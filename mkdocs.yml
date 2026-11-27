@@ -55,6 +55,8 @@ nav:
   - Help us test:
       - Testers wanted: testers.md
       - Test checklist: mac/TESTING.md
+  - Developers:
+      - EA's game code: dev/EA-API.md
   - About: about.md
 
 extra_css:

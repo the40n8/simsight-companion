@@ -21,3 +21,5 @@ site/
 companion/meeting-point/.deploy.jsonc
 .mypy_cache/
 .ruff_cache/
+# EA game types, generated from the installed game (tools/ea_stubs.py)
+typings/

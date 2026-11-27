@@ -17,6 +17,13 @@ $RUFF check Scripts tools mac/build.py mac/tests
 echo "== Format (ruff)"
 $RUFF format --check Scripts tools mac/build.py mac/tests
 echo "== Types (mypy)"
+# EA's game types, when the game is installed here (tools/ea_stubs.py).
+GAME="${SIMS4_APP:-/Applications/EA Games/The Sims 4.app}"
+if [[ -d "$GAME" && -x "$PY37" ]]; then
+  rm -rf typings && "$PY37" -I tools/ea_stubs.py "$GAME" typings --used-by Scripts
+else
+  echo "(The Sims 4 not found: EA's types are not checked; set SIMS4_APP)"
+fi
 $MYPY
 [[ "${1:-}" == quick ]] && exit 0
 
