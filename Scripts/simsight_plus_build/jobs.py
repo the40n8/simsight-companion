@@ -129,7 +129,7 @@ def point_and_act_base(  # noqa: PLR0913, PLR0917 - signature other modules call
         )
         cursor_off()
         if overview:
-            core.post(overview_camera, points_world + [(cx, cz + 3.0 * (attempt + 1))], level)
+            core.post(overview_camera, [*points_world, (cx, cz + 3.0 * (attempt + 1))], level)
         else:
             _zoom_out(3)
             core.post(_focus_camera, cx, cz, level, view, focus_height)
@@ -195,7 +195,7 @@ def run_job(  # noqa: PLR0913, PLR0917 - signature other modules call
             ):
                 core.post(verify)
         except Exception:
-            core.log_exc('build job')
+            simsight_log.error(core.log_exc('build job'))
             core.post(core.speak, 'Sorry, the build step failed.')
         finally:
             busy[0] = False

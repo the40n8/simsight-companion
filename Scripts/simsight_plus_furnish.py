@@ -8,6 +8,7 @@ import math
 from typing import TYPE_CHECKING, Any
 
 import simsight_plus_build as build
+import simsight_log
 import simsight_plus_core as core
 import simsight_steps as steps
 
@@ -182,7 +183,7 @@ def _door_tiles(wall_things: Sequence[tuple[float, float, str]]) -> set[tuple[in
         if kind == 'door':
             for de in (-0.5, 0.5):
                 for dn in (-0.5, 0.5):
-                    tiles.add((int(math.floor(te + de)), int(math.floor(tn + dn))))
+                    tiles.add((math.floor(te + de), math.floor(tn + dn)))
     return tiles
 
 
@@ -240,7 +241,7 @@ def _face_into_room(place: Any, room: Any) -> None:
         fw = obj.orientation.transform_vector(sims4.math.Vector3.Z_AXIS())
         (e, n) = f.local(obj.position.x, obj.position.z)
         (fe, fn) = (fw.x, -fw.z)
-        front = (int(math.floor(e + fe * 0.9)), int(math.floor(n + fn * 0.9)))
+        front = (math.floor(e + fe * 0.9), math.floor(n + fn * 0.9))
         if front in tiles:
             return
         (e0, n0, e1, n1) = build.room_box(room)
@@ -250,7 +251,7 @@ def _face_into_room(place: Any, room: Any) -> None:
         obj.move_to(translation=obj.position, orientation=q, routing_surface=obj.routing_surface)
         core.log(f'furnish: turned {obj.id} to face into the room')
     except Exception:
-        core.log_exc('face into room')
+        simsight_log.error(core.log_exc('face into room'))
 
 
 def _say(text: str) -> None:
@@ -342,7 +343,7 @@ def _furnish_steps(place: Any, room: Any, keys: Sequence[str]) -> Job[None]:
         spent = start - ((yield steps.OnMain(build.funds)) or 0)
         _say(_furnish_text(room, bought, missed, spent))
     except Exception:
-        core.log_exc('furnish')
+        simsight_log.error(core.log_exc('furnish'))
         _say('Sorry, furnishing failed.')
     finally:
         build.busy[0] = False

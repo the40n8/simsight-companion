@@ -9,6 +9,8 @@ import simsight_log
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
+    from simsight_plus_house import Plan
+
     Box = tuple[int, int, int, int]  # west, north, east, south lot tiles
     Tile = tuple[int, int]
 
@@ -82,11 +84,11 @@ def _door(side: str, box: Box) -> tuple[Tile, Tile]:
 
 def _make_plan(
     box: Box, layout: str, names: Sequence[str], *, entrance: str, building_name: str, kind: str
-) -> Any:
+) -> Plan:
     """A one-floor house.Plan: one room, or two side by side ('side') or front and back."""
     import simsight_plus_house as house
 
-    p: Any = house.Plan()
+    p = house.Plan()
     x1, n1, x2, n2 = box
     p.width = x2 - x1
     p.depth = n2 - n1
@@ -137,7 +139,7 @@ def _make_plan(
             'level': 0,
         },
     )
-    p._a11y_detached = {
+    p.detached = {
         'box': box,
         'levels': [0],
         'name': building_name,
@@ -147,11 +149,13 @@ def _make_plan(
     return p
 
 
-def _review(plan: Any) -> None:
+def _review(plan: Plan) -> None:
     import simsight_plus_core as core
     import simsight_plus_house as house
 
-    meta = plan._a11y_detached
+    meta = plan.detached
+    if meta is None:
+        raise ValueError('not a detached structure plan')
     problems = _clearance(meta['box'])
     if problems:
         sample = '; '.join(problems[:5])
@@ -363,7 +367,7 @@ def open_builder() -> None:
     _StructureChoices((anchor[0], anchor[1])).start()
 
 
-def _built_completely(plan: Any) -> bool:
+def _built_completely(plan: Plan) -> bool:
     """After a build: does every planned room exist, with its box and level?"""
     try:
         import simsight_plus_build as build
@@ -376,11 +380,11 @@ def _built_completely(plan: Any) -> bool:
                 complete, actual, [(r['box'], r['level']) for r in plan.rooms]
             )
         )
-        return complete
-    except Exception as ex:
+    except Exception as ex:  # the room scan runs EA's native room queries (logged)
         simsight_log.line(f'detached builder: post-build verification failed: {ex!r}')
         simsight_log.error('detached builder: post-build verification')
         return False
+    return complete
 
 
 def _follow_up(meta: dict[str, Any]) -> None:
@@ -406,10 +410,10 @@ def _follow_up(meta: dict[str, Any]) -> None:
         simsight_log.error('detached builder: roof follow-up')
 
 
-def build_followup(plan: Any) -> Any:
+def build_followup(plan: Plan) -> Any:
     """Build the plan; a complete detached structure gets its label and roof offer."""
     result = _original_build(plan)
-    meta = getattr(plan, '_a11y_detached', None)
+    meta = plan.detached
     if not meta:
         return result
     if _built_completely(plan):
@@ -417,7 +421,7 @@ def build_followup(plan: Any) -> Any:
     return result
 
 
-def _original_build(plan: Any) -> Any:
+def _original_build(plan: Plan) -> Any:
     import simsight_house_planner as planner
 
     return planner.build_with_followup(plan)

@@ -72,7 +72,7 @@ def _call(fn: Callable[..., Any], args: tuple[Any, ...]) -> Any:
     try:
         return fn(*args)
     except Exception:
-        core.log_exc('on_main')
+        simsight_log.error(core.log_exc('on_main'))
         return None
 
 

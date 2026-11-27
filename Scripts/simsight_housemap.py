@@ -20,6 +20,8 @@ import simsight_log
 import simsight_plus_rooms as rooms
 
 if TYPE_CHECKING:
+    from lots.lot import Lot
+    from sims.sim import Sim
     from typing import Iterable
 
     Link = dict[str, Any]  # {'door': bool, 'sides': {side: n}, 'doors': {side: n}, 'stairs': str}
@@ -119,7 +121,8 @@ def _is_pool(x: float, z: float, level: int) -> bool:
         return bool(
             build_buy.is_location_pool(sims4.math.Vector3(float(x), float(y), float(z)), int(level))
         )
-    except Exception:  # not known: not a pool
+    except Exception:  # EA's native build data: not a pool (logged)
+        simsight_log.error('housemap: pool')
         return False
 
 
@@ -170,7 +173,7 @@ def _links_json(room: _Room) -> list[dict[str, Any]]:
 
 
 def _distance(a: Any, b: Any) -> int:
-    return int(round(math.hypot(a.x - b.x, a.z - b.z)))
+    return round(math.hypot(a.x - b.x, a.z - b.z))
 
 
 def _item_json(bridge: Any, obj: Any, room: _Room, half: float, sim: Any) -> dict[str, Any] | None:
@@ -218,7 +221,7 @@ def _room_json(
         entry['here'] = sim in room.sims
         if not entry['here']:
             dx, dz = cx - sim.position.x, cz - sim.position.z
-            entry['distance'] = int(round(math.hypot(dx, dz)))
+            entry['distance'] = round(math.hypot(dx, dz))
             entry['bearing'] = compass(dx, dz)
     entry['links'] = _links_json(room)
     half = max(entry['width'], entry['depth']) / 2.0
@@ -468,8 +471,8 @@ def build() -> dict[str, Any] | None:
     import services
 
     bridge = sys.modules['simsight_bridge']
-    lot = services.active_lot()
-    sim = services.get_active_sim()
+    lot: Lot | None = services.active_lot()
+    sim: Sim | None = services.get_active_sim()
     if lot is None:
         return None
     house = _HouseMap(lot)

@@ -16,7 +16,7 @@ module(
     post=lambda fn, *a: fn(*a),
     hotkey=lambda vk, desc: lambda fn: fn,
     log=lambda m: None,
-    log_exc=lambda where: None,
+    log_exc=lambda where: 'plus: ' + where,
 )
 module('simsight_plus_build', busy=[False], last_error={'text': '', 'at': 0.0})
 

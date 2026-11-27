@@ -8,10 +8,20 @@ from __future__ import annotations
 
 import contextlib
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import simsight_log
+import simsight_patch
 import simsight_plus_core as core
+
+if TYPE_CHECKING:
+    from zone import Zone
+    from collections.abc import Callable
+
+    from careers.career_base import CareerBase
+    from date_and_time import DateAndTime, TimeSpan
+    from sims.household import Household
+    from sims.sim_info import SimInfo
 
 DAYS = ('Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday')
 
@@ -29,7 +39,7 @@ class _State:
 _state = _State()
 
 
-def clock_text(dt: Any) -> str:
+def clock_text(dt: DateAndTime) -> str:
     h, m = dt.hour(), dt.minute()
     suffix = 'AM' if h < 12 else 'PM'
     h12 = h % 12 or 12
@@ -38,7 +48,7 @@ def clock_text(dt: Any) -> str:
     return f'{h12}:{m:02d} {suffix}'
 
 
-def day_text(dt: Any) -> str:
+def day_text(dt: DateAndTime) -> str:
     return DAYS[dt.day() % 7]
 
 
@@ -87,8 +97,8 @@ def span_words(minutes: int) -> str:
     return text
 
 
-def _span_text(span: Any) -> str:
-    return span_words(int(round(span.in_minutes())))
+def _span_text(span: TimeSpan) -> str:
+    return span_words(round(span.in_minutes()))
 
 
 def career_word(career: Any) -> str:
@@ -102,7 +112,7 @@ def career_word(career: Any) -> str:
     return 'work'
 
 
-def _work_line(sim_info: Any, career: Any) -> str | None:
+def _work_line(sim_info: SimInfo, career: CareerBase) -> str | None:
     word = career_word(career)
     if career.currently_at_work:
         return f'{sim_info.first_name} is at {word} now'
@@ -114,7 +124,7 @@ def _work_line(sim_info: Any, career: Any) -> str | None:
     return f'{sim_info.first_name} {word} in {_span_text(span)}, {day_text(start)} at {clock_text(start)}'
 
 
-def work_lines(sim_info: Any) -> list[str]:
+def work_lines(sim_info: SimInfo) -> list[str]:
     lines: list[str] = []
     tracker = getattr(sim_info, 'career_tracker', None)
     if tracker is None:
@@ -130,11 +140,11 @@ def work_lines(sim_info: Any) -> list[str]:
     return lines
 
 
-def _owed(household: Any) -> int:
+def _owed(household: Household) -> int:
     return int(household.bills_manager.current_payment_owed or 0)
 
 
-def _money_parts(household: Any) -> list[str]:
+def _money_parts(household: Household) -> list[str]:
     parts = []
     with contextlib.suppress(AttributeError, TypeError, ValueError):  # no funds: left out
         parts.append(f'Household money {int(household.funds.money):,} simoleons')
@@ -151,17 +161,17 @@ def _money_parts(household: Any) -> list[str]:
 def read_time() -> None:
     import services
 
-    now = services.time_service().sim_now
+    now: DateAndTime = services.time_service().sim_now
     parts = [f'{day_text(now)} {clock_text(now)}', speed_text()]
     for info in core.household_sims(instanced_only=False):
         parts.extend(work_lines(info))
-    hh = services.active_household()
+    hh: Household | None = services.active_household()
     if hh is not None:
         parts.extend(_money_parts(hh))
     core.speak('. '.join(p for p in parts if p) + '.')
 
 
-def _work_reminder(info: Any, uid: Any, career: Any) -> str | None:
+def _work_reminder(info: SimInfo, uid: Any, career: CareerBase) -> str | None:
     if career.currently_at_work or career.is_work_time:
         return None
     (span, start, _end) = career.get_next_work_time()
@@ -199,7 +209,7 @@ def _bill_reminder() -> str | None:
     import services
 
     try:
-        hh = services.active_household()
+        hh: Household | None = services.active_household()
         owed = _owed(hh) if hh is not None else 0
     except Exception:
         simsight_log.error('plus time: bill reminder')
@@ -252,7 +262,7 @@ def _zone_running(default: bool) -> Any:
     """The current zone when it is running, else None."""
     import services
 
-    zone = services.current_zone()
+    zone: Zone | None = services.current_zone()
     if zone is None or not getattr(zone, 'is_zone_running', default):
         return None
     return zone
@@ -279,30 +289,30 @@ def _announce_speed(before: Any) -> None:
         simsight_log.error('plus time: announce speed')
 
 
-_HOOK_MARK = '_a11yplus'
+def _clock_hook(original: Callable[..., Any]) -> Callable[..., Any]:
+    """push_speed, pop_speed, set_clock_speed(self, speed, source, ...): a speed change
+    not made by a modal dialog is announced once the game has made it."""
+    from clock import GameSpeedChangeSource
 
-
-def _wrap_clock(name: str) -> None:
-    from clock import GameClock, GameSpeedChangeSource
-
-    original = getattr(GameClock, name)
-    if getattr(original, _HOOK_MARK, False):
-        return
-
-    def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
-        source = kwargs.get('source', args[1] if len(args) > 1 else GameSpeedChangeSource.GAMEPLAY)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        source = kwargs.get('source', args[2] if len(args) > 2 else GameSpeedChangeSource.GAMEPLAY)
         try:
-            before = _effective(self.clock_speed)
-        except Exception:  # no announcement for this change
+            before = _effective(args[0].clock_speed)
+        except Exception:  # a game hook: no announcement for this change
             simsight_log.error('plus time: speed before change')
             before = None
-        result = original(self, *args, **kwargs)
+        result = original(*args, **kwargs)
         if source != GameSpeedChangeSource.UI_MODAL and before is not None:
             core.post(_announce_speed, before)
         return result
 
-    setattr(wrapper, _HOOK_MARK, True)
-    setattr(GameClock, name, wrapper)
+    return wrapper
+
+
+def _wrap_clock(name: str) -> None:
+    from clock import GameClock
+
+    simsight_patch.wrap(GameClock, name, _clock_hook)
 
 
 try:

@@ -74,17 +74,16 @@ def wall_point(room: Any, side: str, where: float = 0.5) -> tuple[float, float]:
 def room_tiles(room: Any) -> set[tuple[int, int]]:
     f = frame()
     return {
-        (int(math.floor(f.local(t[0], t[1])[0])), int(math.floor(f.local(t[0], t[1])[1])))
-        for t in room.tiles
+        (math.floor(f.local(t[0], t[1])[0]), math.floor(f.local(t[0], t[1])[1])) for t in room.tiles
     }
 
 
 # side -> (tile step to the outside neighbor, how to read "left to right" when facing that wall from inside)
 _SIDES: dict[str, tuple[tuple[int, int], Callable[[int, int], int]]] = {
-    'north': ((0, -1), lambda e, n: e),
-    'south': ((0, 1), lambda e, n: -e),
-    'west': ((-1, 0), lambda e, n: -n),
-    'east': ((1, 0), lambda e, n: n),
+    'north': ((0, -1), lambda e, _n: e),
+    'south': ((0, 1), lambda e, _n: -e),
+    'west': ((-1, 0), lambda _e, n: -n),
+    'east': ((1, 0), lambda _e, n: n),
 }
 
 

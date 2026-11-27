@@ -8,6 +8,7 @@ import time
 from typing import TYPE_CHECKING, Any
 
 from simsight_commands import real_annotations
+import simsight_log
 import simsight_plus_core as core
 import simsight_steps as steps
 
@@ -161,20 +162,20 @@ def bridge_ok() -> bool:
 def _register_flash_command() -> None:
     import sims4.commands
 
-    @sims4.commands.Command('a11yplus.flash', command_type=sims4.commands.CommandType.Live)
+    @sims4.commands.Command('a11yplus.flash', command_type=sims4.commands.CommandType.Live)  # type: ignore[misc]  # EA's decorator is untyped
     @real_annotations
     def a11yplus_flash(encoded: str = '', _connection: Any = None) -> bool:
         try:
             return _flash_reply(encoded)
-        except Exception:
-            core.log_exc('flash reply')
+        except Exception:  # a console command
+            simsight_log.error(core.log_exc('flash reply'))
             return False
 
 
 try:
     _register_flash_command()
-except Exception:
-    core.log_exc('register a11yplus.flash')
+except Exception:  # module load: the rest of the mod still loads
+    simsight_log.error(core.log_exc('register a11yplus.flash'))
 
 
 def request_catalog(name: str, product_type: int, tags: str, nxt: str) -> None:
@@ -368,7 +369,7 @@ def place_styled_room() -> None:
                 'Room position',
                 'Type meters from the west edge, then from the north edge, for example 3 6.',
                 '',
-                lambda t: go(tuple((whole_numbers(t) + [0, 0])[:2])),
+                lambda t: go(tuple(([*whole_numbers(t), 0, 0])[:2])),
             )
         else:
             go(value)

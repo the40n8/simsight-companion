@@ -6,6 +6,7 @@ import threading
 import time
 from typing import TYPE_CHECKING, Any
 
+import simsight_log
 import simsight_plus_core as core
 
 from .state import _product, busy, catalog_state
@@ -60,7 +61,7 @@ def build_room() -> None:
             core.speak('Please type two numbers, for example 4 5.')
             return
         (w, d) = nums[0], nums[1]
-        f, grid = tile_map()
+        _f, grid = tile_map()
         spots = free_spots(grid, w, d)
         rows: list[Row] = [
             (
@@ -86,7 +87,7 @@ def build_room() -> None:
                     'Room position',
                     'Type meters from the west edge, then meters from the north edge, for example 2 3.',
                     '',
-                    lambda t: _do_room(w, d, *(whole_numbers(t) + [None, None])[:2]),
+                    lambda t: _do_room(w, d, *([*whole_numbers(t), None, None])[:2]),
                 )
             else:
                 _do_room(w, d, value[0], value[1])
@@ -153,7 +154,7 @@ def _do_room(w: int, d: int, e: int | None, n: int | None) -> None:
                     'You can undo it from the SimSight build actions.',
                 )
         except Exception:
-            core.log_exc('room job')
+            simsight_log.error(core.log_exc('room job'))
             core.post(core.speak, 'Sorry, building the room failed.')
         finally:
             busy[0] = False

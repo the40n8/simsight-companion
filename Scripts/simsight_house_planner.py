@@ -11,6 +11,7 @@ import simsight_log
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
+    from simsight_plus_house import Plan
     from simsight_steps import Job
 
     Point = tuple[float, float]
@@ -133,7 +134,7 @@ def _door(what: str, a: Tile, b: Tile, front: bool, level: int) -> dict[str, Any
 def _hall_doors(rooms: Sequence[dict[str, Any]], level: int) -> list[dict[str, Any]]:
     """A door from each front room into the hallway, then from the hallway to each back room."""
     front, hall = _FRONT, _HALL
-    hallroom = [r for r in rooms if r['kind'] == 'hall'][0]
+    hallroom = next(r for r in rooms if r['kind'] == 'hall')
     doors = []
     for r in rooms:
         if r['uv'][1] == 0:
@@ -150,12 +151,12 @@ def _hall_doors(rooms: Sequence[dict[str, Any]], level: int) -> list[dict[str, A
 
 def build_plan(
     width: int, depth: int, levels: Sequence[int], layout: str, names_by_level: dict[int, list[str]]
-) -> Any:
+) -> Plan:
     """A house.Plan of stacked identical levels with a hallway and straight stairs."""
     import simsight_plus_build as build
     import simsight_plus_house as house
 
-    p: Any = house.Plan()
+    p = house.Plan()
     p.side = house.street_side()
     p.width = width
     p.depth = depth
@@ -169,7 +170,7 @@ def build_plan(
         rooms = _level_rooms(names_by_level[level], level, width, depth, layout)
         p.rooms += rooms
         p.doors += _hall_doors(rooms, level)
-    ground = [r for r in p.rooms if r['level'] == 0 and r['uv'][1] == 0][0]
+    ground = next(r for r in p.rooms if r['level'] == 0 and r['uv'][1] == 0)
     mid = (ground['uv'][0] + ground['uv'][2]) // 2
     p.doors.append(_door('Front door into {}'.format(ground['name']), (mid, 0), (mid, -1), True, 0))
     frame = build.frame()
@@ -193,7 +194,7 @@ def build_plan(
     ]
     if transitions:
         p.stairs = {'top_lot': transitions[0][0], 'climb_lot': transitions[0][1]}
-    p._a11y_transitions = transitions
+    p.transitions = transitions
     return p
 
 
@@ -269,7 +270,7 @@ def place_stair_at(top: Tile, climb: Tile, level: int) -> bool | str:
     return 'failed'
 
 
-def _built_completely(plan: Any) -> bool:
+def _built_completely(plan: Plan) -> bool:
     """After a build: does every planned room exist, with its box and level?"""
     try:
         import simsight_plus_build as build
@@ -277,23 +278,23 @@ def _built_completely(plan: Any) -> bool:
 
         actual = {(build.room_box(r), int(r.level)) for r in rooms.scan_rooms()}
         complete = all((r['box'], int(r.get('level', 0))) in actual for r in plan.rooms)
-        simsight_log.line(
-            'house planner: post-build completeness {} actual={} wanted={}'.format(
-                complete, actual, [(r['box'], r.get('level', 0)) for r in plan.rooms]
-            )
-        )
-        return complete
-    except Exception as ex:
+    except Exception as ex:  # the room scan runs EA's native room queries (logged)
         simsight_log.line(f'house planner: post-build completeness failed: {ex!r}')
         simsight_log.error('house planner: post-build completeness')
         return False
+    simsight_log.line(
+        'house planner: post-build completeness {} actual={} wanted={}'.format(
+            complete, actual, [(r['box'], r.get('level', 0)) for r in plan.rooms]
+        )
+    )
+    return complete
 
 
-def build_with_followup(plan: Any) -> Any:
+def build_with_followup(plan: Plan) -> Any:
     """Build the plan; when a stacked house is complete, offer the roof builder."""
     result = _original_build(plan)
     complete = _built_completely(plan)
-    if getattr(plan, '_a11y_roof_prompt', False) and complete:
+    if plan.roof_prompt and complete:
         try:
             import simsight_plus_core as core
             import simsight_roof_tools as roofs
@@ -327,7 +328,7 @@ def shaped_stair_diagnostics() -> None:
     steps.start('a11y_stair_discovery', work())
 
 
-def _original_build(plan: Any) -> Any:
+def _original_build(plan: Plan) -> Any:
     import simsight_plus_house as house
 
     return house.build_base(plan)

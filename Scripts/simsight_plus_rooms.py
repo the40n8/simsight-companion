@@ -15,6 +15,9 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
     from typing import Protocol
 
+    from lots.lot import Lot
+    from sims.sim import Sim
+
     class Boxed(Protocol):
         """A room as the names file knows it: its floor and tile centres."""
 
@@ -99,7 +102,8 @@ def room_id_at(x: float, z: float, level: Any, y: float | None = None) -> int:
     if y is None:
         try:
             y = terrain.get_terrain_height(x, z)
-        except Exception:  # off the terrain: height 0
+        except Exception:  # EA's native terrain: height 0 (logged)
+            simsight_log.error('plus rooms: terrain height')
             y = 0.0
     pos = sims4.math.Vector3(float(x), float(y), float(z))
     try:
@@ -125,7 +129,7 @@ class Room:
         self.level = level
         self.tiles: list[tuple[float, float]] = []  # (x, z) world tile centres
         self.objects: list[Any] = []
-        self.sims: list[Any] = []
+        self.sims: list[Sim] = []
         self.name = 'Room'
 
     @property
@@ -140,8 +144,8 @@ class Room:
             return ''
         xs = [t[0] for t in self.tiles]
         zs = [t[1] for t in self.tiles]
-        w = int(round(max(xs) - min(xs))) + 1
-        d = int(round(max(zs) - min(zs))) + 1
+        w = round(max(xs) - min(xs)) + 1
+        d = round(max(zs) - min(zs)) + 1
         if w * d == n:
             return f'{w} by {d} meters'
         return f'about {n} square meters'
@@ -151,17 +155,18 @@ class LotGrid:
     """The lot's 1 meter tiles: nu by nv along its corners 0 to 1 (u) and 0 to 3
     (v), tile (i, j) centred at world(); levels is its floor range."""
 
-    def __init__(self, lot: Any) -> None:
+    def __init__(self, lot: Lot) -> None:
         corners = list(lot.corners)
         c0, c1, c3 = corners[0], corners[1], corners[3]
         self.x0, self.z0 = c0.x, c0.z
         self.ux, self.uz = c1.x - c0.x, c1.z - c0.z
         self.vx, self.vz = c3.x - c0.x, c3.z - c0.z
-        self.nu = max(1, int(round(math.hypot(self.ux, self.uz))))
-        self.nv = max(1, int(round(math.hypot(self.vx, self.vz))))
+        self.nu = max(1, round(math.hypot(self.ux, self.uz)))
+        self.nv = max(1, round(math.hypot(self.vx, self.vz)))
         try:
             self.levels = range(int(lot.min_level), int(lot.max_level) + 1)
-        except Exception:  # no floor range on this lot: the usual three floors
+        except Exception:  # EA's native floor range: the usual three floors (logged)
+            simsight_log.error('plus rooms: floor range')
             self.levels = range(3)
 
     def world(self, i: int, j: int) -> tuple[float, float]:
@@ -207,7 +212,9 @@ def _add_object(rooms: dict[tuple[int, int], Room], obj: Any) -> None:
 
 def _add_sims(rooms: dict[tuple[int, int], Room]) -> None:
     for info in core.household_sims():
-        sim = info.get_sim_instance()
+        sim: Sim | None = info.get_sim_instance()
+        if sim is None:  # household_sims() lists instanced Sims only
+            continue
         room = rooms.get((_obj_room(sim), int(sim.level)))
         if room is not None:
             room.sims.append(sim)
@@ -217,7 +224,7 @@ def scan_rooms_base() -> list[Room]:
     """Return list of Room, indoor rooms only, on every floor of the active lot."""
     import services
 
-    lot = services.active_lot()
+    lot: Lot | None = services.active_lot()
     if lot is None:
         return []
     grid = LotGrid(lot)
@@ -267,10 +274,10 @@ def _box_key(room: Boxed) -> BoxKey:
     return (
         int(services.current_zone_id()),
         int(room.level),
-        int(round(min(xs))),
-        int(round(min(zs))),
-        int(round(max(xs))),
-        int(round(max(zs))),
+        round(min(xs)),
+        round(min(zs)),
+        round(max(xs)),
+        round(max(zs)),
     )
 
 
@@ -370,17 +377,17 @@ def _name_rooms(rooms: list[Room]) -> None:
             room.name = f'{room.name} {numbered[room.name]}'
 
 
-def _where_text(room: Room, sim: Any) -> str:
+def _where_text(room: Room, sim: Sim) -> str:
     (cx, cz) = room.center
     dx, dz = cx - sim.position.x, cz - sim.position.z
-    dist = int(round(math.hypot(dx, dz)))
+    dist = round(math.hypot(dx, dz))
     text = floor_name(room.level)
     if sim in room.sims or dist < 1:
         return 'you are here, ' + text
     return f'{dist} meters {bearing(dx, dz)}, {text}'
 
 
-def _room_row(room: Room, sim: Any) -> tuple[str, str, Room]:
+def _room_row(room: Room, sim: Sim) -> tuple[str, str, Room]:
     who = ', '.join(s.sim_info.first_name for s in room.sims)
     desc = '{}. {}. {} objects{}.'.format(
         room.size_text(),
@@ -410,17 +417,16 @@ def open_rooms() -> None:
     )
 
 
-def _object_label(obj: Any) -> Any:
+def object_label(obj: Any) -> Any:
     """The object's catalog name as a LocalizedString, or 'Object'."""
+    from protocolbuffers.Localization_pb2 import LocalizedString
+    from sims4.localization import _create_localized_string
+
     try:
         label = obj.catalog_name
-        from protocolbuffers.Localization_pb2 import LocalizedString
-
         if not isinstance(label, LocalizedString):
-            from sims4.localization import _create_localized_string
-
             label = _create_localized_string(int(getattr(label, 'hash', label)))
-    except Exception:  # no catalog name to read: a plain word
+    except (AttributeError, TypeError, ValueError):  # no catalog name to read: a plain word
         return 'Object'
     return label
 
@@ -434,9 +440,9 @@ def _open_room(room: Room) -> None:
     rows = []
     for obj, name in entries:
         dx, dz = obj.position.x - sim.position.x, obj.position.z - sim.position.z
-        dist = int(round(math.hypot(dx, dz)))
+        dist = round(math.hypot(dx, dz))
         desc = 'here' if dist < 1 else f'{dist} meters {bearing(dx, dz)}'
-        label = _object_label(obj) if name is None else name
+        label = object_label(obj) if name is None else name
         rows.append((label, desc + '. Choose to see its actions.', obj, False, obj))
     if not rows:
         core.speak(f'{room.name} is empty.')
@@ -464,7 +470,8 @@ def where_am_i() -> None:
         name = next((room.name for room in scan_rooms() if room.rid == rid), None)
     try:
         outside = build_buy.is_location_outside(sim.position, int(sim.level))
-    except Exception:  # not known: said as inside
+    except Exception:  # EA's native build data: said as inside (logged)
+        simsight_log.error('plus rooms: outside')
         outside = None
     first, floor = sim.sim_info.first_name, floor_name(int(sim.level))
     if name:

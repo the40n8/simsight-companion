@@ -9,7 +9,10 @@ from typing import TYPE_CHECKING, Any
 import simsight_log
 
 if TYPE_CHECKING:
+    from lots.lot import Lot
     from collections.abc import Callable
+
+    from simsight_plus_house import Plan
 
 
 class _State:
@@ -55,7 +58,7 @@ def _record_main() -> None:
 def _scan_main() -> Any:
     import services
 
-    lot = services.active_lot()
+    lot: Lot | None = services.active_lot()
     if lot is not None and _state.build.in_build_mode():
         old = (getattr(lot, '_min_level', None), getattr(lot, '_max_level', None))
         # Native Lot caches these properties until Zone.on_build_buy_exit.
@@ -79,21 +82,21 @@ def scan_rooms() -> Any:
     return result
 
 
-def _context(plan: Any) -> Any:
+def _context(plan: Plan) -> Plan:
     import services
 
-    plan._a11y_zone = int(services.current_zone_id())
-    plan._a11y_household = int(services.active_household_id())
+    plan.zone = int(services.current_zone_id())
+    plan.household = int(services.active_household_id())
     return plan
 
 
-def _valid(plan: Any) -> bool:
+def _valid(plan: Plan) -> bool:
     import services
 
-    return (
+    return bool(
         _state.build.in_build_mode()
-        and int(services.current_zone_id()) == plan._a11y_zone
-        and int(services.active_household_id()) == plan._a11y_household
+        and int(services.current_zone_id()) == plan.zone
+        and int(services.active_household_id()) == plan.household
     )
 
 
@@ -101,7 +104,7 @@ def _floor(level: int) -> str:
     return 'Basement' if level == -1 else 'Ground floor' if level == 0 else f'Floor {level + 1}'
 
 
-def _position(plan: Any, room: dict[str, Any]) -> str:
+def _position(plan: Plan, room: dict[str, Any]) -> str:
     level = room.get('level', 0)
     boxes = [r['box'] for r in plan.rooms if r.get('level', 0) == level]
     west, north, east, south = (
@@ -133,7 +136,7 @@ def _position(plan: Any, room: dict[str, Any]) -> str:
     )
 
 
-def _room_at(plan: Any, tile: tuple[int, int], level: int) -> str | None:
+def _room_at(plan: Plan, tile: tuple[int, int], level: int) -> str | None:
     """Name of the planned room on `level` that holds lot tile `tile`."""
     return next(
         (
@@ -147,7 +150,7 @@ def _room_at(plan: Any, tile: tuple[int, int], level: int) -> str | None:
     )
 
 
-def _door_names(plan: Any) -> None:
+def _door_names(plan: Plan) -> None:
     """Name each door after the rooms on its two sides."""
     for door in plan.doors:
         level = door.get('level', 0)
@@ -168,7 +171,7 @@ def _check_story_count(stories: object, basement: bool) -> None:
 
 
 def _copy_level(
-    original: Any, templates: dict[int, list[dict[str, Any]]], level: int
+    original: Plan, templates: dict[int, list[dict[str, Any]]], level: int
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Rooms and doors of `level`: its own template, else the ground floor's for a
     basement, else the highest floor's (renamed for this floor)."""
@@ -194,7 +197,7 @@ def _copy_level(
     return rooms, doors
 
 
-def _extend(plan: Any, stories: int, basement: bool) -> Any:
+def _extend(plan: Plan, stories: int, basement: bool) -> Plan:
     """Keep each existing floor template; repeat the highest template for additions."""
     original = copy.deepcopy(plan)
     templates: dict[int, list[dict[str, Any]]] = {}
@@ -224,17 +227,15 @@ def _extend(plan: Any, stories: int, basement: bool) -> Any:
     frame = _state.build.frame()
     along = frame.width if p.side in ('north', 'south') else frame.depth
     _state.house.map_plan(p, frame, along)
-    p._a11y_transitions = []
+    p.transitions = []
     if p.stairs:
         for lower in levels[:-1]:
-            p._a11y_transitions.append(
-                (p.stairs['top_lot'], p.stairs['climb_lot'], lower, lower + 1)
-            )
+            p.transitions.append((p.stairs['top_lot'], p.stairs['climb_lot'], lower, lower + 1))
     _door_names(p)
     return p
 
 
-def _summary(plan: Any) -> str:
+def _summary(plan: Plan) -> str:
     levels = sorted({r.get('level', 0) for r in plan.rooms})
     counts = ', '.join(
         '{}: {} rooms'.format(
@@ -243,12 +244,10 @@ def _summary(plan: Any) -> str:
         )
         for level in levels
     )
-    return '{} by {} metres. Street-facing side: {}. {}. {} connecting stair runs.'.format(
-        plan.width, plan.depth, plan.side, counts, len(getattr(plan, '_a11y_transitions', ()))
-    )
+    return f'{plan.width} by {plan.depth} metres. Street-facing side: {plan.side}. {counts}. {len(plan.transitions)} connecting stair runs.'
 
 
-def _edit_rooms(plan: Any) -> None:
+def _edit_rooms(plan: Plan) -> None:
     rows = [(r['name'], _position(plan, r), i) for i, r in enumerate(plan.rooms)] + [
         ('Back to house plan', None, None)
     ]
@@ -315,7 +314,7 @@ def _edit_rooms(plan: Any) -> None:
     )
 
 
-def _stories(plan: Any) -> None:
+def _stories(plan: Plan) -> None:
     low, high = _state.planner.floor_limits()
 
     def count_chosen(count: int) -> None:
@@ -354,8 +353,8 @@ def _stories(plan: Any) -> None:
     )
 
 
-def _review(plan: Any) -> None:
-    if getattr(plan, 'problem', None):
+def _review(plan: Plan) -> None:
+    if plan.problem:
         _state.core.speak(plan.problem)
         return
     if not _valid(plan):
@@ -364,7 +363,7 @@ def _review(plan: Any) -> None:
     estimate = (
         _state.house.wall_meters(plan) * _state.house.WALL_PRICE
         + len(plan.doors) * 100
-        + len(getattr(plan, '_a11y_transitions', ())) * _state.house.STAIR_PRICE
+        + len(plan.transitions) * _state.house.STAIR_PRICE
     )
     funds = _state.build.funds() or 0
     rows = [
@@ -395,12 +394,12 @@ def _review(plan: Any) -> None:
                 _state.core.speak('Still working on the last build step.')
                 return
             _door_names(plan)
-            plan._a11y_roof_prompt = True
+            plan.roof_prompt = True
             _log(
                 'approved',
                 summary=_summary(plan),
                 rooms=[(r.get('level', 0), r['kind'], r['name'], r['box']) for r in plan.rooms],
-                stairs=getattr(plan, '_a11y_transitions', ()),
+                stairs=plan.transitions,
             )
             _state.house.start_build(plan)
 

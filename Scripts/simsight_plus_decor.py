@@ -9,6 +9,7 @@ import time
 from typing import TYPE_CHECKING, Any
 
 import simsight_plus_build as build
+import simsight_log
 import simsight_plus_core as core
 import simsight_steps as steps
 
@@ -23,20 +24,6 @@ PARTS = {'walls': (7, 'Wall patterns, paint and wallpaper'), 'floor': (5, 'Floor
 
 def _say(text: str) -> None:
     core.post(core.speak, text)
-
-
-def _row_name(obj: Any) -> Any:
-    try:
-        label = obj.catalog_name
-        from protocolbuffers.Localization_pb2 import LocalizedString
-
-        if not isinstance(label, LocalizedString):
-            from sims4.localization import _create_localized_string
-
-            label = _create_localized_string(int(getattr(label, 'hash', label)))
-        return label
-    except Exception:  # catalog names come in many shapes: a plain label still reads
-        return 'Object'
 
 
 # ---------------------------------------------------------------- decorate a room
@@ -149,7 +136,7 @@ def _paint(room: Any, part: str, index: int, name: str) -> None:
                 time.sleep(0.5)
                 core.post(verify)
         except Exception:
-            core.log_exc('decorate')
+            simsight_log.error(core.log_exc('decorate'))
             _say('Sorry, painting failed.')
         finally:
             build.busy[0] = False
@@ -211,6 +198,7 @@ _REFUSAL_TEXT = {
 
 def _pick_things(room: Any) -> None:
     import simsight_place as place
+    import simsight_plus_rooms as rooms
 
     rows = []
     for obj in room.objects:
@@ -221,7 +209,7 @@ def _pick_things(room: Any) -> None:
             desc = 'Cannot sell: {}.'.format(_REFUSAL_TEXT.get(refusal, 'not allowed'))
         else:
             desc = f'Sells for {place.object_value(obj):,} simoleons.'
-        rows.append((_row_name(obj), desc, obj.id, False, obj))
+        rows.append((rooms.object_label(obj), desc, obj.id, False, obj))
     if not rows:
         core.speak(f'There is nothing to sell in the {room.name}.')
         return

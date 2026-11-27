@@ -9,6 +9,7 @@ import time
 from typing import TYPE_CHECKING, Any
 
 import simsight_plus_build as build
+import simsight_log
 import simsight_plus_core as core
 import simsight_steps as steps
 
@@ -485,7 +486,7 @@ def _draw_worker(tool: str, a: tuple[int, int], b: tuple[int, int]) -> None:
             draw_state['n'],
         )  # the next piece starts where this one ended
     except Exception:
-        core.log_exc('draw job')
+        simsight_log.error(core.log_exc('draw job'))
         _say('Sorry, drawing failed.')
     finally:
         build.busy[0] = False
@@ -567,7 +568,7 @@ def draw_roof_box(box: Sequence[int], level: int = 0) -> None:
         core.log(f'roof: box {box} result {res}')
         _say(_roof_result(res, box))
     except Exception:
-        core.log_exc('roof job')
+        simsight_log.error(core.log_exc('roof job'))
         _say('Sorry, the roof failed.')
     finally:
         build.busy[0] = False
@@ -603,8 +604,9 @@ def _gdi_prototypes(ctypes: Any, u: Any, g: Any) -> None:
     g.GetDIBits.argtypes = [vp, vp, ctypes.c_uint, ctypes.c_uint, vp, vp, ctypes.c_uint]
 
 
-def _bitmap_info(ctypes: Any, w: int, h: int) -> Any:
-    """A BITMAPINFO for a top-down 32-bit image of w by h pixels."""
+def _bitmap_info(w: int, h: int) -> Any:
+    """A BITMAPINFO for a top-down 32-bit image of w by h pixels (Windows only)."""
+    import ctypes
 
     class BMI(ctypes.Structure):
         _fields_ = [
@@ -640,7 +642,7 @@ def _grab_screen(x0: int, y0: int, w: int, h: int) -> bytes:
     bmp = g.CreateCompatibleBitmap(src, w, h)
     old = g.SelectObject(mem, bmp)
     g.BitBlt(mem, 0, 0, w, h, src, x0, y0, 0x00CC0020)
-    bmi = _bitmap_info(ctypes, w, h)
+    bmi = _bitmap_info(w, h)
     buf = ctypes.create_string_buffer(w * h * 4)
     g.GetDIBits(mem, bmp, 0, h, buf, ctypes.byref(bmi), 0)
     g.SelectObject(mem, old)
