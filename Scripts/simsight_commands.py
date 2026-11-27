@@ -34,8 +34,8 @@ def real_annotations(func: F) -> F:
         if isinstance(annotation, str):
             try:
                 value = eval(annotation, func.__globals__)  # noqa: S307 - our own annotation text
-            except Exception:  # noqa: BLE001 - not a class at runtime: left as plain text
-                continue
+            except (NameError, AttributeError, SyntaxError, TypeError):
+                continue  # not a class at runtime (Any, X | None, ...): plain text
         if isinstance(value, type):
             resolved[name] = value
     func.__annotations__ = resolved
