@@ -185,7 +185,7 @@ def _rectangle(wanted: _Box) -> bool:
     if len(matches) != 1:
         return False
     actual = {
-        (int(math.floor(frame.local(x, z)[0])), int(math.floor(frame.local(x, z)[1])))
+        (math.floor(frame.local(x, z)[0]), math.floor(frame.local(x, z)[1]))
         for x, z in matches[0].tiles
     }
     expected = {(x, z) for x in range(wanted[0], wanted[2]) for z in range(wanted[1], wanted[3])}
@@ -473,23 +473,34 @@ def _ask_room() -> None:
     )
 
 
+def _inspected(geometry: _Rooms | None) -> _Rooms:
+    if geometry is None:
+        raise RuntimeError('Room inspection timed out')
+    return geometry
+
+
+def _inspect_failed(exc: Exception) -> None:
+    simsight_log.json_line(_LOG, 'inspect-failed', error=str(exc))
+    _speak_later('Basement inspection failed. ' + str(exc))
+
+
 def _inspect_work() -> Job[None]:
     import simsight_steps as steps
 
     try:
         state = yield steps.OnMain(_context)
         info = yield from _state.helpers.native_floor_steps(state)
-        geometry = yield steps.OnMain(_rooms)
-        if geometry is None:
-            raise RuntimeError('Room inspection timed out')
+        geometry = _inspected((yield steps.OnMain(_rooms)))
         basements = sorted(box for box, level in geometry if level == -1)
         simsight_log.json_line(_LOG, 'inspect', basement_rooms=basements, native_floor=info)
         _speak_later(
             f'Logged current floor bounds and {len(basements)} basement rooms. Nothing was built or selected.'
         )
+    except RuntimeError as exc:  # the inspection's own refusal: spoken as it is
+        _inspect_failed(exc)
     except Exception as exc:  # a job: report every failure, never raise
-        simsight_log.json_line(_LOG, 'inspect-failed', error=str(exc))
-        _speak_later('Basement inspection failed. ' + str(exc))
+        simsight_log.error('basement: inspect')
+        _inspect_failed(exc)
 
 
 def _inspect() -> None:

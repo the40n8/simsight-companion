@@ -39,7 +39,7 @@ sims4.math = module(
 
 
 class Lot:
-    corners = [V(0, 0, 0), V(6, 0, 0), V(0, 0, 8), V(6, 0, 8)]
+    corners = (V(0, 0, 0), V(6, 0, 0), V(0, 0, 8), V(6, 0, 8))
     center = V(3, 0, 4)
 
     def is_position_on_lot(self, p):
@@ -85,7 +85,7 @@ module(
 
 
 def test_location(obj, def_id, location, ignore):
-    point, angle = location
+    point, _angle = location
     ok = point.x > 3.2  # the object fits from the fourth column east
     return (ok, None if ok else 'ObjectFootprint intersects')
 
@@ -159,8 +159,8 @@ module(
 )
 
 
-def alignment_fit(frame, with_facing=True, objects=None):
-    return grid.fit_parts_base(frame, with_facing=with_facing, objects=objects)
+def alignment_fit(frame, with_facing=True):
+    return grid.fit_parts_base(frame, with_facing=with_facing)
 
 
 def room_parts(frame):

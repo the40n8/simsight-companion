@@ -118,7 +118,7 @@ def _slot_zone() -> tuple[int, int]:
 
         slot = int(services.get_persistence_service().get_save_slot_proto_buff().slot_id)
         return slot, int(services.current_zone_id())
-    except Exception:  # no save slot yet: signatures fall back to 0:0
+    except (AttributeError, TypeError):  # no save slot or zone yet: signatures fall back to 0:0
         return 0, 0
 
 
@@ -139,12 +139,10 @@ def _touches(a: _Room, b: _Room) -> bool:
 
 
 def _object_kind(obj: Any) -> str:
-    try:
-        import simsight_plus_rooms as rooms
+    import simsight_plus_rooms as rooms
 
-        words = ' '.join(rooms.tag_names(obj)).lower() + ' ' + type(obj).__name__.lower()
-    except Exception:  # an object without tags is an ordinary object
-        return 'object'
+    # tag_names is empty for an object without tags: an ordinary object.
+    words = ' '.join(rooms.tag_names(obj)).lower() + ' ' + type(obj).__name__.lower()
     if any(w in words for w in ('plant', 'flower', 'shrub', 'tree', 'garden')):
         return 'landscaping'
     if 'window' in words:
@@ -180,7 +178,7 @@ def _opening(obj: Any, frame: Any) -> tuple[str, float, float, int] | None:
             return None
         e, n = frame.local(obj.position.x, obj.position.z)
         level = int(obj.level)
-    except Exception:  # an object that will not say where it is
+    except (AttributeError, TypeError):  # an object that will not say where it is
         return None
     kind = _object_kind(obj)
     return (kind, e, n, level) if kind in ('door', 'window') else None
@@ -301,12 +299,13 @@ def room_parts(frame: Any) -> tuple[list[Any], dict[str, bool]]:
     parts, facts = grid.room_parts_base(frame)
     if _state.enabled:
         try:
-            parts = list(parts) + [
+            parts = [
+                *parts,
                 _describe_tile(grid.location.tile[0], grid.location.tile[1], grid.location.level)
-                + ' '
+                + ' ',
             ]
-        except Exception as ex:
-            _log(f'tile announcement failed: {ex!r}')
+        except Exception:  # the room scan and the tile facts read many EA objects
+            simsight_log.error('lot grid: tile announcement')
     return parts, facts
 
 

@@ -8,13 +8,15 @@ import math
 import os
 import threading
 import time
-from typing import Any, Callable, TypeVar
+from typing import Any, Callable
 
 import sims4.commands
 from simsight_commands import real_annotations
 import simsight_log
 
-_F = TypeVar('_F', bound=Callable[..., Any])
+# What a Win32 reading can raise here: our own refusals, a missing or failing
+# function (AttributeError, OSError), an argument ctypes cannot convert.
+_WIN32_ERRORS = (RuntimeError, OSError, AttributeError, TypeError, ValueError, ctypes.ArgumentError)
 
 
 class POINT(ctypes.Structure):
@@ -113,7 +115,7 @@ class _Snapshot:
     def field(self, name: str, fn: Callable[[], Any]) -> None:
         try:
             self.result[name] = fn()
-        except Exception as exc:  # a diagnostic: name whatever failed, keep reading
+        except _WIN32_ERRORS as exc:  # a diagnostic: name what failed, keep reading
             self.errors[name] = type(exc).__name__
 
     def rect(self, fn: Any) -> list[int]:
@@ -168,7 +170,7 @@ class _Snapshot:
             sample['screen_physical_for_window'] = self.point(
                 u.LogicalToPhysicalPointForPerMonitorDPI, screen
             )
-        except Exception as exc:  # a diagnostic: name whatever failed
+        except _WIN32_ERRORS as exc:  # a diagnostic: name what failed
             sample['error'] = type(exc).__name__
         return sample
 
@@ -247,13 +249,13 @@ def record(kind: str, data: Any = None, build: Any = None) -> bool:
         if build is not None and 'refused' not in row:
             try:
                 row['adapter_size_reported'] = list(build.stage_size())
-            except Exception as exc:  # a diagnostic: name whatever failed
+            except _WIN32_ERRORS as exc:  # a diagnostic: name what failed
                 row['errors']['adapter_size_reported'] = type(exc).__name__
         simsight_log.line('display inspect: ' + json.dumps(row, sort_keys=True, default=str))
-        return 'refused' not in row
-    except Exception as exc:
-        simsight_log.line('display inspect: capture failed ' + type(exc).__name__)
+    except Exception:  # timer and projection threads: optional logging never stops them
+        simsight_log.error('display inspect: capture')
         return False
+    return 'refused' not in row
 
 
 def _engine() -> Any:
@@ -282,11 +284,11 @@ def install() -> None:
 def _capture(build: Any) -> None:
     try:
         record('manual', build=build)
-    except Exception as exc:
-        simsight_log.line('display inspect: manual capture failed ' + type(exc).__name__)
+    except Exception:  # timer thread: nothing above it catches
+        simsight_log.error('display inspect: manual capture')
 
 
-@sims4.commands.Command(
+@sims4.commands.Command(  # type: ignore[misc]  # EA's Command is untyped
     'simsight.inspect_display', 'a11y.inspect_display', command_type=sims4.commands.CommandType.Live
 )
 @real_annotations
@@ -301,8 +303,8 @@ def inspect_display(delay: float = 5, _connection: Any = None) -> bool:
         import simsight_plus_build as build
 
         install()
-    except Exception as exc:
-        simsight_log.line('display inspect: adapter unavailable ' + type(exc).__name__)
+    except Exception:  # the Build helper failed to load: any error of its module code
+        simsight_log.error('display inspect: adapter unavailable')
         output('Display diagnostic unavailable; see SimSight log.')
         return False
     if _state.timer is not None:

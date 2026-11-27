@@ -23,6 +23,9 @@ import simsight_speech as speech
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from sims.sim import Sim
+    from world.lot import Lot
+
     from simsight_tiles import Frame
 
     Part = Any  # text, or a ('loc', hash) part the client resolves
@@ -106,13 +109,13 @@ def active() -> bool:
             or not _controls_enabled()
         ):
             _state.active = False
-    except Exception:  # no zone (loading, leaving): the grid is off
+    except AttributeError:  # no zone manager (loading, leaving): the grid is off
         _state.active = False
     return _state.active
 
 
 def _sample_key(x: float, z: float) -> Tile:
-    return int(math.floor(x + 0.5)), int(math.floor(z + 0.5))
+    return math.floor(x + 0.5), math.floor(z + 0.5)
 
 
 def world_surface() -> Any:
@@ -135,7 +138,7 @@ def _position(x: float | None = None, z: float | None = None) -> Any:
     return Vector3(x, float(y), z)
 
 
-def _start(sim: Any, lot: Any) -> Any:
+def _start(sim: Sim, lot: Lot) -> tuple[str, str] | None:
     """Put the cursor at its start point; returns the note to say first."""
     import services
 
@@ -147,6 +150,30 @@ def _start(sim: Any, lot: Any) -> Any:
     _state.zone_id = services.current_zone_id()
     _state.origin = (_state.x, _state.z)
     return start_note
+
+
+def _started() -> tuple[bool, tuple[str, str] | None]:
+    """Start the cursor and switch the Build aim off: (started, the note to
+    say first); not started without a household, Sim or lot point."""
+    import services
+
+    sim = services.get_active_sim()
+    lot = services.active_lot()
+    if sim is None or lot is None:
+        return False, None
+    try:
+        start_note = _start(sim, lot)
+        import simsight_build as build
+
+        if build.active() or build.aiming():
+            build.request('off')
+        _state.active = True
+    except ValueError:  # no point on the lot to start from
+        return False, None
+    except Exception:  # EA's Sim and lot points, then the Build aim: the grid stays off
+        simsight_log.error('grid: start')
+        return False, None
+    return True, start_note
 
 
 def enter() -> bool:
@@ -164,20 +191,8 @@ def enter() -> bool:
             'Wyłącz tryb skanera, aby użyć siatki parceli.',
         )
         return False
-    import services
-
-    try:
-        sim = services.get_active_sim()
-        lot = services.active_lot()
-        if sim is None or lot is None:
-            raise ValueError('No active Sim or lot')
-        start_note = _start(sim, lot)
-        import simsight_build as build
-
-        if build.active() or build.aiming():
-            build.request('off')
-        _state.active = True
-    except Exception:  # no household, Sim or lot point to start from
+    started, start_note = _started()
+    if not started:
         _state.active = False
         _say(
             'Load a household with an active Sim first.',
@@ -274,19 +289,19 @@ _START_POINTS = (
 )
 
 
-def _lot_point(lot: Any, name: str) -> Any:
+def _lot_point(lot: Lot, name: str) -> Any:
     """lot.center, or lot.get_default_position(); None when the lot will not say."""
     try:
         value = getattr(lot, name)
         candidate = value() if name == 'get_default_position' else value
         if candidate is not None and lot.is_position_on_lot(candidate):
             return candidate
-    except Exception:  # the lot will not give this point: try the next
+    except (AttributeError, TypeError, ValueError):  # the lot will not give this point
         return None
     return None
 
 
-def _start_point(sim: Any, lot: Any) -> tuple[Any, int, tuple[str, str] | None]:
+def _start_point(sim: Sim, lot: Lot) -> tuple[Any, int, tuple[str, str] | None]:
     """(position, level, note): the active Sim's spot when it is on this lot;
     otherwise the lot centre or the game's default lot point (by the front
     door), whichever is on the lot, so the cursor never starts on a sidewalk
@@ -359,7 +374,7 @@ def cursor() -> tuple[Any, int, Any] | None:
         position = _position()
         if not services.active_lot().is_position_on_lot(position):
             return None
-    except Exception:  # no height or lot here: not a point to aim at
+    except (AttributeError, TypeError, ValueError):  # no height or lot here: not a point to aim at
         return None
     return position, location.level, _state.zone_id
 
@@ -378,7 +393,7 @@ def move(dx: int, dz: int) -> bool:
         if not services.active_lot().is_position_on_lot(position):
             _say('Lot boundary.', 'Granica parceli.')
             return False
-    except Exception:  # no height there
+    except (AttributeError, TypeError, ValueError):  # no height or lot there
         _say('Tile information unavailable.', 'Informacje o polu niedostępne.')
         return False
     _state.x, _state.z = _state.x + dx, _state.z + dz
@@ -393,7 +408,7 @@ def change_level(delta: int) -> bool:
     try:
         minimum = int(build_buy.get_lowest_level_allowed())
         maximum = int(build_buy.get_highest_level_allowed())
-    except Exception:  # the game will not give the floor range
+    except (TypeError, ValueError):  # the game will not give the floor range
         _say('Floor information unavailable.', 'Informacje o piętrach niedostępne.')
         return False
     if not minimum <= location.level + delta <= maximum:
@@ -439,7 +454,7 @@ def _sell_target() -> Any:
     try:
         objects = [obj for obj in _objects_at_origin() if not getattr(obj, 'is_sim', False)]
         objects.sort(key=_parent_depth, reverse=True)
-    except Exception:  # objects the game will not list: nothing to sell
+    except AttributeError:  # no object manager: nothing to sell
         objects = []
     return objects[0] if objects else None
 
@@ -472,7 +487,8 @@ def _at_origin(obj: Any) -> bool:
         # don't put the cursor and object in different arbitrary grids.
         ox, oz = _state.origin
         return _sample_key(pos.x - ox, pos.z - oz) == _sample_key(_state.x - ox, _state.z - oz)
-    except Exception:  # an object that will not say where it is
+    except Exception:  # an object that will not say where it is: not here
+        simsight_log.error('grid: object origin')
         return False
 
 
@@ -498,7 +514,7 @@ def facts() -> dict[str, bool]:
 
     try:
         position = _position()
-    except Exception:  # no height here: nothing is known
+    except (AttributeError, TypeError, ValueError):  # no height here: nothing is known
         return {}
     result = tiles.location_facts(position, location.level, _POINT_FACTS)
     navmesh = _navmesh(position)
@@ -514,7 +530,8 @@ def _navmesh(position: Any) -> bool | None:
     try:
         # Verified in EA objects/pools/pond.py; this takes surface, position.
         value = routing.test_point_placement_in_navmesh(world_surface(), position)
-    except Exception:  # the game will not say
+    except Exception:  # EA's native navmesh query: the game will not say
+        simsight_log.error('grid: navmesh')
         return None
     return bool(value) if value is not None else None
 
@@ -568,7 +585,7 @@ def describe() -> bool:
     ox, oz = _state.origin
     parts: Parts = [
         lang.text('Grid x {}, z {}, floor {}. ', 'Siatka x {}, z {}, piętro {}. ').format(
-            int(round(_state.x - ox)), int(round(_state.z - oz)), location.level
+            round(_state.x - ox), round(_state.z - oz), location.level
         )
     ]
     values = facts()
@@ -582,6 +599,7 @@ def describe() -> bool:
     try:
         _add_origin_parts(parts)
     except Exception:  # objects the game will not describe
+        simsight_log.error('grid: object origins')
         parts.append(
             lang.text('Object information unavailable.', 'Informacje o obiektach niedostępne.')
         )
@@ -683,8 +701,8 @@ def flash(message: str) -> None:
         distributor.system.Distributor.instance().add_op_with_no_owner(
             distributor.ops.SendUIMessage(message)
         )
-    except Exception as ex:
-        simsight_log.line(f'grid: {message} not sent ({ex!r})')
+    except Exception:  # EA's distributor
+        simsight_log.error(f'grid: {message} not sent')
 
 
 def build_cursor() -> bool:
@@ -754,7 +772,7 @@ def _street_side(f: Frame) -> int | None:
 
         point = services.active_lot().get_default_position()
         i, j = f.tile_of(point.x, point.z)
-    except Exception:  # the lot will not give its default point
+    except (AttributeError, TypeError, ValueError):  # the lot will not give its default point
         return None
     gaps = ((f.depth - 1 - j, 0), (f.width - 1 - i, 1), (j, 2), (i, 3))
     return min(gaps)[1]
@@ -789,6 +807,7 @@ def object_name_part(obj: Any) -> Part:
         )
         return scanner.name_part(entry)
     except Exception:  # an object the scanner cannot name
+        simsight_log.error('grid: object name')
         return lang.text('an object', 'obiekt')
 
 
@@ -802,7 +821,7 @@ def _children_parts(children: list[Any]) -> Parts:
     return parts
 
 
-def object_parts(f: Frame, objects: list[Any], spots: bool = True) -> Parts:
+def object_parts(objects: list[Any], spots: bool = True) -> Parts:
     import simsight_tiles as tiles
 
     parts: Parts = []
@@ -926,9 +945,8 @@ def _fit_verdict(point: Any, why: str | None, facing: str | None) -> Parts:
     ]
 
 
-def fit_parts_base(f: Frame, with_facing: bool = True, objects: Any = None) -> Parts:
-    """What the chosen object would do on this tile at the current facing.
-    objects is accepted for simsight_chair_alignment and not used."""
+def fit_parts_base(f: Frame, with_facing: bool = True) -> Parts:
+    """What the chosen object would do on this tile at the current facing."""
     import simsight_place as place
     import simsight_tiles as tiles
 
@@ -945,10 +963,10 @@ def fit_parts_base(f: Frame, with_facing: bool = True, objects: Any = None) -> P
     return _fit_verdict(point, why, facing if with_facing else None)
 
 
-def _ground_part(objects: list[Any], ground: dict[str, bool], f: Frame) -> Parts:
+def _ground_part(objects: list[Any], ground: dict[str, bool]) -> Parts:
     """What stands on the tile, or what kind of empty tile it is."""
     if objects:
-        return object_parts(f, objects)
+        return object_parts(objects)
     if ground.get('pool'):
         return [lang.text('Pool. ', 'Basen. ')]
     if ground.get('floor') is False and ground.get('outside'):
@@ -968,9 +986,9 @@ def describe_build() -> bool:
     parts, ground = _room_parts(f)
     try:
         objects = tiles.objects_on(f, i, j, location.level)
-    except Exception:  # no height at the tile: nothing listed
+    except ValueError:  # no height at the tile: nothing listed
         objects = []
-    parts += _ground_part(objects, ground, f)
+    parts += _ground_part(objects, ground)
     parts += _wall_parts(f)
     parts += _fit_parts(f)
     scanner.speak_parts(parts)
@@ -986,7 +1004,7 @@ def _objects_detail(f: Frame) -> Parts:
 
     i, j = location.tile
     objects = tiles.objects_on(f, i, j, location.level)
-    return object_parts(f, objects) if objects else [lang.text('Nothing here.', 'Nic tu nie ma.')]
+    return object_parts(objects) if objects else [lang.text('Nothing here.', 'Nic tu nie ma.')]
 
 
 def _ground_detail(f: Frame) -> Parts:
@@ -1018,7 +1036,7 @@ def _objects_on_or_none(f: Frame, i: int, j: int) -> list[Any]:
 
     try:
         return tiles.objects_on(f, i, j, location.level)
-    except Exception:  # no height at that tile: nothing listed there
+    except ValueError:  # no height at that tile: nothing listed there
         return []
 
 
@@ -1087,7 +1105,7 @@ def _front_door_parts(f: Frame) -> Parts:
         return [
             lang.text('Front door: {}. ', 'Drzwi frontowe: {}. ').format(tiles.relative(di, dj))
         ]
-    except Exception:  # no front door the game will say
+    except (AttributeError, TypeError, ValueError):  # no front door the game will say
         return []
 
 
@@ -1151,9 +1169,9 @@ def _turn(step: int) -> bool:
         [
             lang.text('Facing {}. ', 'Skierowany na {}. ').format(
                 tiles.direction_name(location.facing)
-            )
+            ),
+            *_fit_parts(f, with_facing=False),
         ]
-        + _fit_parts(f, with_facing=False)
     )
     return True
 
@@ -1338,11 +1356,14 @@ def _put_down(obj: Any, position: Any, level: int) -> bool:
             _say('No valid position was found here.', 'Nie znaleziono tutaj prawidłowej pozycji.')
             return False
         obj.move_to(translation=spot[0], orientation=spot[1], routing_surface=world_surface())
-        if int(getattr(obj, 'level', level)) != int(level):
-            raise RuntimeError('object stayed on another floor')
-    except Exception as ex:
+        moved = int(getattr(obj, 'level', level)) == int(level)
+        why = 'object stayed on another floor'
+    except Exception:  # EA's move runs the object's location callbacks
+        simsight_log.error('grid: move an object')
+        moved, why = False, 'raised'
+    if not moved:
         _restore(obj, old_position, old_orientation, old_surface)
-        simsight_log.line(f'grid: move failed for {_state.move_id}: {ex!r}')
+        simsight_log.line(f'grid: move failed for {_state.move_id}: {why}')
         _say(
             'The object could not be moved; its original position was kept.',
             'Nie udało się przesunąć obiektu; zachowano jego pierwotne położenie.',
@@ -1397,7 +1418,9 @@ def _jump_to_last() -> bool:
     return describe()
 
 
-@sims4.commands.Command('simsight.grid', 'a11y.grid', command_type=sims4.commands.CommandType.Live)
+@sims4.commands.Command(  # type: ignore[misc]  # EA's Command is untyped
+    'simsight.grid', 'a11y.grid', command_type=sims4.commands.CommandType.Live
+)
 @real_annotations
 def command(action: str = 'toggle', _connection: Any = None) -> Any:
     try:
@@ -1414,10 +1437,10 @@ def command(action: str = 'toggle', _connection: Any = None) -> Any:
 
 # DaRainbowGirlXX (merged 2026-11-14): chair-to-table orientation hints and
 # the optional lot-planning description of each tile.
-def _fit_parts(f: Frame, with_facing: bool = True, objects: Any = None) -> Parts:
+def _fit_parts(f: Frame, with_facing: bool = True) -> Parts:
     import simsight_chair_alignment as chair_alignment
 
-    return chair_alignment.fit_parts(f, with_facing=with_facing, objects=objects)
+    return chair_alignment.fit_parts(f, with_facing=with_facing)
 
 
 def _room_parts(f: Frame) -> tuple[Parts, dict[str, bool]]:

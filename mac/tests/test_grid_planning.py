@@ -94,7 +94,7 @@ module(
 
 
 class Lot:
-    corners = [V(0, 0, 0), V(10, 0, 0), V(0, 0, 8), V(10, 0, 8)]
+    corners = (V(0, 0, 0), V(10, 0, 0), V(0, 0, 8), V(10, 0, 8))
 
     def is_position_on_lot(self, p):
         return 0 <= p.x <= 10 and 0 <= p.z <= 8
@@ -136,12 +136,12 @@ class Shapes(unittest.TestCase):
         self.assertEqual(roof._cells_shape([]), 'empty')
         self.assertEqual(roof._cells_shape(block(0, 0, 3, 3)), 'roughly square')
         self.assertEqual(roof._cells_shape(block(0, 0, 5, 2)), 'rectangular')
-        self.assertEqual(roof._cells_shape(block(0, 0, 3, 1) + [(0, 1), (0, 2)]), 'L-shaped')
+        self.assertEqual(roof._cells_shape([*block(0, 0, 3, 1), (0, 1), (0, 2)]), 'L-shaped')
         stairs = [(0, 0), (0, 1), (1, 1), (0, 2), (1, 2), (2, 2)]
         self.assertEqual(roof._cells_shape(stairs), 'irregular')
 
     def test_components_largest_first(self):
-        groups = roof._components(block(0, 0, 2, 2) + [(5, 5)] + block(8, 0, 9, 3))
+        groups = roof._components([*block(0, 0, 2, 2), (5, 5), *block(8, 0, 9, 3)])
         self.assertEqual([len(g) for g in groups], [4, 3, 1])
 
     def test_position(self):

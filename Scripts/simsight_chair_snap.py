@@ -15,6 +15,9 @@ import simsight_speech as speech
 if TYPE_CHECKING:
     from typing import TypedDict
 
+    from objects.game_object import GameObject
+    from objects.slots import RuntimeSlot
+
     _Transform = tuple[float, float, float, float, float, float, float]
     _SlotKey = tuple[int, int | None]
 
@@ -113,11 +116,11 @@ def _transform(p: Any, q: Any) -> _Transform:
     )
 
 
-def _state(obj: Any) -> tuple[int, _Transform]:
+def _state(obj: GameObject) -> tuple[int, _Transform]:
     return int(obj.level), _finite(_transform(obj.position, obj.orientation), 'table')
 
 
-def _slot_state(slot: Any) -> _Transform:
+def _slot_state(slot: RuntimeSlot) -> _Transform:
     return _finite(_transform(slot.position, slot.transform.orientation), 'seat')
 
 
@@ -188,10 +191,10 @@ def _target(item: dict[str, Any], frame: Any) -> tuple[Any, Any, bool] | None:
     return definition, rows[0][1], False
 
 
-def _slots(table: Any) -> list[Any]:
+def _slots(table: GameObject) -> list[RuntimeSlot]:
     # The native SlotComponent yields part-owned slots and may also yield the
     # root-owned version of the same bone. Prefer the actual table part.
-    found: dict[int, Any] = {}
+    found: dict[int, RuntimeSlot] = {}
     for index, slot in enumerate(table.get_runtime_slots_gen()):
         if index >= MAX_SLOTS:
             raise ValueError('Too many attachment slots to check safely')
@@ -203,14 +206,16 @@ def _slots(table: Any) -> list[Any]:
     return list(found.values())
 
 
-def _key(slot: Any) -> _SlotKey:
+def _key(slot: RuntimeSlot) -> _SlotKey:
     owner = slot.owner
     return int(slot.slot_name_hash), (
         int(owner.part_group_index) if getattr(owner, 'is_part', False) else None
     )
 
 
-def _ranked_slots(table: Any, point: Any, key: Any) -> list[tuple[float, _SlotKey, Any]]:
+def _ranked_slots(
+    table: GameObject, point: Any, key: Any
+) -> list[tuple[float, _SlotKey, RuntimeSlot]]:
     """Free, enabled, non-decorative seats of table (only `key` when given)."""
     ranked = []
     for slot in _slots(table):
@@ -224,12 +229,14 @@ def _ranked_slots(table: Any, point: Any, key: Any) -> list[tuple[float, _SlotKe
             if not math.isfinite(distance):
                 continue
             ranked.append((distance, _key(slot), slot))
-        except Exception as exc:  # EA's native slot can refuse any query: skip that seat
-            _log(f'slot metadata refused: {exc!r}')
+        except Exception:  # EA's native slot can refuse any query: skip that seat
+            simsight_log.error('chair snap: slot metadata')
     return sorted(ranked, key=lambda row: (row[0], row[1][0]))
 
 
-def _seat(table: Any, definition: Any, point: Any, obj: Any = None, key: Any = None) -> Any:
+def _seat(
+    table: GameObject, definition: Any, point: Any, obj: GameObject | None = None, key: Any = None
+) -> RuntimeSlot | None:
     """The nearest seat the game's own placement test accepts, or None."""
     for _distance, _ident, slot in _ranked_slots(table, point, key):
         if _accepts(table, slot, definition, obj):
@@ -237,7 +244,7 @@ def _seat(table: Any, definition: Any, point: Any, obj: Any = None, key: Any = N
     return None
 
 
-def _accepts(table: Any, slot: Any, definition: Any, obj: Any) -> bool:
+def _accepts(table: GameObject, slot: RuntimeSlot, definition: Any, obj: GameObject | None) -> bool:
     try:
         valid = (
             slot.is_valid_for_placement(definition=definition)
@@ -245,10 +252,10 @@ def _accepts(table: Any, slot: Any, definition: Any, obj: Any) -> bool:
             else slot.is_valid_for_placement(obj=obj)
         )
         _log(f'table {table.id} slot {_key(slot)} native validation={valid!r}')
-        return bool(valid)
-    except Exception as exc:  # EA's native check can raise anything: try the next seat
-        _log(f'native slot check failed: {exc!r}')
+    except Exception:  # build_buy.test_location_for_object (native) can raise anything
+        simsight_log.error('chair snap: native slot check')
         return False
+    return bool(valid)
 
 
 def _request(item: dict[str, Any], frame: Any) -> tuple[ChairRequest | None, str | None]:
@@ -359,7 +366,7 @@ def validate(
     return None
 
 
-def attached(table: Any, slot: Any, obj: Any) -> bool:
+def attached(table: GameObject, slot: RuntimeSlot, obj: GameObject) -> bool:
     """The chair is the table's child, in exactly that seat."""
     try:
         hashed = getattr(obj.location, 'slot_hash', None) or getattr(
@@ -412,7 +419,7 @@ def has_target(item: dict[str, Any], frame: Any) -> bool:
         return False
 
 
-def announce(obj: Any, item: dict[str, Any], price: int, table: Any) -> None:
+def announce(obj: GameObject, item: dict[str, Any], price: int, table: GameObject) -> None:
     import simsight_grid as grid
     import simsight_scanner as scanner
 

@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import math
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import simsight_log
 import simsight_speech as speech
+
+if TYPE_CHECKING:
+    from sims.sim import Sim
+    from world.lot import Lot
 
 
 def open_floor_menu() -> bool:
@@ -15,14 +19,12 @@ def open_floor_menu() -> bool:
     import simsight_place as place
 
     try:
-        sim, lot = services.get_active_sim(), services.active_lot()
+        sim: Sim | None = services.get_active_sim()
+        lot: Lot | None = services.active_lot()
         if sim is None or lot is None or place.in_build_mode():
             speech.speak('Floor actions require an active Sim in Live Mode.', explicit=True)
             return False
-        pos = sim.position
-        x, z = float(pos.x), float(pos.z)
-        if not all(math.isfinite(v) for v in (x, z)):
-            raise ValueError('non-finite floor position')
+        pos, x, z = _sim_point(sim)
         if not lot.is_position_on_lot(pos):
             speech.speak('Move the active Sim onto the active lot first.', explicit=True)
             return False
@@ -33,7 +35,16 @@ def open_floor_menu() -> bool:
         return False
 
 
-def _request_floor_menu(sim: Any, lot: Any, x: float, z: float) -> bool:
+def _sim_point(sim: Sim) -> tuple[Any, float, float]:
+    """(position, x, z) of the Sim; ValueError when not finite."""
+    pos = sim.position
+    x, z = float(pos.x), float(pos.z)
+    if not all(math.isfinite(v) for v in (x, z)):
+        raise ValueError('non-finite floor position')
+    return pos, x, z
+
+
+def _request_floor_menu(sim: Sim, lot: Lot, x: float, z: float) -> bool:
     """Ask the client for the game's own floor pie menu at (x, z)."""
     import routing
     import services

@@ -12,6 +12,8 @@ import simsight_lang as lang
 import simsight_log
 
 if TYPE_CHECKING:
+    from objects.game_object import GameObject
+
     # (distance squared, object id, object, nearest covered tile)
     _Target = tuple[int, int, Any, tuple[int, int]]
 
@@ -74,7 +76,7 @@ def _selected_kind() -> tuple[dict[str, Any], tuple[str, str, str]] | None:
     return None
 
 
-def _object_has_tag(obj: Any, wanted: str) -> bool:
+def _object_has_tag(obj: GameObject, wanted: str) -> bool:
     import simsight_chair_snap as chair_snap
 
     try:
@@ -160,9 +162,9 @@ def _hint_parts(frame: Any) -> list[str]:
     return [result]
 
 
-def fit_parts(frame: Any, with_facing: bool = True, objects: Any = None) -> list[Any]:
+def fit_parts(frame: Any, with_facing: bool = True) -> list[Any]:
     """The grid's fit announcement, plus the chair hint when it is on."""
-    parts = list(_original_fit_parts(frame, with_facing=with_facing, objects=objects))
+    parts = list(_original_fit_parts(frame, with_facing=with_facing))
     if _enabled():
         try:
             parts.extend(_hint_parts(frame))
@@ -171,7 +173,7 @@ def fit_parts(frame: Any, with_facing: bool = True, objects: Any = None) -> list
     return parts
 
 
-def _original_fit_parts(frame: Any, with_facing: bool = True, objects: Any = None) -> Any:
+def _original_fit_parts(frame: Any, with_facing: bool = True) -> Any:
     import simsight_grid as grid
 
-    return grid.fit_parts_base(frame, with_facing=with_facing, objects=objects)
+    return grid.fit_parts_base(frame, with_facing=with_facing)

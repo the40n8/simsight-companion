@@ -21,13 +21,14 @@ Every game call is checked against the 1.128.90 decompile:
 Simulation thread only. Unknown answers stay unknown; nothing is invented.
 
 Game objects differ in what they answer, and EA's native calls raise
-whatever they raise: a probe that fails means "unknown" and is skipped
-(`except Exception` below), never a failed key press.
+whatever they raise: a probe that fails means "unknown" and is skipped,
+never a failed key press. The answers the code expects (a missing
+attribute, no height at a point) are skipped quietly; anything else is
+logged (simsight_log.error) and skipped too.
 """
 
 from __future__ import annotations
 
-import contextlib
 import math
 from typing import TYPE_CHECKING, Any
 
@@ -36,6 +37,9 @@ import simsight_log
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Sequence
+
+    from objects.slots import RuntimeSlot
+    from sims.sim import Sim
 
     Point2 = tuple[float, float]
     Tile = tuple[int, int]
@@ -105,7 +109,7 @@ class Frame:
         length = math.hypot(dx, dz)
         if not math.isfinite(length) or length < 0.5:
             raise ValueError('Degenerate lot corner')
-        return int(round(length)), (dx / length, dz / length)
+        return round(length), (dx / length, dz / length)
 
     def world(self, i: float, j: float, du: float = 0.5, dv: float = 0.5) -> Point2:
         """(x, z) of a point in tile (i, j); du, dv run 0..1 across it."""
@@ -119,7 +123,7 @@ class Frame:
         dx, dz = float(x) - self.origin[0], float(z) - self.origin[1]
         u = dx * self.east[0] + dz * self.east[1]
         v = dx * self.north[0] + dz * self.north[1]
-        return int(math.floor(u)), int(math.floor(v))
+        return math.floor(u), math.floor(v)
 
     def inside(self, i: int, j: int) -> bool:
         return 0 <= i < self.width and 0 <= j < self.depth
@@ -170,11 +174,13 @@ def frame() -> Frame | None:
             return _state.frame
         lot = services.active_lot()
         _state.frame, _state.frame_zone = Frame(list(lot.corners)), zone
-        return _state.frame
-    except Exception as ex:  # no zone or lot yet (loading, CAS): no frame
+    except (AttributeError, TypeError, ValueError) as ex:
+        # no zone or lot yet (loading, CAS: active_lot() is None), or corners
+        # that make no lot: no frame
         simsight_log.line(f'tiles: no lot frame ({ex!r})')
         _state.frame = None
         return None
+    return _state.frame
 
 
 def relative(di: int, dj: int) -> str:
@@ -215,7 +221,10 @@ def _listed(obj: Any, lot: Any, level: Any) -> bool:
         if obj.is_in_inventory() or int(obj.level) != int(level):
             return False
         return not obj.is_hidden() and lot.is_position_on_lot(obj.position)
-    except Exception:  # an object that will not say is not listed
+    except AttributeError:  # an object that will not say is not listed
+        return False
+    except Exception:
+        simsight_log.error('tiles: list an object')
         return False
 
 
@@ -232,7 +241,10 @@ def _footprint_covers(obj: Any, point: Any) -> bool:
     try:
         footprint = obj.footprint_polygon
         return footprint is not None and bool(footprint.contains(point))
-    except Exception:  # no footprint: the origin decides
+    except AttributeError:  # no footprint: the origin decides
+        return False
+    except Exception:
+        simsight_log.error('tiles: footprint test')
         return False
 
 
@@ -241,7 +253,7 @@ def _covers(obj: Any, f: Frame, i: int, j: int, point: Any) -> bool:
         return True
     try:
         return f.tile_of(obj.position.x, obj.position.z) == (i, j)
-    except Exception:  # no position: not on any tile
+    except (AttributeError, TypeError, ValueError):  # no position: not on any tile
         return False
 
 
@@ -257,6 +269,7 @@ def _top_level(obj: Any) -> bool:
     try:
         return getattr(obj, 'parent', None) is None
     except Exception:  # a parent the game will not give: skip the object
+        simsight_log.error('tiles: object parent')
         return False
 
 
@@ -264,19 +277,24 @@ def children_on(obj: Any) -> list[Any]:
     result: list[Any] = []
     # Children the game will not list are left out; extend keeps the ones
     # listed before a failure.
-    with contextlib.suppress(Exception):
+    try:
         result.extend(
             child
             for child in getattr(obj, 'children', ()) or ()
             if not getattr(child, 'is_sim', False)
         )
+    except Exception:
+        simsight_log.error('tiles: list children')
     return result
 
 
-def _free_slot(slot: Any) -> bool:
+def _free_slot(slot: RuntimeSlot) -> bool:
     try:
         return bool(slot.empty and not slot.is_deco_slot())
-    except Exception:  # a slot that will not say is not counted
+    except AttributeError:  # a slot that will not say is not counted
+        return False
+    except Exception:
+        simsight_log.error('tiles: slot state')
         return False
 
 
@@ -284,7 +302,10 @@ def free_spots(obj: Any) -> int:
     """Empty, non-decoration slots: where a computer or plate could go."""
     try:
         return sum(1 for slot in obj.get_runtime_slots_gen() if _free_slot(slot))
-    except Exception:  # no runtime slots: no free spots
+    except AttributeError:  # no runtime slots: no free spots
+        return 0
+    except Exception:
+        simsight_log.error('tiles: runtime slots')
         return 0
 
 
@@ -299,10 +320,10 @@ def _raycast_context() -> Any:
     try:
         import services
 
-        sim = services.get_active_sim()
+        sim: Sim | None = services.get_active_sim()
         return sim.raycast_context() if sim is not None else None
-    except Exception as ex:
-        simsight_log.line(f'tiles: no raycast context ({ex!r})')
+    except Exception:
+        simsight_log.error('tiles: raycast context')
         return None
 
 
@@ -317,8 +338,11 @@ def _ray_side(f: Frame, start: Any, ni: int, nj: int, level: Any, context: Any) 
             position(f, ni, nj, level), sims4.math.Quaternion.IDENTITY(), surface(level)
         )
         hit, blocker = routing.ray_test_verbose(start, end, context, return_object_id=True)
-    except Exception as ex:
+    except ValueError as ex:  # no height at the neighbouring tile
         simsight_log.line(f'tiles: ray test failed ({ex!r})')
+        return None
+    except Exception:
+        simsight_log.error('tiles: ray test')
         return None
     return 'wall' if hit == routing.RAYCAST_HIT_TYPE_IMPASSABLE and not blocker else 'open'
 
@@ -335,8 +359,11 @@ def walls(f: Frame, i: int, j: int, level: Any) -> dict[int, str]:
         start = routing.Location(
             position(f, i, j, level), sims4.math.Quaternion.IDENTITY(), surface(level)
         )
-    except Exception as ex:
+    except ValueError as ex:  # no height at this tile
         simsight_log.line(f'tiles: wall probe unavailable ({ex!r})')
+        return result
+    except Exception:
+        simsight_log.error('tiles: wall probe')
         return result
     for index, (di, dj) in enumerate(STEPS):
         ni, nj = i + di, j + dj
@@ -368,7 +395,7 @@ def doors(
             continue
         try:
             x, z = float(obj.position.x), float(obj.position.z)
-        except Exception:  # a door without a position is on no edge
+        except (AttributeError, TypeError, ValueError):  # a door without a position is on no edge
             continue
         for index, (di, dj) in enumerate(STEPS):
             ex, ez = f.world(i, j, 0.5 + di * 0.5, 0.5 + dj * 0.5)
@@ -386,7 +413,10 @@ def room(f: Frame, i: int, j: int, level: Any) -> int | None:
         point = position(f, i, j, level)
         value = build_buy.get_block_id(services.current_zone_id(), point, int(level))
         return int(value) if value is not None else None
-    except Exception:  # optional game call (see the module notes)
+    except (AttributeError, ValueError):  # optional game call (see the module notes), no height
+        return None
+    except Exception:
+        simsight_log.error('tiles: room id')
         return None
 
 
@@ -408,7 +438,10 @@ def location_facts(
 def _ask(module: Any, method: str, point: Any, level: Any) -> bool | None:
     try:
         value = getattr(module, method)(point, level)
+    except AttributeError:  # this game has no such call: unknown
+        return None
     except Exception:  # the game will not say: unknown
+        simsight_log.error(f'tiles: {method}')
         return None
     return bool(value) if value is not None else None
 
@@ -417,7 +450,10 @@ def ground(f: Frame, i: int, j: int, level: Any) -> dict[str, bool]:
     """Floor facts the game answers: floor, outside, pool."""
     try:
         point = position(f, i, j, level)
-    except Exception:  # no height here: nothing is known
+    except ValueError:  # no height here: nothing is known
+        return {}
+    except Exception:
+        simsight_log.error('tiles: ground point')
         return {}
     return location_facts(point, int(level))
 
@@ -437,8 +473,8 @@ def test_fit(
             sims4.math.Transform(point, sims4.math.angle_to_yaw_quaternion(angle)), surface(level)
         )
         result = build_buy.test_location_for_object(obj, def_id, location, list(ignore))
-    except Exception as ex:
-        simsight_log.line(f'tiles: placement test raised {ex!r}')
+    except Exception:
+        simsight_log.error('tiles: placement test')
         return None, None
     if isinstance(result, tuple):
         ok = bool(result[0])
@@ -488,7 +524,10 @@ def fit_at(
 def _point_or_none(f: Frame, i: int, j: int, level: Any, du: float, dv: float) -> Any:
     try:
         return position(f, i, j, level, du, dv)
-    except Exception:  # no height at this origin: try the next
+    except ValueError:  # no height at this origin: try the next
+        return None
+    except Exception:
+        simsight_log.error('tiles: tile point')
         return None
 
 
@@ -527,7 +566,7 @@ def covered_tiles(f: Frame, obj: Any, level: Any) -> list[Tile]:
     try:
         ci, cj = f.tile_of(obj.position.x, obj.position.z)
         footprint = obj.footprint_polygon
-    except Exception:  # no position or footprint: no tiles
+    except (AttributeError, TypeError, ValueError):  # no position or footprint: no tiles
         return []
     tiles = [
         (ci + di, cj + dj)
@@ -541,5 +580,8 @@ def covered_tiles(f: Frame, obj: Any, level: Any) -> list[Tile]:
 def _centre_covered(footprint: Any, f: Frame, i: int, j: int, level: Any) -> bool:
     try:
         return bool(footprint.contains(position(f, i, j, level)))
-    except Exception:  # no height there: not covered
+    except ValueError:  # no height there: not covered
+        return False
+    except Exception:
+        simsight_log.error('tiles: footprint covers')
         return False

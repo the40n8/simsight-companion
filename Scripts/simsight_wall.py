@@ -96,12 +96,9 @@ def separates_rooms(frame: Frame, side: int) -> bool:
 
     i, j = grid.location.tile
     di, dj = tiles.STEPS[side]
-    try:
-        here = tiles.room(frame, i, j, grid.location.level)
-        there = tiles.room(frame, i + di, j + dj, grid.location.level)
-    except Exception as ex:
-        _log(f'room boundary check failed: {ex!r}')
-        return False
+    # tiles.room answers None for anything it cannot tell.
+    here = tiles.room(frame, i, j, grid.location.level)
+    there = tiles.room(frame, i + di, j + dj, grid.location.level)
     return here is not None and there is not None and here != there
 
 
@@ -121,6 +118,18 @@ def _wall_anchor(frame: Frame, side: int) -> tuple[Any, float]:
         (float(center.z) + float(neighbor[1])) / 2.0,
     )
     return point, height
+
+
+def _anchor_or_none(frame: Frame, side: int) -> tuple[Any, float] | None:
+    """_wall_anchor, or None (logged) when the cursor tile has no height."""
+    try:
+        return _wall_anchor(frame, side)
+    except ValueError as ex:  # no height at the cursor tile
+        _log(f'could not calculate wall anchor: {ex!r}')
+    except Exception as ex:
+        simsight_log.error('wall: wall anchor')
+        _log(f'could not calculate wall anchor: {ex!r}')
+    return None
 
 
 def _side_state(frame: Frame, index: int, sides: dict[int, str], doors: dict[int, Any]) -> str:
@@ -200,7 +209,7 @@ def _on_stretch(frame: Frame, obj: Any, side: int, i: int, j: int) -> bool | Non
     tile (i, j); None when it has no position."""
     try:
         u, v = _uv(frame, obj.position.x, obj.position.z)
-    except Exception:  # no position: not on the wall
+    except (AttributeError, TypeError, ValueError):  # no position: not on the wall
         return None
     if side in (0, 2):
         across, along = v - (j + (1 if side == 0 else 0)), u - (i + 0.5)
@@ -232,7 +241,7 @@ def _off_height(obj: Any, floor_y: float, height: float) -> bool:
     """More than 0.75 m from the chosen height (unknown height: not off)."""
     try:
         return abs((float(obj.position.y) - floor_y) - height) > 0.75
-    except Exception:  # no height to compare: counted as on this wall
+    except (AttributeError, TypeError, ValueError):  # no height to compare: counted as on this wall
         return False
 
 
@@ -266,7 +275,10 @@ def _objects_or_none(frame: Frame, i: int, j: int, level: int) -> list[Any]:
 
     try:
         return tiles.objects_on(frame, i, j, level)
-    except Exception:  # no height at that tile: nothing listed there
+    except ValueError:  # no height at that tile: nothing listed there
+        return []
+    except Exception:
+        simsight_log.error('wall: objects on a tile')
         return []
 
 
@@ -306,6 +318,7 @@ def _stretch_end(frame: Frame, i: int, j: int, side: int) -> str | None:
         if not blocked_side(tiles.walls(frame, i, j, grid.location.level).get(side)):
             return 'open'
     except Exception as ex:
+        simsight_log.error('wall: continuation check')
         _log(f'wall continuation check failed: {ex!r}')
         return None
     return 'wall'
@@ -421,15 +434,14 @@ def place(item: dict[str, Any]) -> bool:
         )
         return False
     frame, side = selected
-    try:
-        point, height = _wall_anchor(frame, side)
-    except Exception as ex:
-        _log(f'could not calculate wall anchor: {ex!r}')
+    anchor = _anchor_or_none(frame, side)
+    if anchor is None:
         place_mod.say_text(
             'The wall anchor could not be calculated, so nothing was bought.',
             'Nie udało się obliczyć punktu na ścianie, więc nic nie kupiono.',
         )
         return False
+    point, height = anchor
     _log('placing product {} on side {} at height {:.1f}'.format(item['id'], side, height))
     return hang_with_game_tool(frame, side, item, point, height)
 
@@ -446,7 +458,10 @@ def column_here(frame: Frame) -> bool:
         ):
             if any('column' in name.lower() for name in scanner.tag_names(obj)):
                 return True
+    except ValueError as ex:  # no height at the cursor tile
+        _log(f'column check failed: {ex!r}')
     except Exception as ex:
+        simsight_log.error('wall: column check')
         _log(f'column check failed: {ex!r}')
     return False
 
@@ -483,9 +498,9 @@ class _Hang:
 
         plus = self.plus
         plus.reselect()
-        # _reselect picks by list position; a list browsed since then could
+        # reselect picks by list position; a list browsed since then could
         # hold another item there. Click only when the game holds this one.
-        held = str(plus._product.get('name') or '').strip().lower()
+        held = plus.tool_name().strip().lower()
         if held != str(self.name).strip().lower():
             _log(f'game tool: holding {held!r}, not {self.name!r}; no click')
             plus.core.post(

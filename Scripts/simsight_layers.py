@@ -11,12 +11,15 @@ focus off, the two keys only change the wall height for a wall object.
 
 from __future__ import annotations
 
+import contextlib
 from typing import TYPE_CHECKING, Any
 
 import simsight_lang as lang
 import simsight_log
 
 if TYPE_CHECKING:
+    from objects.slots import RuntimeSlot
+
     from simsight_tiles import Frame
 
 SETTING_KEY = 'surface_layer_focus'
@@ -79,13 +82,11 @@ def wall_refusal() -> bool:
 
 
 def definition_id(obj: Any) -> int | None:
-    try:
+    with contextlib.suppress(AttributeError, TypeError, ValueError):  # no definition: the bare id
         return int(obj.definition.id)
-    except Exception:  # no definition: try the bare id
-        pass
     try:
         return int(obj.definition_id)
-    except Exception:  # an object without a definition
+    except (AttributeError, TypeError, ValueError):  # an object without a definition
         return None
 
 
@@ -95,6 +96,7 @@ def _kind(obj: Any) -> str:
 
         need = place.requirement(definition_id(obj))
     except Exception:  # unknown requirement: a ground object
+        simsight_log.error('layers: object requirement')
         need = None
     if need == 'ceiling':
         return 'ceiling'
@@ -108,7 +110,10 @@ def _floor_y(frame: Frame, i: Any, j: Any, level: Any) -> float | None:
         import simsight_tiles as tiles
 
         return float(tiles.position(frame, i, j, level).y)
-    except Exception:  # no height at that tile
+    except ValueError:  # no height at that tile
+        return None
+    except Exception:
+        simsight_log.error('layers: floor height')
         return None
 
 
@@ -117,7 +122,7 @@ def _height(obj: Any, floor_y: float | None) -> float | None:
         return None
     try:
         return max(0.0, float(obj.position.y) - floor_y)
-    except Exception:  # an object without a position
+    except (AttributeError, TypeError, ValueError):  # an object without a position
         return None
 
 
@@ -162,10 +167,7 @@ def _objects_here(frame: Frame) -> list[Any]:
 def _children(obj: Any) -> list[Any]:
     import simsight_tiles as tiles
 
-    try:
-        children = list(tiles.children_on(obj))
-    except Exception:  # children the game will not list
-        children = []
+    children = tiles.children_on(obj)  # leaves out children the game will not list
     children.sort(key=lambda child: int(getattr(child, 'id', 0)))
     return children
 
@@ -217,7 +219,7 @@ def focus_detail(frame: Frame) -> bool:
     matches.sort(key=lambda obj: int(getattr(obj, 'id', 0)))
     if not matches:
         clear_focus()
-        scanner.speak_parts(_no_match_parts(frame, objects))
+        scanner.speak_parts(_no_match_parts(objects))
         return True
     context = (grid.location.tile, grid.location.level, _state.mode)
     same = _state.focus_where == context
@@ -236,12 +238,12 @@ def focus_detail(frame: Frame) -> bool:
         )
     # Number 1 still lists everything on the tile, with contents and free spots.
     parts.append(lang.text('Objects here: ', 'Obiekty tutaj: '))
-    parts.extend(grid.object_parts(frame, objects))
+    parts.extend(grid.object_parts(objects))
     scanner.speak_parts(parts)
     return True
 
 
-def _no_match_parts(frame: Frame, objects: list[Any]) -> list[Any]:
+def _no_match_parts(objects: list[Any]) -> list[Any]:
     import simsight_grid as grid
 
     parts: list[Any] = [
@@ -251,7 +253,7 @@ def _no_match_parts(frame: Frame, objects: list[Any]) -> list[Any]:
     ]
     if objects:
         parts.append(lang.text('Objects here: ', 'Obiekty tutaj: '))
-        parts.extend(grid.object_parts(frame, objects))
+        parts.extend(grid.object_parts(objects))
     else:
         parts.append(lang.text('Nothing here.', 'Nic tu nie ma.'))
     return parts
@@ -280,7 +282,10 @@ def _objects_on_or_none(frame: Frame, i: int, j: int, level: int) -> list[Any]:
 
     try:
         return tiles.objects_on(frame, i, j, level)
-    except Exception:  # no height at that tile: nothing listed there
+    except ValueError:  # no height at that tile: nothing listed there
+        return []
+    except Exception:
+        simsight_log.error('layers: objects on a tile')
         return []
 
 
@@ -400,17 +405,21 @@ def change_layer(delta: int) -> bool:
     return True
 
 
-def surface_slots(surface: Any) -> list[Any]:
+def surface_slots(surface: Any) -> list[RuntimeSlot]:
     try:
         return list(surface.get_runtime_slots_gen())
-    except Exception:  # an object without runtime slots
+    except AttributeError:  # an object without runtime slots
+        return []
+    except Exception:
+        simsight_log.error('layers: runtime slots')
         return []
 
 
-def _slot_valid(target_id: Any, index: int, slot: Any, candidate: Any) -> bool:
+def _slot_valid(target_id: Any, index: int, slot: RuntimeSlot, candidate: Any) -> bool:
     try:
         valid = slot.empty and slot.is_valid_for_placement(obj=candidate)
-    except Exception as exc:
+    except Exception as exc:  # EA's native placement test
+        simsight_log.error('layers: slot validation')
         _log(f'surface {target_id} slot {index} validation error: {exc!r}')
         return False
     _log(f'surface {target_id} slot {index} native validation={valid!r}')

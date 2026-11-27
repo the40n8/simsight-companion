@@ -53,7 +53,8 @@ def _natural_ground(position: Any, level: int) -> bool | None:
         import build_buy
 
         return bool(build_buy.is_location_natural_ground(position, level))
-    except Exception as ex:
+    except Exception as ex:  # EA's native build_buy and terrain calls
+        simsight_log.error('surfaces: natural ground check')
         _log(f'natural-ground check failed: {ex!r}')
         return None
 
@@ -68,7 +69,8 @@ def _water_point(position: Any, level: int) -> tuple[Any, float, str]:
 
         pool = bool(build_buy.is_location_pool(position, level))
         pond = bool(build_buy.get_pond_id(position))
-    except Exception as ex:
+    except Exception as ex:  # EA's native build_buy and terrain calls
+        simsight_log.error('surfaces: pool or pond check')
         _log(f'pool/pond check failed: {ex!r}')
     try:
         import terrain
@@ -76,7 +78,8 @@ def _water_point(position: Any, level: int) -> tuple[Any, float, str]:
         depth = float(
             terrain.get_water_depth(float(position.x), float(position.z), int(level)) or 0.0
         )
-    except Exception as ex:
+    except Exception as ex:  # EA's native build_buy and terrain calls
+        simsight_log.error('surfaces: water depth check')
         _log(f'water-depth check failed: {ex!r}')
     if not (pool or pond or depth > 0.01):
         return None, depth, 'water'
@@ -105,10 +108,14 @@ def _ceiling_point(position: Any, level: int) -> Any:
         )
         if not math.isfinite(height) or height <= float(position.y) + 1.0:
             return None
-        return sims4.math.Vector3(float(position.x), height, float(position.z))
-    except Exception as ex:
+    except (TypeError, ValueError) as ex:  # no height on the next level
         _log(f'ceiling sample failed: {ex!r}')
         return None
+    except Exception as ex:  # EA's native routing and terrain calls
+        simsight_log.error('surfaces: ceiling sample')
+        _log(f'ceiling sample failed: {ex!r}')
+        return None
+    return sims4.math.Vector3(float(position.x), height, float(position.z))
 
 
 def _fence_point() -> tuple[Frame, int, Any, float] | None:

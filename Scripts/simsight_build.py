@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import math
 import time
-from typing import Any, Callable, TypeVar
+from typing import TYPE_CHECKING, Any
 from urllib.parse import unquote
 
 import sims4.commands
@@ -17,6 +17,9 @@ import simsight_lang as lang
 from simsight_commands import real_annotations
 import simsight_log
 import simsight_speech as speech
+
+if TYPE_CHECKING:
+    from zone import Zone
 
 
 class _State:
@@ -127,13 +130,12 @@ _REPLIES = {
     ),
 }
 
-_F = TypeVar('_F', bound=Callable[..., Any])
 
-
-def _say(en: str, pl: str) -> None:
-    # simsight_plus_build replaces this function to read aim replies: every
-    # call here looks it up by name.
+def say(en: str, pl: str) -> None:
     speech.speak(lang.text(en, pl), explicit=True)
+
+
+_say = say  # the old name, still used by simsight_hub
 
 
 def _send_ui(message: str) -> None:
@@ -149,17 +151,13 @@ def controls_enabled() -> bool:
     """The Build controls switch: the cursor, the Build actions window and
     the read-only lot grid. Enabled by default;
     turning it off never blocks the release of a cursor already sent."""
-    try:
-        import simsight_settings as settings
+    import simsight_settings as settings
 
-        return bool(settings.get('build_controls'))
-    except Exception:
-        simsight_log.error('build: controls setting')
-        return False
+    return bool(settings.get('build_controls'))
 
 
 def refuse_disabled() -> bool:
-    _say(
+    say(
         'Build controls are off. Turn them on in the settings menu.',
         'Sterowanie budowaniem jest wyłączone. Włącz je w menu ustawień.',
     )
@@ -172,10 +170,10 @@ def announce_controls() -> bool:
     each activation request send it again."""
     try:
         _send_ui('A11y|buildcontrols|' + ('on' if controls_enabled() else 'off'))
-        return True
-    except Exception:
+    except Exception:  # the keyboard heartbeat calls this; the distributor is EA's
         simsight_log.error('build: controls notice failed')
         return False
+    return True
 
 
 def _forget_session() -> None:
@@ -202,16 +200,13 @@ def apply_setting() -> bool:
     return announce_controls()
 
 
-def build_zone() -> Any:
+def build_zone() -> Zone | None:
     """The current zone while it is in Build/Buy mode, else None."""
-    try:
-        import services
+    import services
 
-        zone = services.current_zone()
-        return zone if zone is not None and zone.is_in_build_buy else None
-    except Exception:
-        simsight_log.error('build: current zone')
-        return None
+    # services.current_zone: the zone manager's current Zone, None while loading.
+    zone: Zone | None = services.current_zone()
+    return zone if zone is not None and zone.is_in_build_buy else None
 
 
 def active() -> bool:
@@ -265,7 +260,7 @@ def aim_grid() -> bool:
     zone = build_zone()
     target = grid.cursor()
     if zone is None or target is None or target[2] != zone.id:
-        _say(
+        say(
             'Choose a point on the lot grid in Build mode first.',
             'Najpierw wybierz punkt na siatce parceli w trybie budowania.',
         )
@@ -296,14 +291,14 @@ def _leave_grid() -> None:
         grid.leave()
 
 
-def _may_request(action: str, zone: Any) -> bool:
+def _may_request(action: str, zone: Zone | None) -> bool:
     """Speaks why the action cannot be sent now."""
     if zone is None and action != 'off':
         _state.active = False
-        _say('Enter Build mode first.', 'Najpierw włącz tryb budowania.')
+        say('Enter Build mode first.', 'Najpierw włącz tryb budowania.')
         return False
     if action not in _WITHOUT_CURSOR and not active():
-        _say('Build cursor is off.', 'Kursor budowania jest wyłączony.')
+        say('Build cursor is off.', 'Kursor budowania jest wyłączony.')
         return False
     return True
 
@@ -349,7 +344,7 @@ def request_menu(action: str) -> bool:
     zone = build_zone()
     if zone is None:
         _state.active = False
-        _say('Enter Build mode first.', 'Najpierw włącz tryb budowania.')
+        say('Enter Build mode first.', 'Najpierw włącz tryb budowania.')
         return False
     _leave_grid()
     if action in _MOVES:
@@ -430,7 +425,7 @@ except Exception:
     simsight_log.error('build: exit release not installed')
 
 
-@sims4.commands.Command(
+@sims4.commands.Command(  # type: ignore[misc]  # EA's Command is untyped
     'simsight.build', 'a11y.build', command_type=sims4.commands.CommandType.Live
 )
 @real_annotations
@@ -466,7 +461,7 @@ def _info(encoded: str) -> bool:
     return True
 
 
-@sims4.commands.Command(
+@sims4.commands.Command(  # type: ignore[misc]  # EA's Command is untyped
     'simsight.buildinfo', 'a11y.buildinfo', command_type=sims4.commands.CommandType.Live
 )
 @real_annotations
@@ -495,7 +490,7 @@ def _client_log(encoded: str) -> bool:
     return True
 
 
-@sims4.commands.Command(
+@sims4.commands.Command(  # type: ignore[misc]  # EA's Command is untyped
     'simsight.buildlog', 'a11y.buildlog', command_type=sims4.commands.CommandType.Live
 )
 @real_annotations
@@ -528,7 +523,7 @@ def _parse_reply(encoded: str) -> tuple[int, int, str, int, int, int] | None:
     return serial, flag, fields[2], x, y, step
 
 
-def _accept_serial(serial: int, flag: int, zone: Any) -> bool:
+def _accept_serial(serial: int, flag: int, zone: Zone | None) -> bool:
     """Retire the answered request; False for a stale or misplaced reply."""
     if serial:
         expected_zone = _state.pending.pop(serial)
@@ -559,12 +554,12 @@ def _announce_reply(result: str, x: int, y: int, step: int) -> None:
             if _state.last_feedback and result in ('click', 'status')
             else ''
         )
-        _say(
+        say(
             prefix + f'Screen x {x}, y {y}. Step {step} pixels.' + feedback,
             prefix + f'Ekran x {x}, y {y}. Krok {step} pikseli.' + feedback,
         )
     elif result in _REPLIES:
-        _say(*_REPLIES[result])
+        say(*_REPLIES[result])
 
 
 def _client_state(encoded: str) -> bool:
@@ -587,7 +582,7 @@ def _client_state(encoded: str) -> bool:
     return True
 
 
-@sims4.commands.Command(
+@sims4.commands.Command(  # type: ignore[misc]  # EA's Command is untyped
     'simsight.buildstate', 'a11y.buildstate', command_type=sims4.commands.CommandType.Live
 )
 @real_annotations

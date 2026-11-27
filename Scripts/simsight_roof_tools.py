@@ -11,6 +11,8 @@ import simsight_log
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
+    from objects.game_object import GameObject
+
     from simsight_steps import Job
     from simsight_tiles import Frame
 
@@ -194,7 +196,7 @@ def _ground_parts(frame: Any) -> list[str]:
     return parts
 
 
-def _plant_point(obj: Any, frame: Any) -> tuple[Any, Any] | None:
+def _plant_point(obj: GameObject, frame: Any) -> tuple[Any, Any] | None:
     """Lot coordinates of a plant, or None for anything else."""
     try:
         if obj.is_sim:
@@ -204,7 +206,7 @@ def _plant_point(obj: Any, frame: Any) -> tuple[Any, Any] | None:
         tags = ' '.join(rooms.tag_names(obj)).lower()
         if any(w in tags for w in _PLANT_WORDS):
             return frame.local(obj.position.x, obj.position.z)
-    except Exception:  # an object that will not say is not a plant
+    except (AttributeError, TypeError, ValueError):  # an object that will not say is not a plant
         return None
     return None
 
@@ -240,13 +242,13 @@ def describe_lot() -> None:
     core.speak(' '.join(parts))
 
 
-def _side(room: Any, obj: Any) -> str:
+def _side(room: Any, obj: GameObject) -> str:
     import simsight_plus_build as build
 
     x1, z1, x2, z2 = _box(room)
     try:
         x, z = build.frame().local(float(obj.position.x), float(obj.position.z))
-    except Exception:  # no lot frame: world coordinates
+    except AttributeError:  # no lot frame (no active lot): world coordinates
         x, z = float(obj.position.x), float(obj.position.z)
     values = (
         (abs(z - z1), 'north'),
@@ -257,7 +259,7 @@ def _side(room: Any, obj: Any) -> str:
     return min(values)[1]
 
 
-def _kind(obj: Any) -> str | None:
+def _kind(obj: GameObject) -> str | None:
     try:
         import simsight_plus_rooms as rooms
 
@@ -269,7 +271,7 @@ def _kind(obj: Any) -> str | None:
         for word in _FURNITURE_WORDS:
             if word in joined:
                 return word
-    except Exception:  # an object without tags is no major furniture
+    except (AttributeError, TypeError):  # an object without tags is no major furniture
         return None
     return None
 
@@ -304,7 +306,7 @@ def _doors_or_none(frame: Frame, i: int, j: int, level: Any, objects: list[Any])
 
     try:
         return tiles.doors(frame, i, j, level, objects=objects)
-    except Exception:  # doors the game will not list
+    except (AttributeError, TypeError, ValueError):  # doors the game will not list
         return {}
 
 
@@ -596,17 +598,17 @@ def describe_roof_level() -> None:
     core.speak(text)
 
 
-def _lot_point(obj: Any) -> tuple[float, float]:
+def _lot_point(obj: GameObject) -> tuple[float, float]:
     """(east, north) of an object in lot metres; world x, z without a frame."""
     try:
         import simsight_plus_build as build
 
         return build.frame().local(float(obj.position.x), float(obj.position.z))
-    except Exception:  # no lot frame: world coordinates
+    except AttributeError:  # no lot frame (no active lot): world coordinates
         return float(obj.position.x), float(obj.position.z)
 
 
-def _move_cursor_above(obj: Any, roof_level: int) -> bool:
+def _move_cursor_above(obj: GameObject, roof_level: int) -> bool:
     """Put the Build cursor above obj on the roof level."""
     try:
         import simsight_grid as grid
@@ -614,8 +616,8 @@ def _move_cursor_above(obj: Any, roof_level: int) -> bool:
         if not grid.active():
             grid.enter()
         return bool(grid.focus_position(obj.position, roof_level))
-    except Exception as ex:
-        _log(f'chimney cursor move failed: {ex!r}')
+    except Exception:  # the grid moves the game's camera: never stop the announcement
+        simsight_log.error('roof tools: chimney cursor move')
         return False
 
 
@@ -631,8 +633,8 @@ def _chimney_chosen(value: tuple[Any, Any]) -> None:
             getattr(obj, 'id', '?'),
             room.name,
             roof_level,
-            int(round(east)),
-            int(round(north)),
+            round(east),
+            round(north),
             moved,
         )
     )
@@ -640,8 +642,8 @@ def _chimney_chosen(value: tuple[Any, Any]) -> None:
         'Chimney alignment point: directly above the fireplace on the {} side of {}, approximately {} metres from the west edge and {} metres from the north edge. {} Choose a chimney in the catalog, return to the grid, and press Enter yourself. The normal exact placement validator decides whether it can be bought.'.format(
             _side(room, obj),
             room.name,
-            int(round(east)),
-            int(round(north)),
+            round(east),
+            round(north),
             f'The Build cursor is positioned there on roof level {roof_level}.'
             if moved
             else 'The cursor could not be moved, so nothing was changed.',

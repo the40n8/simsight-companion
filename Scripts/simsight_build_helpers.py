@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
     from simsight_steps import Job
+    from world.lot import Lot
 
 _LOG = 'build helpers: '  # log line prefix
 _PAGE_UP = (33, 0x49)  # virtual key, scan code: one floor up
@@ -51,7 +52,7 @@ def floor_state() -> dict[str, Any]:
 
     if not _runtime.build.in_build_mode() or keys.blocking_active() or keys.status.editing_active:
         raise RuntimeError('Close the game dialog before changing floors')
-    lot = services.active_lot()
+    lot: Lot | None = services.active_lot()  # the current zone's lot, None while loading
     if lot is None:
         raise RuntimeError('No active lot')
     floor = None  # Camera position is not a native floor number.

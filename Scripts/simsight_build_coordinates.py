@@ -24,6 +24,8 @@ import simsight_speech as speech
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+    from sims.sim import Sim
+
     # hwnd, client origin x and y, client width and height, DPI,
     # virtual desktop (left, top, width, height), window style
     Geometry = tuple[int, int, int, int, int, int, tuple[int, ...], int]
@@ -183,7 +185,7 @@ class Frame:
             math.isfinite(x) and math.isfinite(y) and 0 <= x < self.width and 0 <= y < self.height
         ):
             raise ValueError('Projected point is outside the game viewport')
-        result = (int(round(self.ox + x * self.sx)), int(round(self.oy + y * self.sy)))
+        result = (round(self.ox + x * self.sx), round(self.oy + y * self.sy))
         if not (0 <= result[0] < self.geometry[3] and 0 <= result[1] < self.geometry[4]):
             raise ValueError('Projected point is cropped from the viewport')
         return result
@@ -245,7 +247,7 @@ def _receive(text: str) -> bool:
     return True
 
 
-@sims4.commands.Command(
+@sims4.commands.Command(  # type: ignore[misc]  # EA's Command is untyped
     'simsight.coords_enc', 'a11y.coords_enc', command_type=sims4.commands.CommandType.Live
 )
 @real_annotations
@@ -379,15 +381,15 @@ def _release(u: Any) -> None:
 def _move(u: Any, x: float, y: float) -> None:
     f = _current(u)
     g = f.geometry
-    x, y = int(round(x)), int(round(y))
+    x, y = round(x), round(y)
     if not _state.build.on_main(_safe_game, f.zone):
         raise RuntimeError('Build Mode changed during pointer operation')
     _current(u)
     if not (g[1] <= x < g[1] + g[3] and g[2] <= y < g[2] + g[4]):
         raise RuntimeError('Mouse point is outside the game window')
     left, top, w, h = g[6]
-    nx = int(round((x - left) * 65535 / max(1, w - 1)))
-    ny = int(round((y - top) * 65535 / max(1, h - 1)))
+    nx = round((x - left) * 65535 / max(1, w - 1))
+    ny = round((y - top) * 65535 / max(1, h - 1))
     if not (0 <= nx <= 65535 and 0 <= ny <= 65535):
         raise RuntimeError('Mouse point outside virtual desktop')
     if not u.SetCursorPos(x, y):
@@ -521,30 +523,35 @@ def _original_mouse(flags: int, data: int = 0) -> Any:
 def _sim_point() -> tuple[float, float, int]:
     import services
 
-    sim = services.get_active_sim()
+    sim: Sim | None = services.get_active_sim()  # the first client's active Sim
     if sim is None:
         raise RuntimeError('Load a household first')
     return float(sim.position.x), float(sim.position.z), int(sim.level)
+
+
+def _preflight_check(build: Any) -> str:
+    """Measure at the active Sim and map that point; raises when refused."""
+    point = build.on_main(_sim_point)
+    if point is None:
+        raise RuntimeError('Game target unavailable')
+    result, frame = measure(*point)
+    # Mapping only: never call move_to, mouse, click, drag or park.
+    mapped = (
+        to_screen(*result['point'])
+        if result['status'] == 'point' and frame.clear(result['point'])
+        else None
+    )
+    simsight_log.json_line(
+        _LOG, 'preflight', response=result, physical_point=mapped, window=frame.geometry
+    )
+    return 'Build coordinate check complete. No pointer movement or construction. See SimSight log.'
 
 
 def _preflight_work() -> None:
     """Timer thread: measure at the active Sim and map that point, nothing more."""
     build = _state.build
     try:
-        point = build.on_main(_sim_point)
-        if point is None:
-            raise RuntimeError('Game target unavailable')
-        result, frame = measure(*point)
-        # Mapping only: never call move_to, mouse, click, drag or park.
-        mapped = (
-            to_screen(*result['point'])
-            if result['status'] == 'point' and frame.clear(result['point'])
-            else None
-        )
-        simsight_log.json_line(
-            _LOG, 'preflight', response=result, physical_point=mapped, window=frame.geometry
-        )
-        text = 'Build coordinate check complete. No pointer movement or construction. See SimSight log.'
+        text = _preflight_check(build)
     except Exception as exc:  # timer thread: every failure is reported
         if not isinstance(exc, (RuntimeError, ValueError)):
             simsight_log.error('build coordinates: preflight')
@@ -553,7 +560,7 @@ def _preflight_work() -> None:
     build.core.post(lambda: speech.speak(text, explicit=True))
 
 
-@sims4.commands.Command(
+@sims4.commands.Command(  # type: ignore[misc]  # EA's Command is untyped
     'simsight.buildcoords', 'a11y.buildcoords', command_type=sims4.commands.CommandType.Live
 )
 @real_annotations
