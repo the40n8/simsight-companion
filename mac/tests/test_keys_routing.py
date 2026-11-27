@@ -63,6 +63,7 @@ CLOSED = []
 module('simsight_scanner', a11y_menuclosed=lambda: CLOSED.append(True))
 
 import simsight_keys as keys  # noqa: E402
+from simsight_keys import chords, poller, state, winapi  # noqa: E402
 
 
 def reset():
@@ -72,10 +73,10 @@ def reset():
     keys.status.modal_active = False
     keys.status.editing_active = False
     keys.status.build_grid_owner = False
-    keys._state.blocking_explicit = None
-    keys._state.scanner_owner = False
-    keys._opening_keys.clear()
-    keys._dlls = lambda: (FakeUser32(), None)  # no Windows here
+    state._state.blocking_explicit = None
+    state._state.scanner_owner = False
+    state._opening_keys.clear()
+    winapi._dlls = lambda: (FakeUser32(), None)  # no Windows here (the fence)
 
 
 class CommandTypesTest(unittest.TestCase):
@@ -111,16 +112,16 @@ class ModalStateTest(unittest.TestCase):
 
     def test_closed_owner_bumps_the_epoch(self):
         keys.apply_modal_state('10', 'modalstate')
-        epoch = keys._state.input_epoch
+        epoch = state._state.input_epoch
         keys.apply_modal_state('00', 'modalstate')
-        self.assertGreater(keys._state.input_epoch, epoch)
+        self.assertGreater(state._state.input_epoch, epoch)
 
     def test_rejects_garbage(self):
         self.assertFalse(keys.apply_modal_state('2', 'modalstate'))
         self.assertFalse(keys.apply_modal_state(None, 'modalstate'))
         self.assertFalse(keys.a11y_blocking('x'))
         self.assertTrue(keys.a11y_blocking(0))
-        self.assertIs(keys._state.blocking_explicit, False)
+        self.assertIs(state._state.blocking_explicit, False)
 
 
 class PlainMessageTest(unittest.TestCase):
@@ -155,7 +156,7 @@ class PlainMessageTest(unittest.TestCase):
         self.assertEqual(keys.plain_message(0x52), 'A11yBuildGrid:turn')
         self.assertEqual(keys.plain_message(0x52, shift=True), 'A11yBuildGrid:turnback')
         keys.status.build_grid_owner = False
-        keys._state.scanner_owner = True
+        state._state.scanner_owner = True
         SETTINGS['scanner_mode'] = True
         self.assertEqual(keys.plain_message(0x28), 'A11yScanner:next')
         keys.status.enabled = False
@@ -168,16 +169,16 @@ class ChordTest(unittest.TestCase):
 
     def test_world_chord_is_queued(self):
         keys.run_chord('next')
-        self.assertEqual(POSTED, [('_world_chord', 'next', keys._state.input_epoch)])
+        self.assertEqual(POSTED, [('_world_chord', 'next', state._state.input_epoch)])
         del POSTED[:]
         keys.repeat_chord('next')
-        self.assertEqual(POSTED, [('_world_chord', 'next', keys._state.input_epoch, True)])
-        self.assertFalse(keys._state.chord_repeating)
+        self.assertEqual(POSTED, [('_world_chord', 'next', state._state.input_epoch, True)])
+        self.assertFalse(state._state.chord_repeating)
 
     def test_modal_owner_gets_navigation(self):
         keys.status.modal_active = True
         keys.run_chord('next')
-        self.assertEqual(POSTED, [('_deliver_activation', 'A11yNavNext', keys._state.input_epoch)])
+        self.assertEqual(POSTED, [('_deliver_activation', 'A11yNavNext', state._state.input_epoch)])
         keys.run_chord('rescan')
         self.assertEqual(len(POSTED), 1)  # nothing reaches the world behind a dialog
         keys.run_chord('help')
@@ -212,9 +213,9 @@ class ChordTest(unittest.TestCase):
         self.assertEqual(SPOKEN, ['repeat'])
 
     def test_stale_pump_turn_is_dropped(self):
-        epoch = keys._state.input_epoch
+        epoch = state._state.input_epoch
         keys.fence_opening_input()
-        self.assertFalse(keys._open_queue('queue', epoch))
+        self.assertFalse(chords._open_queue('queue', epoch))
 
 
 class FakeUser32:
@@ -233,20 +234,21 @@ class PollerTest(unittest.TestCase):
         reset()
         self.sent = []
         self.chords = []
+        # The poller looks these names up in its own submodule.
         self._send, self._chord, self._fg = (
-            keys.send_action,
-            keys.run_chord,
-            keys._game_is_foreground,
+            poller.send_action,
+            poller.run_chord,
+            poller._game_is_foreground,
         )
-        keys.send_action = self.sent.append
-        keys.run_chord = self.chords.append
-        keys._game_is_foreground = lambda user32, kernel32: True
+        poller.send_action = self.sent.append
+        poller.run_chord = self.chords.append
+        poller._game_is_foreground = lambda user32, kernel32: True
         self.user32 = FakeUser32()
-        self.poller = keys._Poller(self.user32, None)
+        self.poller = poller._Poller(self.user32, None)
         self.poller.last_lease = time.monotonic() + 3600  # no lease in these tests
 
     def tearDown(self):
-        keys.send_action, keys.run_chord, keys._game_is_foreground = (
+        poller.send_action, poller.run_chord, poller._game_is_foreground = (
             self._send,
             self._chord,
             self._fg,
