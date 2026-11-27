@@ -36,8 +36,12 @@ from .tree import _tree_parts, _tree_remember, _tree_restore
 from .ranges import RANGE_NAMES, _apply_range, _has_active_sim, _range, _range_limit
 
 if TYPE_CHECKING:
-    from .state import Part
+    from types import ModuleType
+
+    from server.client import Client
     from sims.sim import Sim
+
+    from .state import Part
 
 
 def cycle_range(delta: int) -> bool:
@@ -66,7 +70,7 @@ def apply_range_setting() -> None:
         simsight_log.error('scanner: range refresh')
 
 
-def _add_sims(services: Any, sim: Any, origin: Any) -> None:
+def _add_sims(services: ModuleType, sim: Sim, origin: Any) -> None:
     """List the active Sim (Yourself) and every other instanced Sim."""
     sims = [sim]
     try:
@@ -223,7 +227,7 @@ def rescan(preserve: bool = False) -> bool:
     _state.groups = []
     _state.group_index = 0
     _state.item_index = 0
-    sim = services.get_active_sim()
+    sim: Sim | None = services.get_active_sim()
     if sim is None:
         availability.reset()
         return False
@@ -257,7 +261,7 @@ def _ensure_scan() -> bool:
     try:
         import services
 
-        sim = services.get_active_sim()
+        sim: Sim | None = services.get_active_sim()
         last_origin = _state.last_origin
         same_origin = (
             sim is not None
@@ -291,7 +295,7 @@ def _bind_availability_client() -> None:
     try:
         import services
 
-        client = services.client_manager().get_first_client()
+        client: Client | None = services.client_manager().get_first_client()
         if client is _state.availability_client:
             return
         _unbind_availability_client()

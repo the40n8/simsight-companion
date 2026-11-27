@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import importlib
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import sims4.commands
 
@@ -17,6 +17,9 @@ import simsight_speech as speech
 
 from .state import _DROPPED_EPOCH, _bit, _deliver, _log_route, _post, _state, status
 from .winapi import fence_opening_input
+
+if TYPE_CHECKING:
+    from zone import Zone
 
 # Settings every UI copy must hear again: (module, function, what for the log).
 _UI_NOTICES = (
@@ -80,7 +83,7 @@ def _in_live() -> bool:
     try:
         import services
 
-        zone = services.current_zone()
+        zone: Zone | None = services.current_zone()
         live = zone is not None and not zone.is_in_build_buy
     except Exception:
         simsight_log.error('keys: Live check')

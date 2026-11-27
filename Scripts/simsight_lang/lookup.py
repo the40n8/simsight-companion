@@ -5,10 +5,14 @@ order (a later table wins for a term two tables share)."""
 from __future__ import annotations
 
 import sys
+from typing import TYPE_CHECKING
 
 import simsight_log
 
 from . import terms_features, terms_keyboard, terms_mac, terms_menu, terms_scanner, terms_words
+
+if TYPE_CHECKING:
+    from server.client import Client
 
 # term -> {language code: text}; 'en' is always there.
 _TRANSLATIONS: dict[str, dict[str, str]] = {
@@ -40,7 +44,7 @@ def locale_lang() -> str | None:
 def _client_locale() -> str | None:
     import services
 
-    client = services.client_manager().get_first_client()
+    client: Client | None = services.client_manager().get_first_client()
     if client is not None and getattr(client.account, 'locale', None):
         return str(client.account.locale)
     return None

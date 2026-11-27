@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import threading
 from itertools import islice
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import sims4.commands
 
@@ -13,6 +13,9 @@ import simsight_log
 from .base import _boundary, live_command
 from .decode import decode_percent
 from .state import _state
+
+if TYPE_CHECKING:
+    from sims.sim import Sim
 
 
 def _log_inventory_item(obj: Any) -> None:
@@ -39,7 +42,7 @@ def a11y_inspect_inventory(_connection: Any = None) -> bool:
         import services
 
         output = sims4.commands.CheatOutput(_connection)
-        sim = services.get_active_sim()
+        sim: Sim | None = services.get_active_sim()
         inventory = getattr(sim, 'inventory_component', None)
         if inventory is None:
             output('No active Sim inventory.')

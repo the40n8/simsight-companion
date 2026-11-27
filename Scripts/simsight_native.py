@@ -11,14 +11,17 @@ which the notification narration reads.
 
 from __future__ import annotations
 
-from typing import Any, Iterable
+from typing import TYPE_CHECKING, Any, Iterable
 
 import simsight_lang as lang
 import simsight_log
 import simsight_speech as speech
 
+if TYPE_CHECKING:
+    from ui.ui_dialog_service import UiDialogService
 
-def _service() -> Any:
+
+def _service() -> UiDialogService:
     import services
 
     return services.ui_dialog_service()

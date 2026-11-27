@@ -32,6 +32,9 @@ import simsight_patch
 if TYPE_CHECKING:
     from typing import Callable, Tuple
 
+    from server.client import Client
+    from zone import Zone
+
     Post = Tuple[str, str]  # (channel, payload)
     Queued = Tuple[int, str, str]  # (connection generation, channel, payload)
     Handler = Callable[[str], Any]
@@ -322,9 +325,9 @@ def _dispatch(channel: str, payload: str) -> None:
 def _client_present() -> bool:
     import services
 
-    zone = services.current_zone()
+    zone: Zone | None = services.current_zone()
     manager = services.client_manager() if zone is not None else None
-    client = manager.get_first_client() if manager is not None else None
+    client: Client | None = manager.get_first_client() if manager is not None else None
     return client is not None
 
 

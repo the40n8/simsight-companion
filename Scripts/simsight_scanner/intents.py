@@ -4,7 +4,7 @@ flag."""
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, cast
 
 import sims4.commands
 
@@ -23,6 +23,9 @@ from .tree import _tree_has_sublevel, _tree_parts, _tree_remember, _tree_restore
 from .scan import _ensure_scan, cycle_range, rescan
 
 if TYPE_CHECKING:
+    from sims.sim import Sim
+    from sims.sim_info import SimInfo
+
     from .state import Part
 
 
@@ -125,9 +128,10 @@ def _do_where() -> None:
     import services
 
     parts: list[Part] = []
-    sim = services.get_active_sim()
+    sim: Sim | None = services.get_active_sim()
     if sim is not None:
-        name, key = _sim_name_parts(sim.sim_info)
+        # Sim.sim_info is a property with a setter: the generated stub shows a method.
+        name, key = _sim_name_parts(cast('SimInfo', sim.sim_info))
         parts.append(name or ('loc', key))
         parts.append('. ')
     entry = _current()

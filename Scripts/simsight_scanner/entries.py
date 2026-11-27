@@ -12,6 +12,8 @@ from .state import COMPASS, Entry, _subs_in
 from .categories import _label_part
 
 if TYPE_CHECKING:
+    from sims.sim_info import SimInfo
+
     from .state import Part
 
 
@@ -28,7 +30,7 @@ def _level_of(obj: Any) -> int:
         return 0  # no floor level: count it as the ground floor
 
 
-def _sim_name_parts(sim_info: Any) -> tuple[str | None, int]:
+def _sim_name_parts(sim_info: SimInfo) -> tuple[str | None, int]:
     """Plain names when the game stores them as text; a loc key for the few
     special Sims that only carry a name key."""
     try:
@@ -87,7 +89,7 @@ def _patient_roles() -> dict[int, str]:
     return roles
 
 
-def _first_name(sim_info: Any) -> str:
+def _first_name(sim_info: SimInfo) -> str:
     try:
         return str(sim_info.first_name or '')
     except (AttributeError, TypeError):
