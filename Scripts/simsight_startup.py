@@ -27,6 +27,7 @@ from collections import deque
 from typing import TYPE_CHECKING, Any
 
 import simsight_log
+import simsight_patch
 
 if TYPE_CHECKING:
     from typing import Callable, Tuple
@@ -356,8 +357,9 @@ def tick() -> None:
             continue
         try:
             _dispatch(channel, payload)
-        except Exception as ex:
+        except Exception as ex:  # the game's tick: nothing may escape
             log(f'handler failed: {channel} {ex!r}')
+            simsight_log.error('startup: handler')
 
 
 def _greeted() -> None:
@@ -495,7 +497,7 @@ def _move_listener(listener: socket.socket) -> socket.socket:
         return listener
     try:
         port, replacement = _open_listener(_state.wanted)
-    except Exception as ex:
+    except OSError as ex:  # the port is taken (socket errors are OSError)
         log(f'listener stays on port {_state.port}: {ex!r}')
         return listener
     listener.close()
@@ -510,8 +512,11 @@ def _serve_one(conn: Any, address: Any) -> bool:
     try:
         if address[0] == '127.0.0.1' and same_process_peer(address[1], _state.port):
             moved = _connection(conn) == 'moved'
-    except Exception as ex:
+    except OSError as ex:  # the UI closed or reset the connection
         log(f'Socket session ended: {ex!r}')
+    except Exception as ex:  # the listener thread: nothing may end it
+        log(f'Socket session ended: {ex!r}')
+        simsight_log.error('startup: socket session')
     finally:
         conn.close()
     return moved
@@ -544,8 +549,11 @@ def _serve() -> None:
         _state.wanted = _state.seen = wanted
         _state.port, listener = _open_listener(wanted)
         listener = _accept_loop(listener)
-    except Exception as ex:
+    except OSError as ex:  # no port to listen on
         log(f'Socket unavailable: {ex!r}')
+    except Exception as ex:  # the thread's top: log, never raise
+        log(f'Socket unavailable: {ex!r}')
+        simsight_log.error('startup: listener thread')
     finally:
         if listener is not None:
             listener.close()
@@ -561,19 +569,20 @@ def install() -> None:
         return
     import sims4.core_services as core
 
-    original = core.on_tick
+    def make(original: simsight_patch.Function) -> simsight_patch.Function:
+        @functools.wraps(original)
+        def on_tick(*args: Any, **kwargs: Any) -> Any:
+            result = original(*args, **kwargs)
+            try:
+                tick()
+            except Exception:
+                simsight_log.error('startup: core tick')
+            return result
 
-    @functools.wraps(original)
-    def on_tick(*args: Any, **kwargs: Any) -> Any:
-        result = original(*args, **kwargs)
-        try:
-            tick()
-        except Exception:
-            simsight_log.error('startup: core tick')
-        return result
+        return on_tick
 
-    core.on_tick = on_tick
-    _state.installed = True
+    simsight_patch.wrap(core, 'on_tick', make)
+    _state.installed = True  # once: the listener thread starts once
     if IS_MAC:
         log('macOS: startup listener not started (main menu and CAS speech unavailable)')
         return

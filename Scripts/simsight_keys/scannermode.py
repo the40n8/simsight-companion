@@ -81,10 +81,11 @@ def _in_live() -> bool:
         import services
 
         zone = services.current_zone()
-        return zone is not None and not zone.is_in_build_buy
+        live = zone is not None and not zone.is_in_build_buy
     except Exception:
         simsight_log.error('keys: Live check')
         return False
+    return bool(live)
 
 
 def set_scanner_mode(on: object) -> bool:

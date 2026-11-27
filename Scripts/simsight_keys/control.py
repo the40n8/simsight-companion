@@ -75,10 +75,10 @@ def a11y_keys(mode: str = 'on', _connection: Any = None) -> bool:
         output('simsight: keyboard navigation {}'.format('ON' if started else 'UNAVAILABLE'))
         _keys_listing(output)
         speech.speak('Keyboard navigation on.', explicit=True)
-        return True
     except Exception:
         simsight_log.error('keys: keys command')
         return False
+    return True
 
 
 def describe_key(vk: int, needs_alt: bool) -> str:

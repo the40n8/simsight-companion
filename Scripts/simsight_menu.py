@@ -10,16 +10,20 @@ First-install automatic opening is deferred by the user (2026-09-15).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 import sims4.commands
 
 import simsight_lang as lang
 import simsight_log
+import simsight_patch
 import simsight_pump as pump
 import simsight_settings as settings
 import simsight_speech as speech
 from simsight_narrator import live_command
+
+if TYPE_CHECKING:
+    from zone import Zone
 
 
 @dataclass(frozen=True)
@@ -450,7 +454,7 @@ def _next_number(row: Row, current: float, direction: int) -> float:
         value = row.hi
     if row.key == 'tooltip_delay':
         return round(value, 1)
-    return int(round(value))
+    return round(value)
 
 
 def _change_number(row: Row, direction: int) -> bool:
@@ -571,14 +575,13 @@ def loc_string(key: int) -> Any:
     """A LocalizedString for a string-table key the client will render."""
     try:
         from sims4.localization import _create_localized_string
-
-        return _create_localized_string(int(key))
-    except Exception:  # any failure of EA's helper: build the proto by hand
+    except ImportError:  # EA's private helper is gone: build the proto by hand
         from protocolbuffers.Localization_pb2 import LocalizedString
 
         result = LocalizedString()
         result.hash = int(key)
         return result
+    return _create_localized_string(int(key))
 
 
 def join_localized(*strings: Any) -> Any:
@@ -624,8 +627,8 @@ def picker(title: str, text: str, text_only: bool = False, localized_title: Any 
             _state.text_picker_factory = UiItemPicker.TunableFactory()
         return _state.text_picker_factory.default(
             owner,
-            title=lambda *args, **kwargs: raw_text(title),
-            text=lambda *args, **kwargs: raw_text(text),
+            title=lambda *_args, **_kwargs: raw_text(title),
+            text=lambda *_args, **_kwargs: raw_text(text),
             min_selectable=1,
             max_selectable=1,
         )
@@ -633,10 +636,10 @@ def picker(title: str, text: str, text_only: bool = False, localized_title: Any 
         _state.picker_factory = UiObjectPicker.TunableFactory()
     return _state.picker_factory.default(
         owner,
-        title=lambda *args, **kwargs: (
+        title=lambda *_args, **_kwargs: (
             localized_title if localized_title is not None else raw_text(title)
         ),
-        text=lambda *args, **kwargs: raw_text(text),
+        text=lambda *_args, **_kwargs: raw_text(text),
         picker_type=UiObjectPicker.UiObjectPickerObjectPickerType.OBJECT,
         min_selectable=1,
         max_selectable=1,
@@ -681,10 +684,10 @@ def show_settings_window() -> bool:
         _keys().fence_opening_input()
         dialog.show_dialog()
         _state.visual_id = dialog.dialog_id
-        return True
     except Exception:
         simsight_log.error('menu: settings window')
         return False
+    return True
 
 
 def _picked_tag(dialog: Any, where: str) -> Any:
@@ -806,10 +809,10 @@ def show_scanner_window(group: Any = None) -> bool:
         dialog.show_dialog()
         _state.scan_visual_id = dialog.dialog_id
         simsight_log.line(f'menu: scanner window with {option} rows')
-        return True
     except Exception:
         simsight_log.error('menu: scanner window')
         return False
+    return True
 
 
 def _fallback_name(entry: Any, icon_info: Any) -> tuple[Any, Any]:
@@ -828,7 +831,7 @@ def _object_name(entry: Any, obj: Any) -> tuple[Any, Any]:
         from distributor.shared_messages import IconInfoData
 
         icon_info = IconInfoData(obj_instance=obj)
-    except Exception:  # no icon for this object: the row goes without one
+    except ImportError:  # no icon data in this game version: the row goes without one
         icon_info = None
     if entry.name:
         return raw_text(entry.name), icon_info
@@ -850,7 +853,7 @@ def _entry_name(entry: Any, manager: Any) -> tuple[Any, Any]:
         return raw_text('Sim'), None
     try:
         obj = manager.get(entry.obj_id)
-    except Exception:  # the object went away while the window was built
+    except AttributeError:  # no object manager (zone unloading): name it from the entry
         obj = None
     if obj is not None:
         return _object_name(entry, obj)
@@ -879,15 +882,18 @@ def _on_scanner_pick(dialog: Any) -> None:
 def _install_zone_hook() -> None:
     import zone
 
-    original = zone.Zone.on_loading_screen_animation_finished
+    def make(original: simsight_patch.Function) -> simsight_patch.Function:
+        def a11y_menu_on_loading_screen_animation_finished(
+            self: Zone, *args: Any, **kwargs: Any
+        ) -> Any:
+            result = original(self, *args, **kwargs)
+            _state.visual_id = None
+            _state.scan_visual_id = None
+            return result
 
-    def a11y_menu_on_loading_screen_animation_finished(self: Any, *args: Any, **kwargs: Any) -> Any:
-        result = original(self, *args, **kwargs)
-        _state.visual_id = None
-        _state.scan_visual_id = None
-        return result
+        return a11y_menu_on_loading_screen_animation_finished
 
-    zone.Zone.on_loading_screen_animation_finished = a11y_menu_on_loading_screen_animation_finished
+    simsight_patch.wrap(zone.Zone, 'on_loading_screen_animation_finished', make)
 
 
 # ------------------------------------------------------------------ commands
@@ -915,10 +921,10 @@ def a11y_menu(action: str = 'toggle', _connection: Any = None) -> bool:
                 'open' if is_open() else 'closed', _state.index + 1, len(ROWS), pump.status()
             )
         )
-        return True
     except Exception:
         simsight_log.error('menu: menu command')
         return False
+    return True
 
 
 @live_command('simsight.scanview', 'a11y.scanview')
@@ -928,10 +934,10 @@ def a11y_scanview(_connection: Any = None) -> bool:
         output = sims4.commands.CheatOutput(_connection)
         shown = show_scanner_window()
         output('simsight: scanner window {}'.format('shown' if shown else 'not shown (see log)'))
-        return True
     except Exception:
         simsight_log.error('menu: scanview command')
         return False
+    return True
 
 
 try:

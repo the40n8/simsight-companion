@@ -12,6 +12,8 @@ import threading
 import time
 from typing import Any, Callable
 
+import simsight_log
+
 # Prism backends left out: UIA can report success without a reader actually
 # speaking; SAPI and OneCore are plain voices, the speech module's fallback.
 _SKIPPED_BACKENDS = ('sapi', 'onecore', 'uia')
@@ -166,7 +168,8 @@ class Reader:
     def _run(self, path: str, log: Callable[[str], None]) -> None:
         try:
             native = _NativeReader(path, log)
-        except Exception as ex:
+        except Exception as ex:  # the caller gets it from ready.result()
+            simsight_log.error('prism: reader start')
             self.ready.set_exception(ex)
             return
         self.ready.set_result(True)
@@ -177,7 +180,8 @@ class Reader:
                     native.name if method == 'name' else getattr(native, method)(*args, **kwargs)
                 )
                 result.set_result(value)
-            except Exception as ex:
+            except Exception as ex:  # the caller gets it from result.result()
+                simsight_log.error(f'prism: {method}')
                 result.set_exception(ex)
 
     def _call(self, method: str, *args: Any, **kwargs: Any) -> Any:

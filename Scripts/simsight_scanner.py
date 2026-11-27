@@ -51,11 +51,15 @@ import simsight_buycat as buycat
 import simsight_lang as lang
 from simsight_commands import real_annotations
 import simsight_log
+import simsight_patch
 import simsight_pump as pump
 import simsight_settings as settings
 import simsight_speech as speech
 
 if TYPE_CHECKING:
+    from sims.sim import Sim
+    from zone import Zone
+
     # What speak_parts says: plain text, or ('loc', string hash) for the
     # client to resolve in the player's language.
     Part = str | tuple[str, int]
@@ -260,10 +264,10 @@ def send_ui(name: str) -> bool:
 
         op = distributor.ops.SendUIMessage(name)
         distributor.system.Distributor.instance().add_op_with_no_owner(op)
-        return True
     except Exception:
         simsight_log.error('scanner: send to the UI')
         return False
+    return True
 
 
 def _clean_text(pieces: list[str]) -> str:
@@ -1092,7 +1096,7 @@ def _floor_part(delta: int) -> str:
 
 
 def place_part(entry: Entry) -> str:
-    metres = int(round(entry.distance))
+    metres = round(entry.distance)
     if metres < 1:
         where = lang.t('here')
     else:
@@ -1203,8 +1207,8 @@ def _start_refresh() -> None:
     )
 
 
-def _active_sim_changed(old_sim: Any, new_sim: Any) -> None:
-    # The game calls this when the player switches Sims.
+def _active_sim_changed(_old_sim: Sim | None, _new_sim: Sim | None) -> None:
+    # The game calls this when the player switches Sims: (old_sim, new_sim).
     try:
         availability.reset()
         _state.last_scan = 0.0
@@ -1479,7 +1483,10 @@ def open_pie_menu() -> None:
     'simsight.menuempty', 'a11y.menuempty', command_type=sims4.commands.CommandType.Live
 )
 @real_annotations
-def a11y_menuempty(arg: str = '', _connection: Any = None) -> bool:
+def a11y_menuempty(
+    arg: str = '',  # noqa: ARG001 - Flash may post one; not needed
+    _connection: Any = None,
+) -> bool:
     """Flash: the requested pie menu had no options."""
     try:
         speech.speak(lang.t('no options'), source='widget')
@@ -1567,7 +1574,10 @@ def note_menu_open() -> None:
     'simsight.menuclosed', 'a11y.menuclosed', command_type=sims4.commands.CommandType.Live
 )
 @real_annotations
-def a11y_menuclosed(arg: str = '', _connection: Any = None) -> bool:
+def a11y_menuclosed(
+    arg: str = '',  # noqa: ARG001 - Flash may post one; not needed
+    _connection: Any = None,
+) -> bool:
     if _state.menu_open:
         simsight_log.line('scanner: menu flag cleared')
     _state.menu_open = False
@@ -1644,21 +1654,20 @@ def _reset_for_new_zone() -> None:
 def _install_zone_hook() -> None:
     import zone
 
-    original = zone.Zone.on_loading_screen_animation_finished
+    def make(original: simsight_patch.Function) -> simsight_patch.Function:
+        def a11y_scanner_on_loading_screen_animation_finished(
+            self: Zone, *args: Any, **kwargs: Any
+        ) -> Any:
+            result = original(self, *args, **kwargs)
+            try:
+                _reset_for_new_zone()
+            except Exception:
+                simsight_log.error('scanner: zone load reset')
+            return result
 
-    def a11y_scanner_on_loading_screen_animation_finished(
-        self: Any, *args: Any, **kwargs: Any
-    ) -> Any:
-        result = original(self, *args, **kwargs)
-        try:
-            _reset_for_new_zone()
-        except Exception:
-            simsight_log.error('scanner: zone load reset')
-        return result
+        return a11y_scanner_on_loading_screen_animation_finished
 
-    zone.Zone.on_loading_screen_animation_finished = (
-        a11y_scanner_on_loading_screen_animation_finished
-    )
+    simsight_patch.wrap(zone.Zone, 'on_loading_screen_animation_finished', make)
 
 
 try:

@@ -33,10 +33,13 @@ import sims4.commands
 import simsight_lang as lang
 from simsight_commands import real_annotations
 import simsight_log
+import simsight_patch
 import simsight_settings as settings
 import simsight_speech as speech
 
 if TYPE_CHECKING:
+    from zone import Zone
+
     Output = Callable[[str], Any]
 
 _F = TypeVar('_F', bound=Callable[..., Any])
@@ -517,8 +520,9 @@ def _clock_funds() -> str:
         import simsight_hub as hub
 
         return hub.funds_text()
-    except Exception as ex:
+    except Exception as ex:  # the clock must still answer
         simsight_log.line(f'clock: funds unavailable ({ex!r})')
+        simsight_log.error('narrator: clock funds')
         return ''
 
 
@@ -706,7 +710,7 @@ def _log_inventory_item(obj: Any) -> None:
                 obj.is_hidden(),
             )
         )
-    except Exception as ex:
+    except (AttributeError, TypeError) as ex:  # not shaped like an inventory object
         simsight_log.line(f'Inventory inspect: item unavailable {ex!r}')
 
 
@@ -826,7 +830,10 @@ def a11y_menuopen(count: str = '0', _connection: Any = None) -> bool:
 
 
 @live_command('simsight.stop', 'a11y.stop')
-def a11y_stop(arg: str = '', _connection: Any = None) -> bool:
+def a11y_stop(
+    arg: str = '',  # noqa: ARG001 - Flash may post one; the stop needs none
+    _connection: Any = None,
+) -> bool:
     with _boundary('narrator: stop'):
         # Posted by Flash when a touched control has no text at all. Soft stop:
         # it must not cut down a row label that just started (see request_hush).
@@ -957,10 +964,10 @@ def push_simplified_menus() -> bool:
     try:
         state = bool(settings.get('simplified_menus', True))
         _send_ui_message('A11y|simplifiedmenus|' + ('on' if state else 'off'))
-        return True
     except Exception:
         simsight_log.error('simplified menus notice')
         return False
+    return True
 
 
 @live_command('simsight.autofocus', 'a11y.autofocus')
@@ -1168,21 +1175,20 @@ def _install_zone_hook() -> None:
     moment for SendUIMessage, and it re-applies after zone switches."""
     import zone
 
-    original = zone.Zone.on_loading_screen_animation_finished
+    def make(original: simsight_patch.Function) -> simsight_patch.Function:
+        def a11y_narrator_on_loading_screen_animation_finished(
+            self: Zone, *args: Any, **kwargs: Any
+        ) -> Any:
+            result = original(self, *args, **kwargs)
+            try:
+                _push_autofocus()
+            except Exception:
+                simsight_log.error('autofocus zone push')
+            return result
 
-    def a11y_narrator_on_loading_screen_animation_finished(
-        self: Any, *args: Any, **kwargs: Any
-    ) -> Any:
-        result = original(self, *args, **kwargs)
-        try:
-            _push_autofocus()
-        except Exception:
-            simsight_log.error('autofocus zone push')
-        return result
+        return a11y_narrator_on_loading_screen_animation_finished
 
-    zone.Zone.on_loading_screen_animation_finished = (
-        a11y_narrator_on_loading_screen_animation_finished
-    )
+    simsight_patch.wrap(zone.Zone, 'on_loading_screen_animation_finished', make)
 
 
 try:

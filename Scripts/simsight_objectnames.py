@@ -43,7 +43,7 @@ The simsight.objectnames on/off choice persists via the settings file
 
 from __future__ import annotations
 
-from typing import Any, Callable, TypeVar
+from typing import TYPE_CHECKING, Any, Callable
 
 import services
 import sims4.commands
@@ -55,9 +55,13 @@ from sims4.localization import LocalizationHelperTuning
 
 from simsight_commands import real_annotations
 import simsight_log
+import simsight_patch
 import simsight_settings as settings
 
-_F = TypeVar('_F')
+if TYPE_CHECKING:
+    from objects.components.inventory_item import InventoryItemComponent
+    from objects.components.tooltip_component import TooltipComponent
+    from zone import Zone
 
 
 _DIAG_MAX_OBJECTS = 8  # simsight.objdiag lists at most this many matches
@@ -218,10 +222,10 @@ def stamp(obj: Any, force: bool = False, inventory: bool = False) -> bool:
             obj.add_ui_metadata('recipe_name', name)
             obj.update_ui_metadata()
         _state.stamped.add(obj.id)
-        return True
     except Exception:
         simsight_log.error('objectnames: stamp failed')
         return False
+    return True
 
 
 def _on_object_add(obj: Any) -> None:
@@ -278,30 +282,33 @@ def enable(on: bool) -> int:
 
 
 def _install_inventory_hook() -> None:
-    from objects.components.inventory_item import InventoryItemComponent
+    from objects.components import inventory_item
 
-    original = InventoryItemComponent.on_added_to_inventory
+    def make(original: simsight_patch.Function) -> simsight_patch.Function:
+        def a11y_on_added_to_inventory(
+            self: InventoryItemComponent, *args: Any, **kwargs: Any
+        ) -> Any:
+            result = original(self, *args, **kwargs)
+            try:
+                if _state.enabled:
+                    stamp(self.owner, inventory=True)
+            except Exception:
+                simsight_log.error('objectnames: inventory name')
+            return result
 
-    def a11y_on_added_to_inventory(self: Any, *args: Any, **kwargs: Any) -> Any:
-        result = original(self, *args, **kwargs)
-        try:
-            if _state.enabled:
-                stamp(self.owner, inventory=True)
-        except Exception:
-            simsight_log.error('objectnames: inventory name')
-        return result
+        return a11y_on_added_to_inventory
 
-    InventoryItemComponent.on_added_to_inventory = a11y_on_added_to_inventory
+    simsight_patch.wrap(inventory_item.InventoryItemComponent, 'on_added_to_inventory', make)
 
 
-def _tooltip_needs_our_style(component: Any) -> bool:
+def _tooltip_needs_our_style(component: TooltipComponent) -> bool:
     owner = component.owner
     return bool(
         _state.enabled
         and owner is not None
         and owner.id in _state.stamped
         and not owner.hover_tip
-        and component._ui_metadata_handles
+        and component.has_ui_metadata_handles()
     )
 
 
@@ -309,39 +316,41 @@ def _install_tooltip_rebuild_hook() -> None:
     """After EA's rebuild: if it produced handles (which includes our merged
     external name) but chose no style, give it ours. EA styles always win;
     a rebuild that disabled the tip (no handles) is left disabled."""
-    from objects.components.tooltip_component import TooltipComponent
+    from objects.components import tooltip_component
 
-    original = TooltipComponent.update_object_tooltip
+    def make(original: simsight_patch.Function) -> simsight_patch.Function:
+        def a11y_update_object_tooltip(self: TooltipComponent, *args: Any, **kwargs: Any) -> Any:
+            result = original(self, *args, **kwargs)
+            try:
+                if _tooltip_needs_our_style(self):
+                    self.owner.hover_tip = _STYLE
+                    self.owner.update_ui_metadata()
+            except Exception:
+                simsight_log.error('objectnames: rebuild hook')
+            return result
 
-    def a11y_update_object_tooltip(self: Any) -> Any:
-        result = original(self)
-        try:
-            if _tooltip_needs_our_style(self):
-                self.owner.hover_tip = _STYLE
-                self.owner.update_ui_metadata()
-        except Exception:
-            simsight_log.error('objectnames: rebuild hook')
-        return result
+        return a11y_update_object_tooltip
 
-    TooltipComponent.update_object_tooltip = a11y_update_object_tooltip
+    simsight_patch.wrap(tooltip_component.TooltipComponent, 'update_object_tooltip', make)
 
 
 def _install_zone_hook() -> None:
     import zone
 
-    original = zone.Zone.on_loading_screen_animation_finished
+    def make(original: simsight_patch.Function) -> simsight_patch.Function:
+        def a11y_on_loading_screen_animation_finished(self: Zone, *args: Any, **kwargs: Any) -> Any:
+            result = original(self, *args, **kwargs)
+            try:
+                if _state.enabled:
+                    stamped = enable(True)
+                    simsight_log.line(f'objectnames: stamped {stamped} objects at zone load')
+            except Exception:
+                simsight_log.error('objectnames: zone-load stamp')
+            return result
 
-    def a11y_on_loading_screen_animation_finished(self: Any, *args: Any, **kwargs: Any) -> Any:
-        result = original(self, *args, **kwargs)
-        try:
-            if _state.enabled:
-                stamped = enable(True)
-                simsight_log.line(f'objectnames: stamped {stamped} objects at zone load')
-        except Exception:
-            simsight_log.error('objectnames: zone-load stamp')
-        return result
+        return a11y_on_loading_screen_animation_finished
 
-    zone.Zone.on_loading_screen_animation_finished = a11y_on_loading_screen_animation_finished
+    simsight_patch.wrap(zone.Zone, 'on_loading_screen_animation_finished', make)
 
 
 def _install(install: Callable[[], None], label: str) -> None:
@@ -359,17 +368,25 @@ _install(_install_zone_hook, 'zone')
 # ---------------------------------------------------------------- cheat commands
 
 
-def _add_tooltip_test_lines(lines: list[str], obj: Any, component: Any) -> None:
+def _private(component: TooltipComponent, name: str) -> Any:
+    """One of EA's private tooltip fields, for simsight.objdiag only: EA has
+    no public API that shows them."""
+    return getattr(component, name)
+
+
+def _add_tooltip_test_lines(lines: list[str], obj: Any, component: TooltipComponent) -> None:
     try:
         from event_testing.resolver import SingleObjectResolver
 
         resolver = SingleObjectResolver(obj)
         lines.append(f'   tooltip_tests_pass={bool(component.tooltip_tests.run_tests(resolver))}')
-        for i, tip in enumerate(component._get_custom_tooltips()):
+        for i, tip in enumerate(_private(component, '_get_custom_tooltips')()):
             passed = bool(tip.object_tests) and bool(tip.object_tests.run_tests(resolver))
             lines.append(f'   custom[{i}] style={tip.tooltip_style!r} tests_pass={passed}')
     except Exception as ex:
-        # A diagnostic: the failure is the answer, shown in the console.
+        # A diagnostic: the failure is the answer, shown in the console (tuned
+        # tests can raise anything).
+        simsight_log.error('objectnames: objdiag tooltip tests')
         lines.append(f'   test eval failed: {ex!r}')
 
 
@@ -380,14 +397,14 @@ def _diag_lines(obj: Any) -> list[str]:
         f' stamped={obj.id in _state.stamped} interactive={_has_interactions(obj)}'
     )
     lines = [head]
-    component = obj.get_component(component_types.TOOLTIP_COMPONENT)
+    component: TooltipComponent | None = obj.get_component(component_types.TOOLTIP_COMPONENT)
     if component is None:
         lines.append('   no tooltip component')
         return lines
     lines.append(
         f'   hovertip_requested={component.hovertip_requested}'
-        f' handles={sorted(component._ui_metadata_handles.keys())}'
-        f' external={sorted(component._external_field_to_data.keys())}'
+        f' handles={sorted(_private(component, "_ui_metadata_handles").keys())}'
+        f' external={sorted(_private(component, "_external_field_to_data").keys())}'
     )
     _add_tooltip_test_lines(lines, obj, component)
     return lines

@@ -15,7 +15,7 @@ from typing import Any
 _win: Any = ctypes
 
 
-class _IO_COUNTERS(ctypes.Structure):
+class _IoCounters(ctypes.Structure):
     _fields_ = [
         (name, ctypes.c_ulonglong)
         for name in (
@@ -29,7 +29,7 @@ class _IO_COUNTERS(ctypes.Structure):
     ]
 
 
-class _BASIC_LIMITS(ctypes.Structure):
+class _BasicLimits(ctypes.Structure):
     _fields_ = [
         ('PerProcessUserTimeLimit', ctypes.c_longlong),
         ('PerJobUserTimeLimit', ctypes.c_longlong),
@@ -43,10 +43,10 @@ class _BASIC_LIMITS(ctypes.Structure):
     ]
 
 
-class _EXTENDED_LIMITS(ctypes.Structure):
+class _ExtendedLimits(ctypes.Structure):
     _fields_ = [
-        ('BasicLimitInformation', _BASIC_LIMITS),
-        ('IoInfo', _IO_COUNTERS),
+        ('BasicLimitInformation', _BasicLimits),
+        ('IoInfo', _IoCounters),
         ('ProcessMemoryLimit', ctypes.c_size_t),
         ('JobMemoryLimit', ctypes.c_size_t),
         ('PeakProcessMemoryUsed', ctypes.c_size_t),
@@ -78,7 +78,7 @@ class SpeechJob:
         if not handle:
             raise _win.WinError(_win.get_last_error())
         self._handle = handle
-        limits = _EXTENDED_LIMITS()
+        limits = _ExtendedLimits()
         limits.BasicLimitInformation.LimitFlags = 0x2000  # KILL_ON_JOB_CLOSE
         if not api.SetInformationJobObject(handle, 9, ctypes.byref(limits), ctypes.sizeof(limits)):
             error = _win.get_last_error()
@@ -87,7 +87,7 @@ class SpeechJob:
 
     def assign(self, proc: Any) -> None:
         """Put the child (a subprocess.Popen) in the job; OSError when refused."""
-        process = int(proc._handle)  # Popen's Windows process handle
+        process = int(proc._handle)  # noqa: SLF001 - Popen keeps its Windows process handle private
         if not self._api.AssignProcessToJobObject(self._handle, ctypes.c_void_p(process)):
             raise _win.WinError(_win.get_last_error())
 

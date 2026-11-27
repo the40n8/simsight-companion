@@ -18,7 +18,10 @@ from .winapi import fence_opening_input
     'simsight.inputfence', 'a11y.inputfence', command_type=sims4.commands.CommandType.Live
 )
 @real_annotations
-def a11y_inputfence(payload: str = '', _connection: Any = None) -> bool:
+def a11y_inputfence(
+    payload: str = '',  # noqa: ARG001 - the console command's argument (see below)
+    _connection: Any = None,
+) -> bool:
     # Flash supplies an empty positional payload; the native command wrapper
     # also supplies _connection by keyword. Keep them separate. The startup
     # socket dispatcher calls this without either argument.
