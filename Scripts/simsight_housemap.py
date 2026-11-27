@@ -20,9 +20,10 @@ import simsight_log
 import simsight_plus_rooms as rooms
 
 if TYPE_CHECKING:
+    from typing import Iterable
+
     from lots.lot import Lot
     from sims.sim import Sim
-    from typing import Iterable
 
     Link = dict[str, Any]  # {'door': bool, 'sides': {side: n}, 'doors': {side: n}, 'stairs': str}
     Flight = tuple[Any, int, '_Room | None', '_Room | None']  # stairs, floor, bottom, top
@@ -58,7 +59,7 @@ class _Room:
         self.cells: list[tuple[int, int]] = []  # (i, j) grid indices
         self.tiles: list[tuple[float, float]] = []  # (x, z) world tile centres
         self.objects: list[Any] = []
-        self.sims: list[Any] = []
+        self.sims: list[Sim] = []
         self.links: dict[_Room, Link] = {}  # the room it opens onto -> how
         self.kind = 'ROOM'
         self.kind2 = ''
@@ -176,7 +177,9 @@ def _distance(a: Any, b: Any) -> int:
     return round(math.hypot(a.x - b.x, a.z - b.z))
 
 
-def _item_json(bridge: Any, obj: Any, room: _Room, half: float, sim: Any) -> dict[str, Any] | None:
+def _item_json(
+    bridge: Any, obj: Any, room: _Room, half: float, sim: Sim | None
+) -> dict[str, Any] | None:
     try:
         group, kind, keywords = bridge.classify(obj)
         cx, cz = room.center
@@ -198,7 +201,7 @@ def _item_json(bridge: Any, obj: Any, room: _Room, half: float, sim: Any) -> dic
 
 
 def _room_json(
-    room: _Room, floor_tiles: list[tuple[float, float]], bridge: Any, sim: Any
+    room: _Room, floor_tiles: list[tuple[float, float]], bridge: Any, sim: Sim | None
 ) -> dict[str, Any]:
     cx, cz = room.center
     iu = [c[0] for c in room.cells]
@@ -280,7 +283,7 @@ class _HouseMap(rooms.LotGrid):
     """One scan of the active lot on its tile grid: its rooms, the garden and
     pool around them, doors, stairs, furniture and Sims."""
 
-    def __init__(self, lot: Any) -> None:
+    def __init__(self, lot: Lot) -> None:
         super().__init__(lot)
         self.grid: dict[tuple[int, int, int], _Room] = {}  # (level, i, j) -> room
         self.found: dict[tuple[Any, int], _Room] = {}  # (room id, level) -> indoor room
@@ -393,7 +396,7 @@ class _HouseMap(rooms.LotGrid):
             self._add_object(obj, stairs)
         return stairs
 
-    def _add_sim(self, other: Any) -> None:
+    def _add_sim(self, other: Sim) -> None:
         try:
             room = self.room_at_world(other.position.x, other.position.z, int(other.level))
             if room is self.outside and _flag(other, 'is_on_active_lot') is False:
@@ -402,7 +405,7 @@ class _HouseMap(rooms.LotGrid):
         except Exception:  # a Sim of an odd shape is left out
             simsight_log.error('housemap: sim')
 
-    def add_sims(self, sims: Iterable[Any]) -> None:
+    def add_sims(self, sims: Iterable[Sim]) -> None:
         for other in sims:
             self._add_sim(other)
 
@@ -441,7 +444,7 @@ class _HouseMap(rooms.LotGrid):
         flights = (self._flight(obj) for obj in stairs)
         return [flight for flight in flights if flight is not None]
 
-    def to_json(self, flights: list[Flight], bridge: Any, sim: Any) -> dict[str, Any]:
+    def to_json(self, flights: list[Flight], bridge: Any, sim: Sim | None) -> dict[str, Any]:
         # Where each room sits on its floor, from the middle of the floor.
         middles: dict[int, list[tuple[float, float]]] = {}
         for room in self.found.values():

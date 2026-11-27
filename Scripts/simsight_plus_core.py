@@ -15,9 +15,10 @@ import simsight_log
 import simsight_patch
 
 if TYPE_CHECKING:
-    from sims.household import Household
     from collections.abc import Callable, Iterable, Sequence
 
+    from server.client import Client
+    from sims.household import Household
     from sims.sim import Sim
     from sims.sim_info import SimInfo
     from ui.ui_dialog_generic import UiDialogTextInputOkCancel
@@ -494,7 +495,7 @@ def active_sim() -> Sim | None:
     return services.get_active_sim()
 
 
-def client() -> Any:
+def client() -> Client | None:
     import services
 
     return services.client_manager().get_first_client()

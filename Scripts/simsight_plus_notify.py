@@ -13,8 +13,9 @@ import simsight_patch
 import simsight_plus_core as core
 
 if TYPE_CHECKING:
-    from date_and_time import DateAndTime
     from collections.abc import Callable
+
+    from date_and_time import DateAndTime
 
 MAX = 30
 

@@ -15,13 +15,13 @@ import simsight_patch
 import simsight_plus_core as core
 
 if TYPE_CHECKING:
-    from zone import Zone
     from collections.abc import Callable
 
     from careers.career_base import CareerBase
     from date_and_time import DateAndTime, TimeSpan
     from sims.household import Household
     from sims.sim_info import SimInfo
+    from zone import Zone
 
 DAYS = ('Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday')
 

@@ -12,17 +12,18 @@ import simsight_log
 import simsight_plus_core as core
 import simsight_steps as steps
 
-from .state import _product, busy, catalog_state, last_error
-from .lot import _touch_text, free_spots, in_build_mode, tile_map
+from .state import product, busy, catalog_state, last_error
+from .lot import touch_text, free_spots, in_build_mode, tile_map
 from .pointer import click, send_ui
 from .jobs import cost_check, no_mouse, run_job, tool_name, whole_numbers
-from .rooms import _new_room_box, room_ids
+from .rooms import new_room_box, room_ids
 from .features import reselect
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from simsight_steps import Job
+
     from .state import Row
 
 
@@ -129,7 +130,7 @@ def flash_reply_base(encoded: str = '') -> bool:
         core.log('bridge: {} (wall view mode {})'.format(kind, parts[1] if len(parts) > 1 else '?'))
     elif kind == 'selected':
         name = unquote(parts[2]) if len(parts) > 2 else 'item'
-        _product['name'] = name
+        product['name'] = name
         if (
             not catalog_state.get('silent_select') and not busy[0]
         ):  # quiet while a build job picks things itself
@@ -223,7 +224,7 @@ def fetch_catalog(
 def select_item_steps(index: int, name: str) -> Job[None]:
     """Job steps: choose catalog item `index` of the last fetched list, as clicking it would."""
     catalog_state['chosen'] = index
-    _product['name'] = name
+    product['name'] = name
     yield steps.OnMain(send_ui, f'A11y|plus|select|{index}')
     yield steps.Sleep(0.8)
 
@@ -323,7 +324,7 @@ def place_styled_room() -> None:
     rows: list[Row] = [
         (
             f'Around {e + 2} from west, {n + 2} from north',
-            'Free space. ' + _touch_text(grid, e, n, 4, 4).capitalize() + '.',
+            'Free space. ' + touch_text(grid, e, n, 4, 4).capitalize() + '.',
             (e + 2, n + 2),
         )
         for (e, n) in spots
@@ -343,14 +344,14 @@ def place_styled_room() -> None:
         money = cost_check('Placed ' + name, 'The room was not placed. It may not fit there.')
 
         def verify_and_describe() -> None:
-            box = _new_room_box(before)
+            box = new_room_box(before)
             if box is None:
                 money()
                 return
             g = tile_map()[1]
             (w, d) = (box[2] - box[0], box[3] - box[1])
             core.speak(
-                f'Placed {name}. It is {w} by {d} meters, from {box[0]} to {box[2]} west, {box[1]} to {box[3]} north. It {_touch_text(g, box[0], box[1], w, d)}. '
+                f'Placed {name}. It is {w} by {d} meters, from {box[0]} to {box[2]} west, {box[1]} to {box[3]} north. It {touch_text(g, box[0], box[1], w, d)}. '
                 'Use Alt+R to hear what is inside.'
             )
 

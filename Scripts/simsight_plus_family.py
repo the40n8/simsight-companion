@@ -16,9 +16,9 @@ import simsight_plus_core as core
 import simsight_plus_sims as sims
 
 if TYPE_CHECKING:
-    from lots.lot import Lot as GameLot
     from typing import Callable
 
+    from lots.lot import Lot as GameLot
     from sims.household import Household
     from sims.sim_info import SimInfo
 
@@ -780,6 +780,8 @@ def _create_and_move() -> None:
         raise LookupError('no home chosen for the new family')
     zone_id = lot['zone_id']
     client = core.client()
+    if client is None:
+        raise LookupError('no game client')
     funds = STARTING_FUNDS - (lot['price'] or 0)
     creators = [
         SimCreator(

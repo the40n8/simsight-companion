@@ -128,7 +128,7 @@ def free_spots(grid: Grid, w: int, d: int, limit: int = 6) -> list[tuple[int, in
     return out
 
 
-def _touch_text(grid: Grid, e: int, n: int, w: int, d: int) -> str:
+def touch_text(grid: Grid, e: int, n: int, w: int, d: int) -> str:
     sides = []
     rows, cols = len(grid), len(grid[0])
 

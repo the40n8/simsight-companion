@@ -19,7 +19,8 @@ if TYPE_CHECKING:
 
 busy = [False]  # [True] while a pointing job runs (other modules read and set it)
 
-_product: dict[str, Any] = {'id': None, 'name': ''}  # the chosen catalog item
+product: dict[str, Any] = {'id': None, 'name': ''}  # the chosen catalog item
+_product = product  # the old name, read by simsight_wall
 
 # The last listed catalog category; other modules read 'chosen' and 'items'.
 catalog_state: dict[str, Any] = {

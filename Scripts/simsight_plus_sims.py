@@ -11,9 +11,9 @@ import simsight_log
 import simsight_plus_core as core
 
 if TYPE_CHECKING:
-    from sims.household import Household
     from typing import Callable
 
+    from sims.household import Household
     from sims.sim import Sim
     from sims.sim_info import SimInfo
 
@@ -264,10 +264,13 @@ def _resume_family(_sim: Any) -> None:
 
 
 def _open_cas(sim: Sim) -> None:
-    try:
-        import sims4.commands
+    import sims4.commands
 
-        client = core.client()
+    client = core.client()
+    if client is None:
+        core.speak('Could not open Create a Sim.')
+        return
+    try:
         sims4.commands.client_cheat(
             f'sims.exit2cas {sim.id} {sim.sim_info.household_id} {sim.id}', client.id
         )
@@ -594,6 +597,9 @@ def _create() -> None:
     hh: Household | None = services.active_household()
     client = core.client()
     sim = core.active_sim()
+    if client is None:
+        core.speak('Sorry, the game could not create the Sim.')
+        return
     try:
         creator = SimCreator(
             gender=d.gender, age=d.age, first_name=d.first, last_name=d.last, traits=d.traits

@@ -12,7 +12,7 @@ import simsight_log
 import simsight_plus_core as core
 import simsight_steps as steps
 
-from .state import _product, busy, last_error
+from .state import product, busy, last_error
 from .pointer import (
     WHEEL,
     _new_serial,
@@ -210,9 +210,9 @@ def _note_product(instance_text: Any, name: Any) -> None:
     """simsight_place's product listener: remember the chosen catalog item."""
     try:
         text = str(instance_text or '').strip()
-        _product['id'] = int(text) if text.isdigit() and int(text) else None
-        _product['name'] = str(name or '').strip()
-        core.log('build: selected product {} {!r}'.format(_product['id'], _product['name']))
+        product['id'] = int(text) if text.isdigit() and int(text) else None
+        product['name'] = str(name or '').strip()
+        core.log('build: selected product {} {!r}'.format(product['id'], product['name']))
     except Exception:  # noting the product must never stop SimSight choosing it
         simsight_log.error('plus build: note selected product')
 
@@ -227,7 +227,7 @@ def watch_product() -> None:
 
 
 def tool_name() -> str:
-    return _product['name'] or ''
+    return product['name'] or ''
 
 
 def _tool_is(*words: str) -> bool:

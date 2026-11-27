@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from .state import Box, Row
 
 
-def _new_room_box(before: set[tuple[Box, int]]) -> Box | None:
+def new_room_box(before: set[tuple[Box, int]]) -> Box | None:
     """Box (e0, n0, e1, n1) of rooms that did not exist before, or None. Rooms are compared by their
     box, because the game may renumber a room when a new one is built next to it."""
     import simsight_plus_rooms as rooms

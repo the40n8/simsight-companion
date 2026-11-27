@@ -9,9 +9,9 @@ from typing import TYPE_CHECKING, Any
 import simsight_log
 
 if TYPE_CHECKING:
-    from lots.lot import Lot
     from collections.abc import Callable
 
+    from lots.lot import Lot
     from simsight_plus_house import Plan
 
 
