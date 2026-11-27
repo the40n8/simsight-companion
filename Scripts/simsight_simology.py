@@ -26,6 +26,7 @@ import simsight_names as names
 import simsight_speech as speech
 
 if TYPE_CHECKING:
+    from sims.sim_info import SimInfo
     from simsight_hub import Row
 
     Entry = tuple[Any, Any]  # (milestone tuning, its tracker data)
@@ -38,7 +39,7 @@ def _say(term: str) -> None:
     speech.speak(lang.t(term), explicit=True)
 
 
-def _no_rows(term: str, info: Any) -> bool:
+def _no_rows(term: str, info: SimInfo) -> bool:
     speech.speak(lang.t(term).format(names.full_name(info)), explicit=True)
     return False
 
@@ -60,7 +61,7 @@ def values_available() -> bool:
     return _pack('GP05')
 
 
-def _active_info() -> Any:
+def _active_info() -> SimInfo | None:
     import services
 
     client = services.client_manager().get_first_client()
@@ -94,11 +95,11 @@ def age_name(age: Any) -> str:
 # ------------------------------------------------------------------ milestones
 
 
-def _tracker(info: Any) -> Any:
+def _tracker(info: SimInfo | None) -> Any:
     return getattr(info, 'developmental_milestone_tracker', None) if info is not None else None
 
 
-def _milestone_entries(tracker: Any, info: Any) -> list[Entry]:
+def _milestone_entries(tracker: Any, info: SimInfo) -> list[Entry]:
     """(milestone, data) pairs EA's panel shows, active and archived."""
     from event_testing.resolver import SingleSimResolver
 
@@ -180,7 +181,7 @@ def _groups(entries: list[Entry]) -> dict[Any, list[Entry]]:
     return groups
 
 
-def _read(info: Any) -> dict[Any, list[Entry]] | None:
+def _read(info: SimInfo) -> dict[Any, list[Entry]] | None:
     tracker = _tracker(info)
     if tracker is None:
         return None
@@ -266,7 +267,7 @@ def _display(stat_type: Any, attr: str) -> Any:
         return None
 
 
-def _life_skills(info: Any) -> list[Any]:
+def _life_skills(info: SimInfo) -> list[Any]:
     from statistics.life_skill_statistic import LifeSkillStatistic
 
     tracker = getattr(info, 'commodity_tracker', None)
@@ -275,7 +276,7 @@ def _life_skills(info: Any) -> list[Any]:
     return [stat for stat in list(tracker) if isinstance(stat, LifeSkillStatistic)]
 
 
-def _range_trait(stat_type: Any, value: float, info: Any) -> tuple[Any, str]:
+def _range_trait(stat_type: Any, value: float, info: SimInfo) -> tuple[Any, str]:
     """The trait this value's tuned range gives at age up, if any."""
     for entry in getattr(stat_type, 'trait_on_age_up_list', None) or ():
         bounds = getattr(entry, 'life_skill_range', None)
@@ -299,7 +300,7 @@ def value_text(value: float, low: float, high: float) -> str:
     return lang.t('value on scale').format(round(value), round(low), round(high))
 
 
-def value_detail(stat: Any, info: Any) -> Any:
+def value_detail(stat: Any, info: SimInfo) -> Any:
     stat_type = type(stat)
     value = stat.get_value()
     low = getattr(stat_type, 'min_value_tuning', getattr(stat, 'min_value', 0))

@@ -19,6 +19,9 @@ import simsight_pump as pump
 import simsight_speech as speech
 
 if TYPE_CHECKING:
+    from sims.household import Household
+    from sims.sim import Sim
+
     # A window row: (localized name, localized description, callback). The
     # callback is called with no arguments; Callable[...] lets rows bind
     # their values as lambda defaults.
@@ -202,7 +205,7 @@ def household() -> bool:
     return show_window('household sims', 'choose a sim', rows)
 
 
-def funds_text(household: Any = None) -> str:
+def funds_text(household: Household | None = None) -> str:
     """'Household funds: 12,345 simoleons' for the active household."""
     if household is None:
         import services
@@ -262,7 +265,7 @@ def self_interactions() -> bool:
     return True
 
 
-def queue_entries(sim: Any) -> list[tuple[Any, Any, str]]:
+def queue_entries(sim: Sim) -> list[tuple[Any, Any, str]]:
     """The icons of EA's interaction queue, from the same UIManager records
     the client draws: running (super, group and posture) first, then queued
     in order. Each is (info, interaction or None, state)."""
@@ -278,7 +281,7 @@ def queue_entries(sim: Any) -> list[tuple[Any, Any, str]]:
     ]
 
 
-def _queue_interaction(sim: Any, interaction_id: int) -> Any:
+def _queue_interaction(sim: Sim, interaction_id: int) -> Any:
     # interactions.cancel_si looks an id up the same two ways.
     interaction = sim.find_interaction_by_id(interaction_id)
     return interaction if interaction is not None else sim.find_continuation_by_id(interaction_id)
@@ -430,12 +433,12 @@ def _sellable(obj: Any) -> bool:
     return not (check is not None and check())
 
 
-def _sell_price(sim: Any, obj: Any, count: int) -> int:
+def _sell_price(sim: Sim, obj: Any, count: int) -> int:
     # sim_inventory_sell_multiple: current_value * count * sell modifier, rounded.
     return round(obj.current_value * count * sim.sim_info.get_item_sell_price_modifier(obj))
 
 
-def _sell_rows(sim: Any, obj: Any, obj_id: int) -> list[Row]:
+def _sell_rows(sim: Sim, obj: Any, obj_id: int) -> list[Row]:
     """The selling rows of the item menu."""
     sim_id = sim.id
     if not _sellable(obj):

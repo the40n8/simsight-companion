@@ -5,7 +5,7 @@ from __future__ import annotations
 
 
 import time
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 import simsight_log
 import simsight_names as names
@@ -17,7 +17,6 @@ if TYPE_CHECKING:
     from server.client import Client
     from sims.household import Household
     from sims.sim import Sim
-    from sims.sim_info import SimInfo
 
     from .state import Answer, Json
 
@@ -73,8 +72,7 @@ def _visitor(sim: Sim, members: set[Any]) -> Json | None:
     """A Sim on the lot who is not in the household, or None."""
     entry: Json | None = None
     with _logged('visitor'):
-        # A property with a setter, which the generated stubs show as the setter.
-        info = cast('SimInfo', sim.sim_info)
+        info = sim.sim_info
         if info.sim_id not in members and _on_active_lot(sim, False):
             entry = {'simId': str(info.sim_id), 'name': names.full_name(info).strip()}
             room = _room_ref(sim)

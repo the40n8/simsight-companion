@@ -35,6 +35,9 @@ import simsight_settings as settings
 if TYPE_CHECKING:
     from collections.abc import Callable, Generator, Iterable
 
+    from server.client import Client
+    from sims.sim import Sim
+
     # (state, why, failed) once a check is finished.
     Outcome = tuple[str, str, bool]
     # A check: pauses (yields None) after each native test, returns its outcome.
@@ -342,7 +345,7 @@ def _tick(token: int | None = None) -> None:
     _work(sim, client, manager)
 
 
-def _work(sim: Any, client: Any, manager: Any) -> None:
+def _work(sim: Sim, client: Client, manager: Any) -> None:
     """Run checks until this tick's time budget is spent."""
     run = _state.run
     started = time.perf_counter()
@@ -364,7 +367,7 @@ def _work(sim: Any, client: Any, manager: Any) -> None:
         _log_run()
 
 
-def _start_next(sim: Any, client: Any, manager: Any) -> _Check | None:
+def _start_next(sim: Sim, client: Client, manager: Any) -> _Check | None:
     """Start checking the next queued object; None when it is gone."""
     obj_id = _state.queue.pop(0)
     try:
@@ -553,7 +556,7 @@ def _int_or_zero(read: Callable[[], Any]) -> int:
         return 0  # no active lot, or an object without a level: the game's own default
 
 
-def _place(sim: Any, client: Any, obj: Any) -> _Place:
+def _place(sim: Sim, client: Client, obj: Any) -> _Place:
     import services
 
     lot_id = _int_or_zero(lambda: services.active_lot().lot_id)
@@ -570,7 +573,7 @@ def _place(sim: Any, client: Any, obj: Any) -> _Place:
     return _Place(sim, client, obj, lot_id, level, parameters, location, surface, targets)
 
 
-def _evaluation(sim: Any, client: Any, obj: Any, check: _Check) -> Evaluation:
+def _evaluation(sim: Sim, client: Client, obj: Any, check: _Check) -> Evaluation:
     """Generator: pauses after each native test, returns (state, why, failed).
     check.phase and check.at name the work the latest step did."""
     from interactions import choices
@@ -740,7 +743,7 @@ def status() -> str:
     )
 
 
-def _nearest(sim: Any, manager: Any) -> list[tuple[float, Any, _Verdict]]:
+def _nearest(sim: Sim | None, manager: Any) -> list[tuple[float, Any, _Verdict]]:
     """(squared distance, object, verdict) of every known object, nearest first."""
     rows = []
     for obj_id, verdict in _state.verdicts.items():
