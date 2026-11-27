@@ -10,7 +10,7 @@ import traceback
 from typing import TYPE_CHECKING, Any
 
 import sims4.commands
-from simsight_commands import real_annotations
+from simsight_commands import console_command
 import simsight_log
 import simsight_patch
 
@@ -795,8 +795,7 @@ except Exception:  # module load: the rest of the mod still loads
     simsight_log.error(log_exc('install zone hook'))
 
 
-@sims4.commands.Command('a11yplus.status', command_type=sims4.commands.CommandType.Live)  # type: ignore[misc]  # EA's decorator is untyped
-@real_annotations
+@console_command('a11yplus.status', command_type=sims4.commands.CommandType.Live)
 def _status(_connection: Any = None) -> bool:
     try:
         out = sims4.commands.CheatOutput(_connection)

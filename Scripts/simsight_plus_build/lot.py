@@ -43,12 +43,10 @@ def frame() -> Frame:
 
 
 def in_build_mode() -> bool:
-    try:
-        import services
+    import services
 
-        return bool(services.current_zone().is_in_build_buy)
-    except AttributeError:  # no zone yet (loading)
-        return False
+    zone = services.current_zone()
+    return zone is not None and bool(zone.is_in_build_buy)  # no zone while loading
 
 
 # ---------------------------------------------------------------- tile map

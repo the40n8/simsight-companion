@@ -7,7 +7,7 @@ from typing import Any
 
 import sims4.commands
 
-from simsight_commands import real_annotations
+from simsight_commands import console_command
 import simsight_log
 
 from .state import VACATION, _Pending, _state, _ui
@@ -116,10 +116,9 @@ def _client_price(payload: str) -> bool:
     return True
 
 
-@sims4.commands.Command(
+@console_command(
     'simsight.lotprice_enc', 'a11y.lotprice_enc', command_type=sims4.commands.CommandType.Live
 )
-@real_annotations
 def a11y_lotprice_enc(payload: str = '', _connection: Any = None) -> bool:
     """Client bridge reply: <zone id>|<per-day price>|<generation> as the map
     computes it. Only the open vacation request that asked (same
@@ -131,10 +130,9 @@ def a11y_lotprice_enc(payload: str = '', _connection: Any = None) -> bool:
         return False
 
 
-@sims4.commands.Command(
+@console_command(
     'simsight.lot_value', 'a11y.lot_value', command_type=sims4.commands.CommandType.Live
 )
-@real_annotations
 def a11y_lot_value(zone: str = '0', _connection: Any = None) -> bool:
     """Log every lot value source for a zone and the price the list would use."""
     try:

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 import sims4.commands
 
-from simsight_commands import real_annotations
+from simsight_commands import console_command
 import simsight_log
 import simsight_pump as pump
 import simsight_settings as settings
@@ -233,10 +233,7 @@ def _travel_ingress(lease: str, request: str) -> bool:
     return True
 
 
-@sims4.commands.Command(
-    'simsight.travel', 'a11y.travel', command_type=sims4.commands.CommandType.Live
-)
-@real_annotations
+@console_command('simsight.travel', 'a11y.travel', command_type=sims4.commands.CommandType.Live)
 def a11y_travel(lease: str = '0', request: str = '0', _connection: Any = None) -> bool:
     """Flash posts simsight.travel <epoch> <request> after its native guards.
     Refusals here happen at ingress, before anything is queued."""
@@ -272,10 +269,9 @@ def _travel_cancel(request: str, lease: str) -> bool:
     return True
 
 
-@sims4.commands.Command(
+@console_command(
     'simsight.travel_cancel', 'a11y.travel_cancel', command_type=sims4.commands.CommandType.Live
 )
-@real_annotations
 def a11y_travel_cancel(request: str = '0', lease: str = '', _connection: Any = None) -> bool:
     """Flash invalidates one exact request (another M, Escape, zone change,
     its bounded timeout). Applied at ingress, never queued, so it always

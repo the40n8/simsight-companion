@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 
 import sims4.commands
 import simsight_lang as lang
-from simsight_commands import real_annotations
+from simsight_commands import console_command
 import simsight_log
 import simsight_speech as speech
 
@@ -1418,10 +1418,7 @@ def _jump_to_last() -> bool:
     return describe()
 
 
-@sims4.commands.Command(  # type: ignore[misc]  # EA's Command is untyped
-    'simsight.grid', 'a11y.grid', command_type=sims4.commands.CommandType.Live
-)
-@real_annotations
+@console_command('simsight.grid', 'a11y.grid', command_type=sims4.commands.CommandType.Live)
 def command(action: str = 'toggle', _connection: Any = None) -> Any:
     try:
         action = action.lower()

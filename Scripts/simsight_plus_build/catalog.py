@@ -7,7 +7,7 @@ import threading
 import time
 from typing import TYPE_CHECKING, Any
 
-from simsight_commands import real_annotations
+from simsight_commands import console_command
 import simsight_log
 import simsight_plus_core as core
 import simsight_steps as steps
@@ -163,8 +163,7 @@ def bridge_ok() -> bool:
 def _register_flash_command() -> None:
     import sims4.commands
 
-    @sims4.commands.Command('a11yplus.flash', command_type=sims4.commands.CommandType.Live)  # type: ignore[misc]  # EA's decorator is untyped
-    @real_annotations
+    @console_command('a11yplus.flash', command_type=sims4.commands.CommandType.Live)
     def a11yplus_flash(encoded: str = '', _connection: Any = None) -> bool:
         try:
             return _flash_reply(encoded)

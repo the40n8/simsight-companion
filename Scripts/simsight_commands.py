@@ -1,7 +1,11 @@
-"""Console commands with typed arguments, in modules that use
-`from __future__ import annotations`.
+"""Console commands: @console_command(...) registers a function with EA's
+console exactly as @sims4.commands.Command(...) does, with typed
+arguments that still work under `from __future__ import annotations`.
 
-EA's console parser (sims4.commands.parse_args) converts what the player
+    @console_command('simsight.example', command_type=sims4.commands.CommandType.Live)
+    def example(count: int = 1, _connection: Any = None) -> bool: ...
+
+Why real_annotations: EA's console parser (sims4.commands.parse_args) converts what the player
 types by looking at each parameter's annotation as a class (`arg_type is
 int`, `issubclass(arg_type, CustomParam)`). The future import turns every
 annotation into text ('int'), which the parser does not understand. Put
@@ -23,6 +27,20 @@ from typing import Any, Callable, TypeVar
 import simsight_log
 
 F = TypeVar('F', bound=Callable[..., Any])
+
+
+def console_command(*names: str, **options: Any) -> Callable[[F], F]:
+    """sims4.commands.Command(*names, **options) applied to the function
+    after real_annotations: the same registration, typed for mypy."""
+    import sims4.commands
+
+    register = sims4.commands.Command(*names, **options)
+
+    def decorate(func: F) -> F:
+        registered: F = register(real_annotations(func))
+        return registered
+
+    return decorate
 
 
 def real_annotations(func: F) -> F:

@@ -11,7 +11,7 @@ import time
 from typing import Any, Callable
 
 import sims4.commands
-from simsight_commands import real_annotations
+from simsight_commands import console_command
 import simsight_log
 
 # What a Win32 reading can raise here: our own refusals, a missing or failing
@@ -288,10 +288,9 @@ def _capture(build: Any) -> None:
         simsight_log.error('display inspect: manual capture')
 
 
-@sims4.commands.Command(  # type: ignore[misc]  # EA's Command is untyped
+@console_command(
     'simsight.inspect_display', 'a11y.inspect_display', command_type=sims4.commands.CommandType.Live
 )
-@real_annotations
 def inspect_display(delay: float = 5, _connection: Any = None) -> bool:
     output = sims4.commands.CheatOutput(_connection)
     if not math.isfinite(delay):

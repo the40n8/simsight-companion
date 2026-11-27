@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 import sims4.commands
 
 import simsight_lang as lang
-from simsight_commands import real_annotations
+from simsight_commands import console_command
 import simsight_log
 import simsight_names as names
 
@@ -372,10 +372,9 @@ def _hidden_flag(zone_id: int) -> Any:
         return f'error {ex!r}'  # a diagnostic: the failure is the answer
 
 
-@sims4.commands.Command(
+@console_command(
     'simsight.travel_probe', 'a11y.travel_probe', command_type=sims4.commands.CommandType.Live
 )
-@real_annotations
 def a11y_travel_probe(_connection: Any = None) -> bool:
     """Log every row of the last travel request with its region facts."""
     try:

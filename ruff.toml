@@ -47,6 +47,6 @@ max-statements = 50
 
 [lint.per-file-ignores]
 # Tests and tools may stay untyped; the mod's own code may not.
-"mac/tests/*" = ["ANN", "SLF001", "ARG"]  # tests may look inside the module they test
+"mac/tests/*" = ["ANN", "SLF001", "ARG", "N802"]  # tests look inside modules; fakes keep EA's names
 "tools/*" = ["ANN"]
 "mac/build.py" = ["ANN"]

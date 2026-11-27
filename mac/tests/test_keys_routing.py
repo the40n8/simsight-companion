@@ -223,7 +223,7 @@ class FakeUser32:
         self.down = set()
         self.taps = set()
 
-    def GetAsyncKeyState(self, vk):  # noqa: N802 - the Windows function's name
+    def GetAsyncKeyState(self, vk):
         value = (0x8000 if vk in self.down else 0) | (1 if vk in self.taps else 0)
         self.taps.discard(vk)
         return value

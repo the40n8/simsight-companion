@@ -14,7 +14,7 @@ from urllib.parse import unquote
 
 import sims4.commands
 import simsight_lang as lang
-from simsight_commands import real_annotations
+from simsight_commands import console_command
 import simsight_log
 import simsight_speech as speech
 
@@ -425,10 +425,7 @@ except Exception:
     simsight_log.error('build: exit release not installed')
 
 
-@sims4.commands.Command(  # type: ignore[misc]  # EA's Command is untyped
-    'simsight.build', 'a11y.build', command_type=sims4.commands.CommandType.Live
-)
-@real_annotations
+@console_command('simsight.build', 'a11y.build', command_type=sims4.commands.CommandType.Live)
 def command(action: str = 'toggle', _connection: Any = None) -> bool:
     try:
         return request(action.lower())
@@ -461,10 +458,9 @@ def _info(encoded: str) -> bool:
     return True
 
 
-@sims4.commands.Command(  # type: ignore[misc]  # EA's Command is untyped
+@console_command(
     'simsight.buildinfo', 'a11y.buildinfo', command_type=sims4.commands.CommandType.Live
 )
-@real_annotations
 def info(encoded: str = '', _connection: Any = None) -> bool:
     """Native localized hovered-object/error text; never infer placement success."""
     try:
@@ -490,10 +486,7 @@ def _client_log(encoded: str) -> bool:
     return True
 
 
-@sims4.commands.Command(  # type: ignore[misc]  # EA's Command is untyped
-    'simsight.buildlog', 'a11y.buildlog', command_type=sims4.commands.CommandType.Live
-)
-@real_annotations
+@console_command('simsight.buildlog', 'a11y.buildlog', command_type=sims4.commands.CommandType.Live)
 def buildlog(encoded: str = '', _connection: Any = None) -> bool:
     """Client lifecycle diagnostics for the Build cursor and the catalog
     product memory: written to the log, never spoken, capped per window."""
@@ -582,10 +575,9 @@ def _client_state(encoded: str) -> bool:
     return True
 
 
-@sims4.commands.Command(  # type: ignore[misc]  # EA's Command is untyped
+@console_command(
     'simsight.buildstate', 'a11y.buildstate', command_type=sims4.commands.CommandType.Live
 )
-@real_annotations
 def state(encoded: str = '', _connection: Any = None) -> bool:
     """Client reply: serial|active|result|x|y|step. Coordinates are pixels."""
     try:

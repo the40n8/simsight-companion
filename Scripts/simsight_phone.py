@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any, Callable
 
 import sims4.commands
 import simsight_lang as lang
-from simsight_commands import real_annotations
+from simsight_commands import console_command
 import simsight_log
 import simsight_names as names
 import simsight_patch
@@ -531,10 +531,9 @@ def _execute(phone_list: _PhoneList, entry: _Entry) -> bool:
     return True
 
 
-@sims4.commands.Command(
+@console_command(
     'simsight.phonelist', 'a11y.phonelist', command_type=sims4.commands.CommandType.Live
 )
-@real_annotations
 def a11y_phonelist(_connection: Any = None) -> bool:
     try:
         return open_list()
@@ -543,10 +542,7 @@ def a11y_phonelist(_connection: Any = None) -> bool:
         return False
 
 
-@sims4.commands.Command(
-    'simsight.phone', 'a11y.phone', command_type=sims4.commands.CommandType.Live
-)
-@real_annotations
+@console_command('simsight.phone', 'a11y.phone', command_type=sims4.commands.CommandType.Live)
 def a11y_phone(_connection: Any = None) -> bool:
     try:
         return open_waiting()

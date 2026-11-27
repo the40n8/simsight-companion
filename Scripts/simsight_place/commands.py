@@ -7,7 +7,7 @@ from typing import Any
 
 import sims4.commands
 
-from simsight_commands import real_annotations
+from simsight_commands import console_command
 import simsight_log
 
 from .catalog import product, set_product
@@ -15,10 +15,9 @@ from .placing import acknowledged
 from .state import say_text
 
 
-@sims4.commands.Command(  # type: ignore[misc]  # EA's Command is untyped
+@console_command(
     'simsight.buildproduct', 'a11y.buildproduct', command_type=sims4.commands.CommandType.Live
 )
-@real_annotations
 def buildproduct(encoded: str = '', _connection: Any = None) -> bool:
     """Client: the Build catalog selected a product ('<instance>|<name>') or
     dropped it ('0|'). Names arrive percent-encoded."""
@@ -68,10 +67,9 @@ def _catalog_left() -> bool:
     return True
 
 
-@sims4.commands.Command(  # type: ignore[misc]  # EA's Command is untyped
+@console_command(
     'simsight.catalogleft', 'a11y.catalogleft', command_type=sims4.commands.CommandType.Live
 )
-@real_annotations
 def catalogleft(_state: str = '', _connection: Any = None) -> bool:
     """Client: Escape released the Build catalog's keys (TooltipManager
     A11yReleaseBuildCatalog). The chosen product is unchanged."""
@@ -82,10 +80,9 @@ def catalogleft(_state: str = '', _connection: Any = None) -> bool:
         return False
 
 
-@sims4.commands.Command(  # type: ignore[misc]  # EA's Command is untyped
+@console_command(
     'simsight.buildhand', 'a11y.buildhand', command_type=sims4.commands.CommandType.Live
 )
-@real_annotations
 def buildhand(encoded: str = '', _connection: Any = None) -> bool:
     """Client: '<serial>|ok' once EA's placement tool holds nothing (it put
     the product down, or held none), '<serial>|denied' when it could not."""

@@ -102,8 +102,11 @@ def street_side() -> str:
 
     f = build.frame()
     point = None
+    zone = services.current_zone()
+    if zone is None:  # no lot loaded
+        return 'north'
     try:
-        sp = services.current_zone().active_lot_arrival_spawn_point
+        sp = zone.active_lot_arrival_spawn_point
         c = sp.get_approximate_center()
         point = f.local(c.x, c.z)
     except Exception:  # no arrival point on this lot (or a new shape): logged, north it is

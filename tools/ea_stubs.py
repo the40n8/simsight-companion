@@ -217,17 +217,19 @@ def function_parts(instrs, make):
 def decorators_before(instrs, i):
     """Decorator names applied by the expressions just before index i:
     plain names (@property, @x.setter) and calls (@Field(...) gives 'Field')."""
-    names = []
+    names: list = []
     while i > 0:
         if instrs[i - 1].opname.startswith('CALL_FUNCTION'):
             start = items_start(instrs, i, 1)
-            name, _ = dotted_before(instrs, start + 1) if start is not None else (None, 0)
-            if name is None or start is None:
+            if start is None or instrs[start].opname not in ('LOAD_NAME', 'LOAD_GLOBAL'):
                 break
-            # the callee must be a plain name chain starting at `start`
+            # the callee: the name chain starting at `start` (distributor.fields.Field)
             j = start + 1
             while j < i and instrs[j].opname == 'LOAD_ATTR':
                 j += 1
+            name, _ = dotted_before(instrs, j)
+            if name is None:
+                break
             names.insert(0, name.split('.')[-1])
             i = start
             continue

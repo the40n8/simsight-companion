@@ -20,6 +20,11 @@ def module(name, **attrs):
 
 def scripts_on_path():
     import os
+    import tempfile
 
     here = os.path.dirname(os.path.abspath(__file__))
     sys.path.insert(0, os.path.join(here, '..', '..', 'Scripts'))
+    # The mod logs next to itself: in tests, into a temporary folder instead.
+    import simsight_log
+
+    simsight_log.PATH = os.path.join(tempfile.mkdtemp(prefix='simsight-test-'), 'SimSight.log')

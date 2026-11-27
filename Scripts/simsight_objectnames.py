@@ -53,7 +53,7 @@ from objects.hovertip import TooltipFields
 from protocolbuffers import UI_pb2 as ui_protocols
 from sims4.localization import LocalizationHelperTuning
 
-from simsight_commands import real_annotations
+from simsight_commands import console_command
 import simsight_log
 import simsight_patch
 import simsight_settings as settings
@@ -431,10 +431,7 @@ def _objdiag(match: str, output: Any) -> None:
     output(f'simsight: objdiag matched {count} object(s)')
 
 
-@sims4.commands.Command(
-    'simsight.objdiag', 'a11y.objdiag', command_type=sims4.commands.CommandType.Live
-)
-@real_annotations
+@console_command('simsight.objdiag', 'a11y.objdiag', command_type=sims4.commands.CommandType.Live)
 def a11y_objdiag(match: str = '', _connection: Any = None) -> bool:
     """simsight.objdiag <substring of tuning name>: log tooltip state of matching
     objects (e.g. `simsight.objdiag bedDouble`)."""
@@ -487,10 +484,9 @@ def _objectnames(mode: str, output: Any) -> None:
     _speak(f'Object hover names on. {stamped} objects.')
 
 
-@sims4.commands.Command(
+@console_command(
     'simsight.objectnames', 'a11y.objectnames', command_type=sims4.commands.CommandType.Live
 )
-@real_annotations
 def a11y_objectnames(mode: str = 'on', _connection: Any = None) -> bool:
     try:
         _objectnames(mode, sims4.commands.CheatOutput(_connection))

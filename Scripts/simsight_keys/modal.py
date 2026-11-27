@@ -7,17 +7,16 @@ from typing import Any
 
 import sims4.commands
 
-from simsight_commands import real_annotations
+from simsight_commands import console_command
 import simsight_log
 
 from .state import _bit, _state, status
 from .winapi import fence_opening_input
 
 
-@sims4.commands.Command(
+@console_command(
     'simsight.inputfence', 'a11y.inputfence', command_type=sims4.commands.CommandType.Live
 )
-@real_annotations
 def a11y_inputfence(
     payload: str = '',  # noqa: ARG001 - the console command's argument (see below)
     _connection: Any = None,
@@ -29,10 +28,9 @@ def a11y_inputfence(
     return True
 
 
-@sims4.commands.Command(
+@console_command(
     'simsight.modalstate', 'a11y.modalstate', command_type=sims4.commands.CommandType.Live
 )
-@real_annotations
 def a11y_modalstate(state: str = '00', _connection: Any = None) -> bool:
     try:
         return apply_modal_state(state, 'modalstate')
@@ -124,10 +122,7 @@ def blocking_active() -> bool:
     return _state.blocking_explicit
 
 
-@sims4.commands.Command(
-    'simsight.blocking', 'a11y.blocking', command_type=sims4.commands.CommandType.Live
-)
-@real_annotations
+@console_command('simsight.blocking', 'a11y.blocking', command_type=sims4.commands.CommandType.Live)
 def a11y_blocking(state: str = '1', _connection: Any = None) -> bool:
     """Flash: the blocking bit alone, posted on change after the owner
     report (context, modalstate, blocking) and again after a sender reset."""

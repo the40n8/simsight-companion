@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any, Callable, Iterator, TypeVar
 
 import sims4.commands
 
-from simsight_commands import real_annotations
+from simsight_commands import console_command
 import simsight_log
 
 if TYPE_CHECKING:
@@ -20,12 +20,7 @@ _F = TypeVar('_F', bound=Callable[..., Any])
 def live_command(*names: str) -> Callable[[_F], _F]:
     """sims4.commands.Command(*names, Live) with the argument types EA's
     parser needs (see simsight_commands.real_annotations)."""
-    register = sims4.commands.Command(*names, command_type=sims4.commands.CommandType.Live)
-
-    def decorate(func: _F) -> _F:
-        return register(real_annotations(func))
-
-    return decorate
+    return console_command(*names, command_type=sims4.commands.CommandType.Live)
 
 
 @contextlib.contextmanager

@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any, Sequence
 
 import sims4.commands
 
-from simsight_commands import real_annotations
+from simsight_commands import console_command
 import simsight_log
 import simsight_speech as speech
 
@@ -113,10 +113,7 @@ def _loc_reply(text: str) -> None:
         _finish(pending)
 
 
-@sims4.commands.Command(
-    'simsight.loc_enc', 'a11y.loc_enc', command_type=sims4.commands.CommandType.Live
-)
-@real_annotations
+@console_command('simsight.loc_enc', 'a11y.loc_enc', command_type=sims4.commands.CommandType.Live)
 def a11y_loc_enc(text: str = '', _connection: Any = None) -> bool:
     """Flash reply: "<hash>|<percent-encoded localized text>"."""
     try:

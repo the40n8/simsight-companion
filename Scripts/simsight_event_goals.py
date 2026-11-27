@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from typing import Any, NamedTuple
 
-from simsight_commands import real_annotations
+from simsight_commands import console_command
 import simsight_log
 
 _REPLY_SECONDS = 4.0  # a reply later than this is ignored
@@ -92,12 +92,11 @@ def _register() -> None:
         return
     import sims4.commands
 
-    @sims4.commands.Command(
+    @console_command(
         'simsight.eventgoals_enc',
         'a11y.eventgoals_enc',
         command_type=sims4.commands.CommandType.Live,
     )
-    @real_annotations
     def command(text: str = '', _connection: Any = None) -> bool:
         return receive(text)
 

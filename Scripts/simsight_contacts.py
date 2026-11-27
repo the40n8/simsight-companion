@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 
 import sims4.commands
 import simsight_lang as lang
-from simsight_commands import real_annotations
+from simsight_commands import console_command
 import simsight_log
 import simsight_names as names
 import simsight_menu as menu
@@ -77,10 +77,7 @@ def open_contacts() -> bool:
     return hub.show_window('known contacts', 'contacts instructions', rows)
 
 
-@sims4.commands.Command(
-    'simsight.contacts', 'a11y.contacts', command_type=sims4.commands.CommandType.Live
-)
-@real_annotations
+@console_command('simsight.contacts', 'a11y.contacts', command_type=sims4.commands.CommandType.Live)
 def a11y_contacts(_connection: Any = None) -> bool:
     try:
         return open_contacts()

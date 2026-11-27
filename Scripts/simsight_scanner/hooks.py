@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 import sims4.commands
 
 import simsight_availability as availability
-from simsight_commands import real_annotations
+from simsight_commands import console_command
 import simsight_log
 import simsight_patch
 import simsight_pump as pump
@@ -46,8 +46,7 @@ def _scan_command(action: str, output: Any) -> None:
     output(f'simsight: scanner {action} -> {len(_state.groups)} categories, pump {pump.status()}')
 
 
-@sims4.commands.Command('simsight.scan', 'a11y.scan', command_type=sims4.commands.CommandType.Live)
-@real_annotations
+@console_command('simsight.scan', 'a11y.scan', command_type=sims4.commands.CommandType.Live)
 def a11y_scan(action: str = 'rescan', _connection: Any = None) -> bool:
     """simsight.scan [rescan|next|prev|nextcat|prevcat|nextsub|prevsub|open|back|
     where] runs one scanner action from the console (same as the chords)."""

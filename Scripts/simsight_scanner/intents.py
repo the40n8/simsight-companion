@@ -10,7 +10,7 @@ import sims4.commands
 
 import simsight_availability as availability
 import simsight_lang as lang
-from simsight_commands import real_annotations
+from simsight_commands import console_command
 import simsight_log
 import simsight_pump as pump
 import simsight_speech as speech
@@ -192,10 +192,9 @@ def open_pie_menu() -> None:
     )
 
 
-@sims4.commands.Command(
+@console_command(
     'simsight.menuempty', 'a11y.menuempty', command_type=sims4.commands.CommandType.Live
 )
-@real_annotations
 def a11y_menuempty(
     arg: str = '',  # noqa: ARG001 - Flash may post one; not needed
     _connection: Any = None,
@@ -283,10 +282,9 @@ def note_menu_open() -> None:
     availability.pause()
 
 
-@sims4.commands.Command(
+@console_command(
     'simsight.menuclosed', 'a11y.menuclosed', command_type=sims4.commands.CommandType.Live
 )
-@real_annotations
 def a11y_menuclosed(
     arg: str = '',  # noqa: ARG001 - Flash may post one; not needed
     _connection: Any = None,

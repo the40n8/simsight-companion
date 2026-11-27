@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 import sims4.commands
 
 import simsight_lang as lang
-from simsight_commands import real_annotations
+from simsight_commands import console_command
 import simsight_log
 import simsight_settings as settings
 import simsight_speech as speech
@@ -171,10 +171,9 @@ def _build_grid_key(intent: str, epoch: int) -> None:
     grid.on_key(intent)
 
 
-@sims4.commands.Command(
+@console_command(
     'simsight.buildgridowner', 'a11y.buildgridowner', command_type=sims4.commands.CommandType.Live
 )
-@real_annotations
 def a11y_buildgridowner(state: str = '0', _connection: Any = None) -> bool:
     """Flash: whether the Build cursor owns plain keys now (on change)."""
     report = _bit(state)
@@ -280,10 +279,9 @@ def _scanner_owner_report(state: object) -> bool:
     return True
 
 
-@sims4.commands.Command(
+@console_command(
     'simsight.scannerowner', 'a11y.scannerowner', command_type=sims4.commands.CommandType.Live
 )
-@real_annotations
 def a11y_scannerowner(state: str = '0', _connection: Any = None) -> bool:
     """Flash: whether the scanner owns bare keys now. Posted on change and
     again with every mode heartbeat; only a change does anything here."""
@@ -307,10 +305,9 @@ def _scanner_call(name: str, *args: object) -> Any:
     return None
 
 
-@sims4.commands.Command(
+@console_command(
     'simsight.scannerlive', 'a11y.scannerlive', command_type=sims4.commands.CommandType.Live
 )
-@real_annotations
 def a11y_scannerlive(state: str = '0', _connection: Any = None) -> bool:
     """Flash: Live mode with scanner mode on, whatever owns the keys (menus
     and text fields keep it on; Build, CAS and the main menu turn it off).
@@ -331,10 +328,9 @@ def a11y_scannerlive(state: str = '0', _connection: Any = None) -> bool:
     return True
 
 
-@sims4.commands.Command(
+@console_command(
     'simsight.scannermode', 'a11y.scannermode', command_type=sims4.commands.CommandType.Live
 )
-@real_annotations
 def a11y_scannermode(action: str = 'toggle', _connection: Any = None) -> bool:
     """simsight.scannermode [on|off|toggle]"""
     action = str(action).lower()

@@ -9,7 +9,7 @@ from typing import Any, Callable
 
 import sims4.commands
 
-from simsight_commands import real_annotations
+from simsight_commands import console_command
 import simsight_log
 import simsight_settings as settings
 import simsight_speech as speech
@@ -56,8 +56,7 @@ def _keys_listing(output: Callable[[str], object]) -> None:
     output('   needs: Ctrl+Shift+N; accessibility menu: Ctrl+Alt+H')
 
 
-@sims4.commands.Command('simsight.keys', 'a11y.keys', command_type=sims4.commands.CommandType.Live)
-@real_annotations
+@console_command('simsight.keys', 'a11y.keys', command_type=sims4.commands.CommandType.Live)
 def a11y_keys(mode: str = 'on', _connection: Any = None) -> bool:
     try:
         output = sims4.commands.CheatOutput(_connection)
@@ -88,10 +87,7 @@ def describe_key(vk: int, needs_alt: bool) -> str:
     return ('Alt+' if needs_alt else '') + hex(vk)
 
 
-@sims4.commands.Command(
-    'simsight.keyprobe', 'a11y.keyprobe', command_type=sims4.commands.CommandType.Live
-)
-@real_annotations
+@console_command('simsight.keyprobe', 'a11y.keyprobe', command_type=sims4.commands.CommandType.Live)
 def a11y_keyprobe(mode: str = 'off', _connection: Any = None) -> bool:
     """Optional, non-consuming native/stage input diagnostics for one minute."""
     value = mode.lower()
