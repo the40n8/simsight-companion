@@ -50,10 +50,10 @@ def sim(female):
 
 class Labels(unittest.TestCase):
     def test_mother(self):
-        self.assertEqual(bridge._bit_label(Bit, sim(True), sim(False)), 'Mother')
+        self.assertEqual(bridge.sim_life._bit_label(Bit, sim(True), sim(False)), 'Mother')
 
     def test_father(self):
-        self.assertEqual(bridge._bit_label(Bit, sim(False), sim(True)), 'Father')
+        self.assertEqual(bridge.sim_life._bit_label(Bit, sim(False), sim(True)), 'Father')
 
 
 class Minutes:
@@ -96,16 +96,18 @@ class PregnantBuff:
 
 class Moodlets(unittest.TestCase):
     def test_name_is_for_the_sim_who_has_it(self):
-        mom = bridge._moodlet(PregnantBuff(0), DateAndTime(0), sim(True))
-        dad = bridge._moodlet(PregnantBuff(0), DateAndTime(0), sim(False))
+        mom = bridge.sim_status._moodlet(PregnantBuff(0), DateAndTime(0), sim(True))
+        dad = bridge.sim_status._moodlet(PregnantBuff(0), DateAndTime(0), sim(False))
         self.assertEqual((mom['name'], dad['name']), ('Mother', 'Father'))
 
     def test_minutes_left(self):
         self.assertEqual(
-            bridge._moodlet(PregnantBuff(0), DateAndTime(5), sim(True))['minutesLeft'], -1
+            bridge.sim_status._moodlet(PregnantBuff(0), DateAndTime(5), sim(True))['minutesLeft'],
+            -1,
         )
         self.assertEqual(
-            bridge._moodlet(PregnantBuff(95), DateAndTime(5), sim(True))['minutesLeft'], 90
+            bridge.sim_status._moodlet(PregnantBuff(95), DateAndTime(5), sim(True))['minutesLeft'],
+            90,
         )
 
 

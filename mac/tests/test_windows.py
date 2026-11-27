@@ -83,17 +83,17 @@ class WindowsCompanion(unittest.TestCase):
         sent = []
         # The Mac's own subprocess cannot load as Windows: a stand-in.
         fake = types.SimpleNamespace(Popen=popen, PIPE=-1, DEVNULL=-3)
-        old = (bridge._find, bridge.subprocess, bridge.send, bridge._state.proc)
+        old = (bridge.pipe._find, bridge.pipe.subprocess, bridge.pipe.send, bridge._state.proc)
         try:
-            bridge._find = lambda name: (
+            bridge.pipe._find = lambda name: (
                 'C:\\Mods\\SimSight\\' + name if name == bridge.BRIDGE else None
             )
-            bridge.subprocess = fake
-            bridge.send = sent.append
+            bridge.pipe.subprocess = fake
+            bridge.pipe.send = sent.append
             bridge._state.proc = None
             self.assertTrue(bridge.start())
         finally:
-            bridge._find, bridge.subprocess, bridge.send, bridge._state.proc = old
+            bridge.pipe._find, bridge.pipe.subprocess, bridge.pipe.send, bridge._state.proc = old
         args, kw = calls[0]
         self.assertEqual(args[1:], ['--speaker', 'none'])
         self.assertEqual(kw.get('creationflags'), bridge.CREATE_NO_WINDOW)
@@ -102,20 +102,20 @@ class WindowsCompanion(unittest.TestCase):
     def test_reads_commands_without_blocking(self):
         r, w = os.pipe()
         sent = []
-        old = (bridge._state.proc, bridge.send, bridge._state.read_buf)
+        old = (bridge._state.proc, bridge.commands.send, bridge._state.read_buf)
         try:
             bridge._state.proc = FakeProc(r)
-            bridge.send = sent.append
+            bridge.commands.send = sent.append
             bridge._state.read_buf = b''
             WAITING['bytes'] = 0
-            bridge._read_commands()  # nothing waiting: returns at once
+            bridge.tick._read_commands()  # nothing waiting: returns at once
             self.assertEqual(sent, [])
             line = json.dumps({'id': '7', 'say': {'text': 'Pairing code: 1 2 3'}}).encode() + b'\n'
             os.write(w, line)
             WAITING['bytes'] = len(line)
-            bridge._read_commands()
+            bridge.tick._read_commands()
         finally:
-            bridge._state.proc, bridge.send, bridge._state.read_buf = old
+            bridge._state.proc, bridge.commands.send, bridge._state.read_buf = old
             os.close(r)
             os.close(w)
         self.assertEqual(SPOKEN[0][0], 'Pairing code: 1 2 3')
@@ -124,13 +124,13 @@ class WindowsCompanion(unittest.TestCase):
 
     def test_mirror_for_the_phone(self):
         lines = []
-        old = (bridge.alive, bridge.write_line)
+        old = (bridge.pipe.alive, bridge.pipe.write_line)
         try:
-            bridge.alive = lambda: True
-            bridge.write_line = lambda data: lines.append(data) or True
+            bridge.pipe.alive = lambda: True
+            bridge.pipe.write_line = lambda data: lines.append(data) or True
             bridge.mirror('Hunger low. 20%', False)
         finally:
-            bridge.alive, bridge.write_line = old
+            bridge.pipe.alive, bridge.pipe.write_line = old
         self.assertEqual(lines, [b'QHunger%20low.%2020%25'])
 
 
