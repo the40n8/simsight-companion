@@ -14,7 +14,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'mac', 'tests'))
-from test_imports import WINDOWS_ONLY, GameFinder, GameModule  # noqa: E402
+from test_imports import WINDOWS_ONLY, GameFinder, GameModule, mod_names  # noqa: E402
 
 COMMANDS = {}
 
@@ -48,8 +48,8 @@ def main():
     sys.modules['sims4.commands'] = commands
     setattr(importlib.import_module('sims4'), 'commands', commands)  # noqa: B010 - a fake module
     failed = []
-    for name in sorted(n[:-3] for n in os.listdir(scripts) if n.endswith('.py')):
-        if platform == 'mac' and name in WINDOWS_ONLY:
+    for name in mod_names(scripts):
+        if platform == 'mac' and name.split('.')[0] in WINDOWS_ONLY:
             continue
         try:
             importlib.import_module(name)

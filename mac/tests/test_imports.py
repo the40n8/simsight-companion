@@ -111,6 +111,23 @@ class GameFinder(importlib.abc.MetaPathFinder, importlib.abc.Loader):
         pass
 
 
+def mod_names(scripts):
+    """Every top-level module and package of the mod (packages: each submodule too)."""
+    names = []
+    for entry in sorted(os.listdir(scripts)):
+        path = os.path.join(scripts, entry)
+        if entry.endswith('.py'):
+            names.append(entry[:-3])
+        elif os.path.isfile(os.path.join(path, '__init__.py')):
+            names.append(entry)
+            names.extend(
+                f'{entry}.{sub[:-3]}'
+                for sub in sorted(os.listdir(path))
+                if sub.endswith('.py') and sub != '__init__.py'
+            )
+    return names
+
+
 def _load_all(scripts, platform):
     """Child process: import every module, print the ones that failed."""
     sys.path.insert(0, scripts)
@@ -118,10 +135,10 @@ def _load_all(scripts, platform):
         sys.path.insert(1, os.path.join(ROOT, 'windows', 'vendor'))
         sys.platform = 'win32'
     sys.meta_path.append(GameFinder())
-    names = sorted(n[:-3] for n in os.listdir(scripts) if n.endswith('.py'))
+    names = mod_names(scripts)
     failed = 0
     for name in names:
-        if platform == 'mac' and name in WINDOWS_ONLY:
+        if platform == 'mac' and name.split('.')[0] in WINDOWS_ONLY:
             continue
         try:
             importlib.import_module(name)
