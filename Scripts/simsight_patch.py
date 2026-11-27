@@ -26,6 +26,14 @@ _WRAPPED = '_simsight_wrapped'  # on a wrapper: the function it calls
 _BY = '_simsight_by'  # on a wrapper: which `make` built it
 
 
+def _below(link: Any) -> Any:
+    """The function a wrapper of ours calls, or None for anything else.
+    Read from the object's own __dict__: EA objects with a __getattr__
+    would answer any attribute and loop forever."""
+    own = getattr(link, '__dict__', None)
+    return own.get(_WRAPPED) if isinstance(own, dict) else None
+
+
 def _maker(make: Callable[[Function], Function]) -> str:
     return f'{getattr(make, "__module__", "")}.{getattr(make, "__qualname__", repr(make))}'
 
@@ -42,11 +50,12 @@ def wrap(owner: Any, name: str, make: Callable[[Function], Function]) -> Functio
     current = getattr(owner, name)
     by = _maker(make)
     link: Any = current
-    while hasattr(link, _WRAPPED):  # already in the chain: nothing to add
-        if getattr(link, _BY, None) == by:
-            found: Function = getattr(link, _WRAPPED)
+    below = _below(link)
+    while below is not None:  # already in the chain: nothing to add
+        if link.__dict__.get(_BY) == by:
+            found: Function = below
             return found
-        link = getattr(link, _WRAPPED)
+        link, below = below, _below(below)
     wrapper = make(current)
     setattr(wrapper, _WRAPPED, current)
     setattr(wrapper, _BY, by)
@@ -58,8 +67,9 @@ def wrap(owner: Any, name: str, make: Callable[[Function], Function]) -> Functio
 def original(owner: Any, name: str) -> Function:
     """The game's own function behind every wrapper (or the function itself)."""
     found: Function = getattr(owner, name)
-    while hasattr(found, _WRAPPED):
-        found = getattr(found, _WRAPPED)
+    below = _below(found)
+    while below is not None:
+        found, below = below, _below(below)
     return found
 
 
