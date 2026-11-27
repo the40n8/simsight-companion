@@ -45,18 +45,18 @@ class Tokens(unittest.TestCase):
     def test_names_and_gender(self):
         bella = token(first_name='Bella', last_name='Goth', is_female=True)
         self.assertEqual(
-            bridge._fill_tokens('{0.SimFirstName} wants {M0.his}{F0.her} tea', [bella]),
+            bridge.text._fill_tokens('{0.SimFirstName} wants {M0.his}{F0.her} tea', [bella]),
             'Bella wants her tea',
         )
-        self.assertEqual(bridge._fill_tokens('{0.SimFullName}', [bella]), 'Bella Goth')
+        self.assertEqual(bridge.text._fill_tokens('{0.SimFullName}', [bella]), 'Bella Goth')
 
     def test_numbers_money_and_plural(self):
-        self.assertEqual(bridge._fill_tokens('{0.Money}', [token(number=12.0)]), '§12')
-        self.assertEqual(bridge._fill_tokens('{0.Number}', [token(number=1.5)]), '1.5')
-        self.assertEqual(bridge._fill_tokens('One {S.Cereal}{P.Bowls}', []), 'One Cereal')
+        self.assertEqual(bridge.text._fill_tokens('{0.Money}', [token(number=12.0)]), '§12')
+        self.assertEqual(bridge.text._fill_tokens('{0.Number}', [token(number=1.5)]), '1.5')
+        self.assertEqual(bridge.text._fill_tokens('One {S.Cereal}{P.Bowls}', []), 'One Cereal')
 
     def test_missing_token_and_unknown_placeholder(self):
-        self.assertEqual(bridge._fill_tokens('Hi {0.SimFirstName} {X}', []), 'Hi')
+        self.assertEqual(bridge.text._fill_tokens('Hi {0.SimFirstName} {X}', []), 'Hi')
 
     def test_object_name_from_the_game_text(self):
         obj = token(
@@ -72,11 +72,13 @@ class Tokens(unittest.TestCase):
 
 class Pretty(unittest.TestCase):
     def test_tuning_names(self):
-        self.assertEqual(bridge._pretty('Buff_Energized_Coffee', ('buff_',)), 'Energized Coffee')
-        self.assertEqual(bridge._pretty('si_GoToBed', ('si_',)), 'Go To Bed')
+        self.assertEqual(
+            bridge.text._pretty('Buff_Energized_Coffee', ('buff_',)), 'Energized Coffee'
+        )
+        self.assertEqual(bridge.text._pretty('si_GoToBed', ('si_',)), 'Go To Bed')
 
     def test_need_levels(self):
-        levels = [bridge._need_level(p) for p in (10, 20, 50, 90)]
+        levels = [bridge.sim_status._need_level(p) for p in (10, 20, 50, 90)]
         self.assertEqual(
             levels,
             ['NEED_LEVEL_CRITICAL', 'NEED_LEVEL_LOW', 'NEED_LEVEL_OKAY', 'NEED_LEVEL_GOOD'],
@@ -89,30 +91,34 @@ class Commands(unittest.TestCase):
         GAME['zone'] = None
 
     def test_say_works_outside_a_game(self):
-        self.assertEqual(bridge._run({'say': {'text': 'Paired', 'interrupt': True}}), (True, ''))
+        self.assertEqual(
+            bridge.commands._run({'say': {'text': 'Paired', 'interrupt': True}}), (True, '')
+        )
         self.assertEqual(SPOKEN[0][0], 'Paired')
         self.assertTrue(SPOKEN[0][1]['interrupt'])
 
     def test_game_commands_need_a_game(self):
-        self.assertEqual(bridge._run({'listTargets': {}}), (False, 'not_in_game'))
-        self.assertEqual(bridge._run({'nothing': {}}), (False, 'not_in_game'))
+        self.assertEqual(bridge.commands._run({'listTargets': {}}), (False, 'not_in_game'))
+        self.assertEqual(bridge.commands._run({'nothing': {}}), (False, 'not_in_game'))
 
     def test_in_game(self):
         GAME['zone'] = token(is_zone_running=True)
-        self.assertEqual(bridge._run({'nothing': {}}), (False, 'unknown_command'))
-        self.assertEqual(bridge._run({'setSpeed': {'speed': 'SPEED_X'}}), (False, 'error'))
-        self.assertEqual(bridge._run({'openMenu': {'menu': 'x'}}), (False, 'unknown_command'))
+        self.assertEqual(bridge.commands._run({'nothing': {}}), (False, 'unknown_command'))
+        self.assertEqual(bridge.commands._run({'setSpeed': {'speed': 'SPEED_X'}}), (False, 'error'))
+        self.assertEqual(
+            bridge.commands._run({'openMenu': {'menu': 'x'}}), (False, 'unknown_command')
+        )
 
     def test_result_message(self):
         sent = []
-        old = bridge.send
+        old = bridge.commands.send
         try:
-            bridge.send = sent.append
-            bridge._handle(json.dumps({'id': '4', 'say': {'text': ''}}).encode())
-            bridge._handle(json.dumps({'id': '5', 'listTargets': {}}).encode())
-            bridge._handle(b'not json')
+            bridge.commands.send = sent.append
+            bridge.commands._handle(json.dumps({'id': '4', 'say': {'text': ''}}).encode())
+            bridge.commands._handle(json.dumps({'id': '5', 'listTargets': {}}).encode())
+            bridge.commands._handle(b'not json')
         finally:
-            bridge.send = old
+            bridge.commands.send = old
         self.assertEqual(
             sent,
             [
