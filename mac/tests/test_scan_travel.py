@@ -44,12 +44,15 @@ class _SimPicker(_Picker):
 module('ui.ui_dialog_picker', UiMapViewPicker=_Picker, UiSimPicker=_SimPicker)
 
 import simsight_travel as travel  # noqa: E402
+from simsight_travel import entry, hooks, prices, state  # noqa: E402
+from simsight_travel import places as travel_places  # noqa: E402
 
-travel._ui = lambda message: sent.append(message) or True
+# Patched where each name is looked up now (the package's submodules).
+entry._ui = lambda message: sent.append(message) or True
 
 
 def place(zone, master=None, world=1, name='Lot'):
-    p = travel._Place(zone, name)
+    p = state._Place(zone, name)
     p.master = zone if master is None else master
     p.world_key = world
     p.world_name = f'World {world}'
@@ -66,12 +69,12 @@ class CommandTypes(unittest.TestCase):
 
 class Prices(unittest.TestCase):
     def test_positive(self):
-        self.assertEqual(travel._positive('12.5'), 12.5)
+        self.assertEqual(prices._positive('12.5'), 12.5)
         for bad in (0, -3, 'x', None, float('nan'), float('inf'), float('-inf')):
-            self.assertIsNone(travel._positive(bad), bad)
+            self.assertIsNone(prices._positive(bad), bad)
 
     def test_client_price_only_for_its_request(self):
-        pending = travel._Pending(None, None, None, {}, travel.VACATION)
+        pending = state._Pending(None, None, None, {}, travel.VACATION)
         pending.generation = 4
         travel._state.pending = pending
         try:
@@ -88,7 +91,7 @@ class Prices(unittest.TestCase):
 class Buildings(unittest.TestCase):
     def test_units_grouped_under_offered_master(self):
         places = [place(1, name='Tower'), place(2, master=1), place(3, master=1), place(9)]
-        top = travel._buildings(places)
+        top = travel_places._buildings(places)
         self.assertEqual([p.zone_id for p in top], [1, 9])
         self.assertEqual([p.zone_id for p in top[0].units], [1, 2, 3])
         self.assertIsNot(top[0].units[0], top[0])
@@ -97,8 +100,8 @@ class Buildings(unittest.TestCase):
         self.assertEqual(places[0].units, [])
 
     def test_building_without_offered_master(self):
-        travel._zone_name = lambda zone: ''
-        top = travel._buildings([place(2, master=5), place(3, master=5)])
+        travel_places._zone_name = lambda zone: ''
+        top = travel_places._buildings([place(2, master=5), place(3, master=5)])
         self.assertEqual(len(top), 1)
         self.assertEqual(top[0].zone_id, 5)
         self.assertEqual(top[0].name, 'World 1')
@@ -107,7 +110,9 @@ class Buildings(unittest.TestCase):
     def test_worlds_sorted_and_counted(self):
         places = [place(1, world=2), place(2, world=1), place(3, world=2)]
         places[1].world_name = 'alpha'
-        self.assertEqual(travel._worlds(places), [(1, 'alpha', 1, None), (2, 'World 2', 2, None)])
+        self.assertEqual(
+            travel_places._worlds(places), [(1, 'alpha', 1, None), (2, 'World 2', 2, None)]
+        )
 
     def test_label_family_first_for_occupied_homes(self):
         p = place(1, name='Lot')
@@ -123,7 +128,7 @@ class Requests(unittest.TestCase):
         del travel._state.requests[:]
         travel._state.epoch = 3
         travel._state.lease_running = True
-        travel._zone_loaded = lambda: True
+        entry._zone_loaded = lambda: True
 
     def test_cancel_before_request_refuses_it(self):
         self.assertTrue(travel.a11y_travel_cancel('5', '3'))
@@ -152,16 +157,16 @@ class Requests(unittest.TestCase):
 
 class Hooks(unittest.TestCase):
     def test_map_hook_failure_goes_native(self):
-        original = travel._distribute
+        original = hooks._distribute
 
         def broken(*a, **k):
             raise RuntimeError('boom')
 
-        travel._distribute = broken
+        hooks._distribute = broken
         try:
             self.assertEqual(_Picker().distribute_dialog(1, 2), 'native')
         finally:
-            travel._distribute = original
+            hooks._distribute = original
 
 
 if __name__ == '__main__':
