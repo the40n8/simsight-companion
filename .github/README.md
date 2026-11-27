@@ -1,16 +1,20 @@
 # SimSight Companion
 
-Play The Sims 4 with a screen reader, on the Mac or Windows, and from your phone. An
-independent project based on **[TS4 Access](https://github.com/LeonianUniverse478/Sims4Access)**,
-the screen-reader mod for The Sims 4 by tyjokr, LeonianUniverse and contributors
-(MIT licence; their credits and licence are kept here).
-It speaks menus, dialogs, tooltips, notifications and what your Sim is doing:
-with the macOS system voices on the Mac, through NVDA or JAWS on Windows.
+Play The Sims 4 with a screen reader, together or alone, on the Mac or
+Windows. At its heart is a **phone companion app**, made for VoiceOver on
+the iPhone (and TalkBack): it shows the household, needs, moods and what
+happens, and lets you play, so a blind player and a sighted player can
+share one game. The mod also speaks the game itself: menus, dialogs,
+tooltips, notifications and what each Sim is doing, with the macOS voices
+on the Mac and through NVDA or JAWS on Windows.
 
-Made for playing together: a sighted player on the mouse, a blind player
-hearing what happens, and a phone app for either of them. Keyboard-only play
-(scanner, build cursor, Ctrl+Alt shortcuts) comes from TS4 Access on Windows;
-the Mac has its own keys ([KEYBOARD.md](../docs/mac/KEYBOARD.md)).
+An independent project, based on the work of
+**[TS4 Access](https://github.com/LeonianUniverse478/Sims4Access)**, the
+screen-reader mod for The Sims 4 by tyjokr, LeonianUniverse and
+contributors (MIT licence; their credits and licence are kept here).
+Keyboard play on Windows (scanner, build cursor, Ctrl+Alt shortcuts) comes
+from TS4 Access; the Mac has its own keys
+([KEYBOARD.md](../docs/mac/KEYBOARD.md)).
 
 **Windows: new, not yet tried in game.** The Windows parts of TS4 Access
 (speech, keyboard) are unchanged; the phone companion and the installer are
