@@ -89,7 +89,7 @@ def _save_slot() -> int:
         import services
 
         return int(services.get_persistence_service().get_save_slot_proto_buff().slot_id)
-    except Exception:  # no save slot yet (a new game): slot 0
+    except (AttributeError, TypeError, ValueError):  # no save slot yet (a new game): slot 0
         return 0
 
 

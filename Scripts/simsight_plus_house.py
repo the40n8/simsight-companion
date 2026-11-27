@@ -12,6 +12,7 @@ import time
 from typing import TYPE_CHECKING, Any
 
 import simsight_plus_build as build
+import simsight_log
 import simsight_plus_core as core
 
 if TYPE_CHECKING:
@@ -24,6 +25,8 @@ if TYPE_CHECKING:
     Door = dict[str, Any]
     Tile = tuple[int, int]
     TilePair = tuple[Tile, Tile]
+    # A stair run of a stacked house: (top step tile, climb direction) on the lot, lower, upper floor.
+    Transition = tuple[Tile, Tile, int, int]
     KindName = tuple[str, str]  # (kind, room name)
 
 WALL_PRICE = 60  # Room Tool, per meter of wall (measured)
@@ -104,7 +107,7 @@ def street_side() -> str:
         c = sp.get_approximate_center()
         point = f.local(c.x, c.z)
     except Exception:  # no arrival point on this lot (or a new shape): logged, north it is
-        core.log_exc('arrival spawn point')
+        simsight_log.error(core.log_exc('arrival spawn point'))
     if point is None:
         return 'north'
     (e, n) = point
@@ -128,6 +131,19 @@ class Plan:
         self.floors = 1
         # top=(u, v) highest step tile, climb=(du, dv); once mapped also top_lot, climb_lot
         self.stairs: dict[str, Any] | None = None
+        # Set by the house workflow (simsight_house_workflow, simsight_house_planner,
+        # simsight_detached): the zone and household the plan was made for, its stair
+        # runs, whether to offer a roof once built, a detached structure's details.
+        self.zone: int | None = None
+        self.household: int | None = None
+        self.transitions: list[Transition] = []
+        self.roof_prompt = False
+        self.detached: dict[str, Any] | None = None
+
+    @property
+    def _a11y_transitions(self) -> list[Transition]:
+        """The old name, still read by simsight_build_helpers (house_build)."""
+        return self.transitions
 
 
 def _names_for(kinds: Sequence[str]) -> list[str]:
@@ -327,44 +343,53 @@ def make_two_floor_plan(variant: str) -> Plan:
     p = Plan()
     p.side = street_side()
     p.floors = 2
-    W, F, H = TWO_W, FRONT_DEPTH, FRONT_DEPTH + HALL_DEPTH
-    D = H + BACK_DEPTH
+    width, front, hall = TWO_W, FRONT_DEPTH, FRONT_DEPTH + HALL_DEPTH  # hall: where it ends
+    depth = hall + BACK_DEPTH
     along, deep = _along_deep(p.side, f)
-    if along - 2 < W or deep - SETBACK - 1 < D:
+    if along - 2 < width or deep - SETBACK - 1 < depth:
         p.problem = (
-            f'Even a two-floor house, {W} by {D} meters, does not fit on this {f.width} by {f.depth} meter lot. '
+            f'Even a two-floor house, {width} by {depth} meters, does not fit on this {f.width} by {f.depth} meter lot. '
             'Choose a bigger lot.'
         )
         return p
-    p.width, p.depth = W, D
+    p.width, p.depth = width, depth
     down_back = ('bedroom', 'Bedroom 4') if variant == '4bed' else ('dining', 'Dining room')
     up_back = ('study', 'Study') if variant == '2bed' else ('bedroom', 'Bedroom 3')
     p.rooms = [
-        _room('living', 'Living room', (0, 0, 6, F), 0),
-        _room('kitchen', 'Kitchen', (6, 0, W, F), 0),
-        _room('hall', 'Hallway', (0, F, W, H), 0),
-        _room(down_back[0], down_back[1], (0, H, 7, D), 0),
-        _room('bathroom', 'Bathroom', (7, H, W, D), 0),
-        _room('bedroom', 'Bedroom 1', (0, 0, 5, F), 1),
-        _room('bedroom', 'Bedroom 2', (5, 0, W, F), 1),
-        _room('hall', 'Upstairs hallway', (0, F, W, H), 1),
-        _room(up_back[0], up_back[1], (0, H, 7, D), 1),
-        _room('bathroom', 'Upstairs bathroom', (7, H, W, D), 1),
+        _room('living', 'Living room', (0, 0, 6, front), 0),
+        _room('kitchen', 'Kitchen', (6, 0, width, front), 0),
+        _room('hall', 'Hallway', (0, front, width, hall), 0),
+        _room(down_back[0], down_back[1], (0, hall, 7, depth), 0),
+        _room('bathroom', 'Bathroom', (7, hall, width, depth), 0),
+        _room('bedroom', 'Bedroom 1', (0, 0, 5, front), 1),
+        _room('bedroom', 'Bedroom 2', (5, 0, width, front), 1),
+        _room('hall', 'Upstairs hallway', (0, front, width, hall), 1),
+        _room(up_back[0], up_back[1], (0, hall, 7, depth), 1),
+        _room('bathroom', 'Upstairs bathroom', (7, hall, width, depth), 1),
     ]
     # The stairs sit in the front half of the hallway and go up toward the right (seen from the street):
     # steps on the 3 tiles before the last one; you step on downstairs at the left end and step off
     # upstairs at the right end, by the door of bedroom 2. Doors stay clear of the stairs.
-    p.stairs = {'top': (W - 2, F), 'climb': (1, 0)}
+    p.stairs = {'top': (width - 2, front), 'climb': (1, 0)}
     p.doors = [
         _door('Front door into the living room', (3, 0), (3, -1), 0, True),
         _door('Door between the living room and the kitchen', (5, 2), (6, 2), 0),
-        _door('Door from the living room to the hallway', (3, F - 1), (3, F), 0),
-        _door(f'Door from the hallway to the {_the(down_back[1])}', (3, H), (3, H - 1), 0),
-        _door('Door from the hallway to the bathroom', (8, H), (8, H - 1), 0),
-        _door('Upstairs, door from the hallway to bedroom 1', (2, F - 1), (2, F), 1),
-        _door('Upstairs, door from the hallway to bedroom 2', (W - 1, F - 1), (W - 1, F), 1),
-        _door(f'Upstairs, door from the hallway to {_the(up_back[1])}', (3, H), (3, H - 1), 1),
-        _door('Upstairs, door from the hallway to the upstairs bathroom', (8, H), (8, H - 1), 1),
+        _door('Door from the living room to the hallway', (3, front - 1), (3, front), 0),
+        _door(f'Door from the hallway to the {_the(down_back[1])}', (3, hall), (3, hall - 1), 0),
+        _door('Door from the hallway to the bathroom', (8, hall), (8, hall - 1), 0),
+        _door('Upstairs, door from the hallway to bedroom 1', (2, front - 1), (2, front), 1),
+        _door(
+            'Upstairs, door from the hallway to bedroom 2',
+            (width - 1, front - 1),
+            (width - 1, front),
+            1,
+        ),
+        _door(
+            f'Upstairs, door from the hallway to {_the(up_back[1])}', (3, hall), (3, hall - 1), 1
+        ),
+        _door(
+            'Upstairs, door from the hallway to the upstairs bathroom', (8, hall), (8, hall - 1), 1
+        ),
     ]
     map_plan(p, f, along)
     return p
@@ -385,7 +410,7 @@ def _to_lot(p: Plan, f: Any, u_off: int, u: float, v: float) -> tuple[Any, Any]:
 
 def tile_to_lot(p: Plan, f: Any, u_off: int, tile: Sequence[int]) -> tuple[int, int]:
     (e, n) = _to_lot(p, f, u_off, tile[0] + 0.5, tile[1] + 0.5)
-    return (int(math.floor(e)), int(math.floor(n)))
+    return (math.floor(e), math.floor(n))
 
 
 def wall_meters(p: Plan) -> int:
@@ -530,7 +555,7 @@ def stair_info(oid: Any) -> tuple[Any, Any, tuple[int, int]] | None:
         return None
     (e, n) = build.frame().local(obj.position.x, obj.position.z)
     fx, fz = obj.forward.x, obj.forward.z
-    return (e, n, (int(round(-fz)), int(round(-fx))))
+    return (e, n, (round(-fz), round(-fx)))
 
 
 def pick_stairs() -> tuple[int, str] | None:
@@ -662,7 +687,7 @@ def _build_worker(p: Plan) -> None:
     try:
         _build(p)
     except Exception:
-        core.log_exc('build house')
+        simsight_log.error(core.log_exc('build house'))
         core.post(core.speak, f'Sorry, building the house failed. {_LOG_HELP}')
     finally:
         build.busy[0] = False
@@ -923,7 +948,7 @@ def _door_worker(a: Tile, b: Tile, level: int, what: str, use_chosen: bool) -> N
                 )
             )
     except Exception:
-        core.log_exc('door job')
+        simsight_log.error(core.log_exc('door job'))
         _say('Sorry, placing the door failed.')
     finally:
         build.busy[0] = False
@@ -933,8 +958,8 @@ def _wall_tiles(e: float, n: float) -> TilePair:
     """The two tiles on either side of the wall line a door or window at (e, n) sits on:
     one of e, n is a whole number."""
     if abs(e - round(e)) < abs(n - round(n)):
-        return (int(round(e)) - 1, int(math.floor(n))), (int(round(e)), int(math.floor(n)))
-    return (int(math.floor(e)), int(round(n)) - 1), (int(math.floor(e)), int(round(n)))
+        return (round(e) - 1, math.floor(n)), (round(e), math.floor(n))
+    return (math.floor(e), round(n) - 1), (math.floor(e), round(n))
 
 
 def _thing_kind(names: set[str]) -> str | None:
@@ -976,10 +1001,10 @@ def _thing_row(
             kind,
             getattr(obj, 'id', 0),
         )
-        return (f'{kind} {where}', value)
-    except Exception:  # one odd object must not hide the other doors and windows
-        core.log_exc('door row')
+    except (AttributeError, TypeError, ValueError):  # one odd object must not hide the others
+        simsight_log.error(core.log_exc('door row'))
         return None
+    return (f'{kind} {where}', value)
 
 
 def _thing_rows() -> list[tuple[str, tuple[Any, ...]]]:
@@ -1033,7 +1058,7 @@ def _remove_worker(value: tuple[Any, ...]) -> None:
         else:
             _say(f'The {kind.lower()} is still there. {_LOG_HELP}')
     except Exception:
-        core.log_exc('remove door')
+        simsight_log.error(core.log_exc('remove door'))
         _say('Sorry, removing failed.')
     finally:
         build.busy[0] = False

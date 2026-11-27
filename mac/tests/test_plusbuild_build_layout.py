@@ -45,7 +45,7 @@ class FreeSpotsTest(unittest.TestCase):
         spots = build.free_spots(grid_with_house(), 2, 2)
         self.assertTrue(spots)
         e, n = spots[0]
-        text = lot._touch_text(grid_with_house(), e, n, 2, 2)
+        text = lot.touch_text(grid_with_house(), e, n, 2, 2)
         self.assertTrue(text.startswith('joins the house on its'), text)
 
     def test_spots_stay_inside_the_edge_and_free(self):
@@ -63,8 +63,8 @@ class FreeSpotsTest(unittest.TestCase):
 
     def test_touch_text(self):
         grid = grid_with_house()
-        self.assertEqual(lot._touch_text(grid, 3, 1, 2, 2), 'joins the house on its west side')
-        self.assertEqual(lot._touch_text(grid, 5, 3, 2, 2), 'stands on its own')
+        self.assertEqual(lot.touch_text(grid, 3, 1, 2, 2), 'joins the house on its west side')
+        self.assertEqual(lot.touch_text(grid, 5, 3, 2, 2), 'stands on its own')
 
 
 class RoomWallsTest(unittest.TestCase):

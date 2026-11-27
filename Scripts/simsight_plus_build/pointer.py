@@ -6,7 +6,9 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING, Any
 
+import simsight_log
 import simsight_plus_core as core
+
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -39,7 +41,8 @@ def floor_height(x: float, z: float, level: int) -> float:
             services.current_zone_id(), int(level), routing.SurfaceType.SURFACETYPE_WORLD
         )
         return terrain.get_terrain_height(x, z, routing_surface=surface)
-    except Exception:  # no floor surface here: ground height plus 3 m a floor
+    except Exception:  # EA's native floor surface: ground height plus 3 m a floor (logged)
+        simsight_log.error('plus build: floor height')
         return terrain.get_terrain_height(x, z) + 3.0 * level
 
 
@@ -141,11 +144,12 @@ def screenshot(path: str, mark: Sequence[float] | None = None) -> bool:
             f.write(struct.pack('<2sIHHI', b'BM', 54 + len(data), 0, 0, 54))
             f.write(header)
             f.write(bytes(data))
-        core.log(f'screenshot {path} ({w}x{h}, mark {mark})')
-        return True
     except Exception as ex:  # diagnostics only: never stop the job for a picture
         core.log(f'screenshot failed: {ex!r}')
+        simsight_log.error('plus build: screenshot')
         return False
+    core.log(f'screenshot {path} ({w}x{h}, mark {mark})')
+    return True
 
 
 def _drag_base(a: Sequence[float], b: Sequence[float], shift: bool = False) -> None:

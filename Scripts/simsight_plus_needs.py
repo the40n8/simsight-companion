@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import simsight_log
 import simsight_plus_core as core
+
+if TYPE_CHECKING:
+    from sims.sim_info import SimInfo
 
 MOTIVES = (
     ('motive_hunger', 'Hunger'),
@@ -35,7 +38,7 @@ def _stat(name: str) -> Any:
     return _stat_types[name]
 
 
-def percent(sim_info: Any, name: str) -> int | None:
+def percent(sim_info: SimInfo, name: str) -> int | None:
     """The need as 0 to 100, or None when the Sim does not have it."""
     stat = _stat(name)
     if stat is None:
@@ -57,7 +60,7 @@ def scaled(value: Any, lo: float, hi: float) -> int | None:
     """value between lo and hi as a whole percent, clamped to 0..100."""
     if hi <= lo:
         return None
-    return max(0, min(100, int(round((float(value) - lo) * 100.0 / (hi - lo)))))
+    return max(0, min(100, round((float(value) - lo) * 100.0 / (hi - lo))))
 
 
 def word(p: int) -> str:
@@ -70,7 +73,7 @@ def word(p: int) -> str:
     return 'good'
 
 
-def needs_of(sim_info: Any) -> list[tuple[int, str]]:
+def needs_of(sim_info: SimInfo) -> list[tuple[int, str]]:
     out = []
     for name, label in MOTIVES:
         p = percent(sim_info, name)
@@ -110,7 +113,7 @@ def next_level(p: int, old: str | None) -> str:
     return old or 'ok'
 
 
-def _alerts_for(info: Any, active_info: Any) -> list[str]:
+def _alerts_for(info: SimInfo, active_info: SimInfo) -> list[str]:
     alerts = []
     for name, label in MOTIVES:
         p = percent(info, name)

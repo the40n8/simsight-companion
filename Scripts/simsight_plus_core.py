@@ -12,9 +12,17 @@ from typing import TYPE_CHECKING, Any
 import sims4.commands
 from simsight_commands import real_annotations
 import simsight_log
+import simsight_patch
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
+
+    from server.client import Client
+    from sims.household import Household
+    from sims.sim import Sim
+    from sims.sim_info import SimInfo
+    from ui.ui_dialog_generic import UiDialogTextInputOkCancel
+    from ui.ui_dialog_picker import UiObjectPicker
 
     KeyReader = Callable[[int], int]
 
@@ -81,10 +89,11 @@ def log(message: object) -> None:
             pass  # no log is better than a mod that stops: nowhere else to report it
 
 
-def log_exc(where: str) -> None:
-    """Call from an except block: the traceback goes to SimSight_Plus.log and SimSight.log."""
+def log_exc(where: str) -> str:
+    """Call from an except block: the traceback goes to SimSight_Plus.log. Returns
+    the label for SimSight.log, so a handler reads `simsight_log.error(core.log_exc(...))`."""
     log(f'ERROR in {where}: {traceback.format_exc()}')
-    simsight_log.error(f'plus: {where}')
+    return f'plus: {where}'
 
 
 log(f'SimSight Plus {VERSION} loading from {MODS_FOLDER}')
@@ -117,8 +126,8 @@ def _load_settings() -> None:
                 k = k.strip().lower()
                 if k in DEFAULTS:
                     _settings[k] = v.strip().lower()
-    except Exception:
-        log_exc('load settings')
+    except (OSError, ValueError):  # unreadable file: the defaults stay
+        simsight_log.error(log_exc('load settings'))
 
 
 def _save_settings() -> None:
@@ -129,7 +138,7 @@ def _save_settings() -> None:
             f.write('# SimSight Plus settings. on or off.\n')
             f.writelines(f'{k} = {_settings.get(k, default)}\n' for k, default in DEFAULTS.items())
     except (OSError, ValueError):
-        log_exc('save settings')
+        simsight_log.error(log_exc('save settings'))
 
 
 def setting_on(name: str) -> bool:
@@ -156,17 +165,17 @@ def speak(text: object, interrupt: bool = True) -> None:
         import simsight_speech as s
 
         s.speak(text, interrupt=interrupt, explicit=True)
-    except Exception:
-        log_exc('speak')
+    except Exception:  # speech must never stop the caller: logged
+        simsight_log.error(log_exc('speak'))
 
 
-def with_sim(ls: Any, sim_info: Any) -> Any:
+def with_sim(ls: Any, sim_info: SimInfo) -> Any:
     """Fill a game string's Sim placeholders (his/her, name) with this Sim."""
     try:
         from sims4.localization import _create_localized_string
 
         return _create_localized_string(int(ls.hash), sim_info)
-    except Exception:  # any game string shape: the unfilled string still reads
+    except (AttributeError, TypeError, ValueError):  # not a game string: it reads unfilled
         return ls
 
 
@@ -213,8 +222,8 @@ def add_ticker(seconds: float, fn: Callable[[], object]) -> None:
 def _run_logged(fn: Callable[..., object], args: tuple[Any, ...], where: str) -> None:
     try:
         fn(*args)
-    except Exception:
-        log_exc(where)
+    except Exception:  # posted work and tickers run from the pump alarm
+        simsight_log.error(log_exc(where))
 
 
 def _drain(_handle: Any = None) -> None:
@@ -238,14 +247,14 @@ def start_pump() -> None:
         if _state.alarm is not None:
             try:
                 alarms.cancel_alarm(_state.alarm)
-            except Exception:  # an alarm of an earlier zone may be gone already
-                simsight_log.line('plus: old pump alarm could not be cancelled')
+            except Exception:  # an alarm of an earlier zone: EA's timeline decides
+                simsight_log.error('plus: cancel the old pump alarm')
         _state.alarm = alarms.add_alarm_real_time(
             _owner, clock.interval_in_real_seconds(0.1), _drain, repeating=True
         )
         log('pump started')
-    except Exception:
-        log_exc('start pump')
+    except Exception:  # called from the zone hook
+        simsight_log.error(log_exc('start pump'))
 
 
 # ---------------------------------------------------------------- hotkeys (Alt + key)
@@ -266,15 +275,15 @@ def hotkey(vk: int, description: str) -> Callable[[Callable[..., Any]], Callable
 
 
 def _game_foreground(user32: Any) -> bool:
-    try:
-        import ctypes
+    import ctypes
 
+    try:
         hwnd = user32.GetForegroundWindow()
         pid = ctypes.c_ulong(0)
         user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
         return pid.value == os.getpid()
-    except Exception:  # cannot tell: assume the game has the focus, as before
-        return True
+    except (AttributeError, OSError, ctypes.ArgumentError):
+        return True  # cannot tell: assume the game has the focus, as before
 
 
 def _key_name(vk: int) -> str:
@@ -295,8 +304,8 @@ class _KeyPoller:
     def poll_logged(self) -> None:
         try:
             self.poll()
-        except Exception:
-            log_exc('keys loop')
+        except Exception:  # the keys thread must keep running
+            simsight_log.error(log_exc('keys loop'))
             time.sleep(1.0)
 
     def poll(self) -> None:
@@ -480,13 +489,13 @@ def start_keys() -> None:
 # ---------------------------------------------------------------- game helpers
 
 
-def active_sim() -> Any:
+def active_sim() -> Sim | None:
     import services
 
     return services.get_active_sim()
 
 
-def client() -> Any:
+def client() -> Client | None:
     import services
 
     return services.client_manager().get_first_client()
@@ -499,15 +508,15 @@ def sim_name(sim_info: Any) -> str:
         return 'Sim'
 
 
-def household_sims(instanced_only: bool = True) -> list[Any]:
+def household_sims(instanced_only: bool = True) -> list[SimInfo]:
     import services
 
-    hh = services.active_household()
+    hh: Household | None = services.active_household()
     if hh is None:
         return []
     out = []
     for info in hh.sim_info_gen():
-        sim = info.get_sim_instance()
+        sim: Sim | None = info.get_sim_instance()
         if instanced_only and sim is None:
             continue
         out.append(info)
@@ -536,8 +545,8 @@ def _cancel_previous(tag: str) -> None:
             import services
 
             services.ui_dialog_service().dialog_cancel(old)
-        except Exception:  # the old dialog may be gone already
-            simsight_log.line(f'plus: could not cancel the previous {tag} dialog')
+        except Exception:  # a gone dialog is ignored by EA; this runs its listeners
+            simsight_log.error(f'plus: cancel the previous {tag} dialog')
 
 
 def _localized(value: Any) -> Any:
@@ -547,12 +556,10 @@ def _localized(value: Any) -> Any:
 def _icon_info(icon_obj: Any) -> Any:
     if icon_obj is None:
         return None
-    try:
-        from distributor.shared_messages import IconInfoData
+    from distributor.shared_messages import IconInfoData
 
-        return IconInfoData(obj_instance=icon_obj)
-    except Exception:  # no icon for this object: the row still shows its name
-        return None
+    # EA's IconInfoData only fills a namedtuple: it does not look at the object.
+    return IconInfoData(obj_instance=icon_obj)
 
 
 def _picker_row(i: int, row: Sequence[Any]) -> tuple[Any, Any]:
@@ -560,7 +567,7 @@ def _picker_row(i: int, row: Sequence[Any]) -> tuple[Any, Any]:
     from ui.ui_dialog_picker import ObjectPickerRow
 
     row = tuple(row)
-    (label, desc, value) = (row + (None, None, None))[:3]
+    (label, desc, value) = (*row, None, None, None)[:3]
     selected = row[3] if len(row) > 3 else False
     icon_obj = row[4] if len(row) > 4 else None
     picker_row = ObjectPickerRow(
@@ -592,7 +599,7 @@ def choose(  # noqa: PLR0913, PLR0917 - public signature, called across the mod
         import services
         from ui.ui_dialog_picker import UiObjectPicker
 
-        owner = services.get_active_sim()
+        owner: Sim | None = services.get_active_sim()
         if owner is None:
             speak('Load a household first.')
             return False
@@ -600,8 +607,8 @@ def choose(  # noqa: PLR0913, PLR0917 - public signature, called across the mod
         dialog = UiObjectPicker.TunableFactory().default(
             owner,
             # A LocalizedString title (a catalog label) is passed through as rows are.
-            title=lambda *a, **k: _localized(title),
-            text=lambda *a, **k: raw(text),
+            title=lambda *_a, **_k: _localized(title),
+            text=lambda *_a, **_k: raw(text),
             picker_type=UiObjectPicker.UiObjectPickerObjectPickerType.OBJECT,
             min_selectable=min_pick if multi else 1,
             max_selectable=multi or 1,
@@ -611,8 +618,9 @@ def choose(  # noqa: PLR0913, PLR0917 - public signature, called across the mod
             values[i], picker_row = _picker_row(i, row)
             dialog.add_row(picker_row)
 
-        def listener(reply: Any) -> None:
-            if _open_dialogs.get(tag) == reply.dialog_id:
+        def listener(reply: UiObjectPicker) -> None:
+            # dialog_id comes from EA's @unique_id class decorator, which the stubs do not see.
+            if _open_dialogs.get(tag) == getattr(reply, 'dialog_id'):  # noqa: B009
                 _open_dialogs.pop(tag, None)
             if not reply.accepted:
                 if on_cancel is not None:
@@ -629,11 +637,11 @@ def choose(  # noqa: PLR0913, PLR0917 - public signature, called across the mod
         _open_dialogs[tag] = dialog.dialog_id
         fence_input()
         dialog.show_dialog()
-        return True
-    except Exception:
-        log_exc('choose ' + str(title))
+    except Exception:  # EA's dialog code: the player hears it failed, the log says why
+        simsight_log.error(log_exc('choose ' + str(title)))
         speak('Could not open the list.')
         return False
+    return True
 
 
 def _text_input(max_length: int) -> Any:
@@ -673,7 +681,7 @@ def ask_text(
         from sims4.collections import AttributeDict
         from ui.ui_dialog_generic import UiDialogTextInputOkCancel
 
-        owner = services.get_active_sim()
+        owner: Sim | None = services.get_active_sim()
         if owner is None:
             speak('Load a household first.')
             return False
@@ -681,13 +689,13 @@ def ask_text(
         _cancel_previous('text')
         dialog = UiDialogTextInputOkCancel.TunableFactory().default(
             owner,
-            title=lambda *a, **k: raw(title),
-            text=lambda *a, **k: raw(text),
+            title=lambda *_a, **_k: raw(title),
+            text=lambda *_a, **_k: raw(text),
             text_inputs=AttributeDict({'value': ti}),
         )
         session = _TypingSession(finished, dialog.dialog_id)
 
-        def listener(reply: Any) -> None:
+        def listener(reply: UiDialogTextInputOkCancel) -> None:
             _open_dialogs.pop('text', None)
             if _state.typing is not session:
                 return  # already finished with Enter or Escape
@@ -703,11 +711,11 @@ def ask_text(
         fence_input()
         dialog.show_dialog()
         _state.typing = session
-        return True
-    except Exception:
-        log_exc('ask_text ' + title)
+    except Exception:  # EA's dialog code: the player hears it failed, the log says why
+        simsight_log.error(log_exc('ask_text ' + title))
         speak('Could not open the text box.')
         return False
+    return True
 
 
 def _int_or_zero(read: Callable[[], Any]) -> int:
@@ -737,11 +745,11 @@ def open_interactions(obj: Any) -> bool:
         distributor.system.Distributor.instance().add_op_with_no_owner(
             distributor.ops.SendUIMessage(msg)
         )
-        return True
-    except Exception:
-        log_exc('open_interactions')
+    except Exception:  # EA's distributor: the player hears it failed, the log says why
+        simsight_log.error(log_exc('open_interactions'))
         speak('Could not open the actions for that.')
         return False
+    return True
 
 
 # ---------------------------------------------------------------- startup
@@ -754,34 +762,40 @@ def on_zone_started(fn: Callable[[], object]) -> Callable[[], object]:
     return fn
 
 
+def _zone_loaded(zone_obj: Any) -> None:
+    log('zone loaded: {}'.format(getattr(zone_obj, 'id', '?')))
+    start_pump()
+    start_keys()
+    for fn in _zone_started_callbacks:
+        _run_logged(fn, (), 'zone start ' + getattr(fn, '__name__', '?'))
+
+
+def _zone_hook(original: Callable[..., Any]) -> Callable[..., Any]:
+    def a11yplus_on_loading_screen_animation_finished(*args: Any, **kwargs: Any) -> Any:
+        result = original(*args, **kwargs)
+        try:
+            _zone_loaded(args[0])
+        except Exception:  # a game hook: nothing may reach the game
+            simsight_log.error(log_exc('zone hook'))
+        return result
+
+    return a11yplus_on_loading_screen_animation_finished
+
+
 def _install_zone_hook() -> None:
     import zone
 
-    original = zone.Zone.on_loading_screen_animation_finished
-
-    def a11yplus_on_loading_screen_animation_finished(self: Any, *args: Any, **kwargs: Any) -> Any:
-        result = original(self, *args, **kwargs)
-        try:
-            log('zone loaded: {}'.format(getattr(self, 'id', '?')))
-            start_pump()
-            start_keys()
-            for fn in _zone_started_callbacks:
-                _run_logged(fn, (), 'zone start ' + getattr(fn, '__name__', '?'))
-        except Exception:
-            log_exc('zone hook')
-        return result
-
-    zone.Zone.on_loading_screen_animation_finished = a11yplus_on_loading_screen_animation_finished
+    simsight_patch.wrap(zone.Zone, 'on_loading_screen_animation_finished', _zone_hook)
 
 
 try:
     _install_zone_hook()
     log('zone hook installed')
-except Exception:
-    log_exc('install zone hook')
+except Exception:  # module load: the rest of the mod still loads
+    simsight_log.error(log_exc('install zone hook'))
 
 
-@sims4.commands.Command('a11yplus.status', command_type=sims4.commands.CommandType.Live)
+@sims4.commands.Command('a11yplus.status', command_type=sims4.commands.CommandType.Live)  # type: ignore[misc]  # EA's decorator is untyped
 @real_annotations
 def _status(_connection: Any = None) -> bool:
     try:
@@ -790,7 +804,7 @@ def _status(_connection: Any = None) -> bool:
             f'SimSight Plus {VERSION} - pump {_state.alarm is not None}, '
             f'keys {_state.keys_thread is not None}'
         )
-    except Exception:
-        log_exc('status')
+    except Exception:  # a console command
+        simsight_log.error(log_exc('status'))
     speak(f'SimSight Plus version {VERSION} is running.')
     return True

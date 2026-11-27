@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from .state import Box, Row
 
 
-def _new_room_box(before: set[tuple[Box, int]]) -> Box | None:
+def new_room_box(before: set[tuple[Box, int]]) -> Box | None:
     """Box (e0, n0, e1, n1) of rooms that did not exist before, or None. Rooms are compared by their
     box, because the game may renumber a room when a new one is built next to it."""
     import simsight_plus_rooms as rooms
@@ -74,17 +74,16 @@ def wall_point(room: Any, side: str, where: float = 0.5) -> tuple[float, float]:
 def room_tiles(room: Any) -> set[tuple[int, int]]:
     f = frame()
     return {
-        (int(math.floor(f.local(t[0], t[1])[0])), int(math.floor(f.local(t[0], t[1])[1])))
-        for t in room.tiles
+        (math.floor(f.local(t[0], t[1])[0]), math.floor(f.local(t[0], t[1])[1])) for t in room.tiles
     }
 
 
 # side -> (tile step to the outside neighbor, how to read "left to right" when facing that wall from inside)
 _SIDES: dict[str, tuple[tuple[int, int], Callable[[int, int], int]]] = {
-    'north': ((0, -1), lambda e, n: e),
-    'south': ((0, 1), lambda e, n: -e),
-    'west': ((-1, 0), lambda e, n: -n),
-    'east': ((1, 0), lambda e, n: n),
+    'north': ((0, -1), lambda e, _n: e),
+    'south': ((0, 1), lambda e, _n: -e),
+    'west': ((-1, 0), lambda _e, n: -n),
+    'east': ((1, 0), lambda _e, n: n),
 }
 
 

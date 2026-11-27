@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import simsight_plus_core as core
 
-from .state import busy, catalog_state, last_error
+from .state import busy, catalog_state, last_error, product
 from .lot import Frame, frame, free_spots, in_build_mode, tile_map
 from .pointer import (
     LEFT_DOWN,
@@ -93,7 +93,7 @@ from .catalog import (
     select_item_steps,
 )
 from .menu import open_menu
-from .state import _product as _product  # simsight_wall reads the chosen product
+from .state import _product as _product  # the old name of product, read by simsight_wall
 
 __all__ = [
     'BUILD_CATALOG',
@@ -142,6 +142,7 @@ __all__ = [
     'place_styled_room',
     'point_and_act',
     'point_and_act_base',
+    'product',
     'project',
     'request_catalog',
     'reselect',

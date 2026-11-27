@@ -18,6 +18,10 @@ import simsight_plus_sims as sims
 if TYPE_CHECKING:
     from typing import Callable
 
+    from lots.lot import Lot as GameLot
+    from sims.household import Household
+    from sims.sim_info import SimInfo
+
     Lot = dict[str, Any]  # a free lot, as free_lots() lists it
     Relation = tuple[str, int]  # (kind, index of the earlier member)
 
@@ -211,10 +215,21 @@ def _got_gender(key: str) -> None:
     core.ask_text(f'Sim {len(fam.members)}: first name', 'Type the first name.', '', got_first)
 
 
+def _token_sim() -> SimInfo | None:
+    """The active Sim, whose name fills the game's trait and aspiration texts."""
+    sim = core.active_sim()
+    if sim is None:  # the Sim went away while the dialogs were open
+        core.speak('No active Sim.')
+        return None
+    return sim.sim_info
+
+
 def _choose_traits() -> None:
     m = _fam().members[-1]
     limit = sims.TRAIT_LIMITS.get(m.age.name, 3)
-    token = core.active_sim().sim_info
+    token = _token_sim()
+    if token is None:
+        return
 
     def done(chosen: list[Any]) -> None:
         m.traits = list(chosen)
@@ -232,7 +247,9 @@ def _choose_aspiration() -> None:
     if not tracks:
         core.post(_choose_relation)
         return
-    token = core.active_sim().sim_info
+    token = _token_sim()
+    if token is None:
+        return
     rows = [(t.display_text, core.with_sim(t.description_text, token), t) for t in tracks]
 
     def picked(track: Any) -> None:
@@ -467,7 +484,7 @@ def buying_price(rental: float, add: float, multiply: float) -> int | None:
         return None
     # The interface rounds the rental price down, so the true value is up to one simoleon higher.
     total = (rental + 0.5 - add) / multiply
-    return int(round(total / 10.0)) * 10
+    return round(total / 10.0) * 10
 
 
 def _got_price(zone_id: int, rental: float) -> None:
@@ -515,7 +532,7 @@ def _is_plex(zone_id: Any) -> bool:
 
     try:
         return bool(services.get_plex_service().is_zone_a_plex(zone_id))
-    except Exception:  # no plex service in this game: not a plex
+    except AttributeError:  # no plex service in this game: not a plex
         return False
 
 
@@ -540,7 +557,7 @@ def _world_name(persistence: Any, worlds: dict[Any, str], nid: Any) -> str:
     if nid not in worlds:
         try:
             worlds[nid] = str(persistence.get_neighborhood_proto_buff(nid).name or '')
-        except Exception:  # shown as 'Other town'
+        except AttributeError:  # no such neighbourhood (None): shown as 'Other town'
             worlds[nid] = ''
     return worlds[nid]
 
@@ -712,7 +729,7 @@ def _confirmed(value: Any) -> None:
 # ---------------------------------------------------------------- create, move in, play
 
 
-def _give_aspiration(info: Any, m: _Member) -> None:
+def _give_aspiration(info: SimInfo, m: _Member) -> None:
     try:
         info.primary_aspiration = m.aspiration
         trait = getattr(m.aspiration, 'primary_trait', None)
@@ -722,14 +739,14 @@ def _give_aspiration(info: Any, m: _Member) -> None:
         simsight_log.error('plus family: aspiration ' + m.first)
 
 
-def _validate_grandparents(info: Any) -> None:
+def _validate_grandparents(info: SimInfo) -> None:
     try:
         info.genealogy.validate_grandparent_relations()
     except Exception:  # family tree checks only: the family is made anyway
         simsight_log.error('plus family: grandparents')
 
 
-def _set_up_household(fam: _Family, household: Any, infos: list[Any]) -> None:
+def _set_up_household(fam: _Family, household: Household, infos: list[SimInfo]) -> None:
     """Name, traits, aspirations and family ties, in the order the game expects."""
     try:
         household.name = fam.last
@@ -763,6 +780,8 @@ def _create_and_move() -> None:
         raise LookupError('no home chosen for the new family')
     zone_id = lot['zone_id']
     client = core.client()
+    if client is None:
+        raise LookupError('no game client')
     funds = STARTING_FUNDS - (lot['price'] or 0)
     creators = [
         SimCreator(
@@ -803,11 +822,11 @@ def _parent_index(gender: Any) -> Any:
     return FamilyRelationshipIndex.FATHER
 
 
-def _by_id(infos: list[Any], sim_id: Any) -> Any:
+def _by_id(infos: list[SimInfo], sim_id: Any) -> SimInfo | None:
     return next((x for x in infos if x.id == sim_id), None)
 
 
-def _marry(me: Any, other: Any) -> None:
+def _marry(me: SimInfo, other: SimInfo) -> None:
     from relationships.global_relationship_tuning import RelationshipGlobalTuning
 
     me.update_spouse_sim_id(other.id)
@@ -817,7 +836,7 @@ def _marry(me: Any, other: Any) -> None:
     other.relationship_tracker.add_relationship_bit(me.id, bit, force_add=True)
 
 
-def _make_child(parent: Any, child: Any, infos: list[Any]) -> None:
+def _make_child(parent: SimInfo, child: SimInfo, infos: list[SimInfo]) -> None:
     """child of parent, and of parent's spouse when that is the other parent kind."""
     rel = _parent_index(parent.gender)
     child.set_parent_relation(rel, parent)
@@ -828,7 +847,7 @@ def _make_child(parent: Any, child: Any, infos: list[Any]) -> None:
             child.set_parent_relation(rel2, spouse)
 
 
-def _make_siblings(me: Any, other: Any, infos: list[Any]) -> None:
+def _make_siblings(me: SimInfo, other: SimInfo, infos: list[SimInfo]) -> None:
     """me shares other's parents; with none in the family, the game gives them shared ones."""
     from sims.genealogy_tracker import FamilyRelationshipIndex
 
@@ -843,7 +862,7 @@ def _make_siblings(me: Any, other: Any, infos: list[Any]) -> None:
         me.genealogy.set_parent_of_parentless_siblings(other)
 
 
-def _relate(kind: str, me: Any, other: Any, infos: list[Any]) -> None:
+def _relate(kind: str, me: SimInfo, other: SimInfo, infos: list[SimInfo]) -> None:
     if kind == 'spouse':
         _marry(me, other)
     elif kind == 'child':
@@ -854,7 +873,7 @@ def _relate(kind: str, me: Any, other: Any, infos: list[Any]) -> None:
         _make_siblings(me, other, infos)
 
 
-def _relate_member(m: _Member, me: Any, infos: list[Any]) -> None:
+def _relate_member(m: _Member, me: SimInfo, infos: list[SimInfo]) -> None:
     if not m.relation:
         return
     (kind, j) = m.relation
@@ -864,7 +883,7 @@ def _relate_member(m: _Member, me: Any, infos: list[Any]) -> None:
         simsight_log.error(f'plus family: relation {kind} {m.first}')
 
 
-def _add_second_parent(child: Any, infos: list[Any]) -> None:
+def _add_second_parent(child: SimInfo, infos: list[SimInfo]) -> None:
     """A child of one married parent is also the child of the other parent."""
     try:
         _add_second_parent_kinds(child, infos)
@@ -872,7 +891,7 @@ def _add_second_parent(child: Any, infos: list[Any]) -> None:
         simsight_log.error('plus family: second parent')
 
 
-def _add_second_parent_kinds(child: Any, infos: list[Any]) -> None:
+def _add_second_parent_kinds(child: SimInfo, infos: list[SimInfo]) -> None:
     from sims.genealogy_tracker import FamilyRelationshipIndex
 
     for rel in (FamilyRelationshipIndex.MOTHER, FamilyRelationshipIndex.FATHER):
@@ -888,7 +907,7 @@ def _add_second_parent_kinds(child: Any, infos: list[Any]) -> None:
             child.set_parent_relation(rel2, spouse)
 
 
-def _set_relations(fam: _Family, infos: list[Any]) -> None:
+def _set_relations(fam: _Family, infos: list[SimInfo]) -> None:
     for i, m in enumerate(fam.members):
         _relate_member(m, infos[i], infos)
     for child in infos:
@@ -902,9 +921,11 @@ def _lot_size_text() -> str:
     import services
 
     try:
-        lot = services.active_lot()
+        lot: GameLot | None = services.active_lot()
+        if lot is None:
+            return ''
         return f' It is {int(lot.size_x)} by {int(lot.size_z)} meters.'
-    except Exception:  # said without the size
+    except (AttributeError, TypeError, ValueError):  # no lot or size: said without it
         return ''
 
 
@@ -918,12 +939,12 @@ def _arrived() -> None:
     if services.current_zone_id() != arrival.zone_id:
         return
     _state.arrival = None
-    household = services.household_manager().get(arrival.household_id)
+    household: Household | None = services.household_manager().get(arrival.household_id)
     if household is None:
         return
     try:
         money = int(household.funds.money)
-    except Exception:  # said as 0
+    except (AttributeError, TypeError, ValueError):  # no funds to read: said as 0
         money = 0
     if arrival.empty:
         tip = (

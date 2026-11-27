@@ -6,10 +6,16 @@ skill gains...) so they can be read again later.
 
 from __future__ import annotations
 
-from typing import Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import simsight_log
+import simsight_patch
 import simsight_plus_core as core
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from date_and_time import DateAndTime
 
 MAX = 30
 
@@ -40,7 +46,7 @@ def _now_text() -> str:
         import services
         import simsight_plus_time as t
 
-        now = services.time_service().sim_now
+        now: DateAndTime = services.time_service().sim_now
         return f'{t.day_text(now)} {t.clock_text(now)}'
     except Exception:  # the notification is kept without its time
         simsight_log.error('plus notify: time')
@@ -57,21 +63,23 @@ def _record(dialog_msg: Any) -> None:
     core.log(f'notification recorded ({len(_history)} kept)')
 
 
+def _hook(original: Callable[..., Any]) -> Callable[..., Any]:
+    """distribute_dialog(self, dialog_type, dialog_msg, ...): record, then show."""
+
+    def a11yplus_distribute_dialog(*args: Any, **kwargs: Any) -> Any:
+        try:
+            _record(kwargs['dialog_msg'] if 'dialog_msg' in kwargs else args[2])
+        except Exception:  # a game hook: the notification still shows
+            simsight_log.error('plus notify: record notification')
+        return original(*args, **kwargs)
+
+    return a11yplus_distribute_dialog
+
+
 def _install() -> None:
     from ui.ui_dialog_notification import UiDialogNotification
 
-    original = UiDialogNotification.distribute_dialog
-
-    def a11yplus_distribute_dialog(
-        self: Any, dialog_type: Any, dialog_msg: Any, **kwargs: Any
-    ) -> Any:
-        try:
-            _record(dialog_msg)
-        except Exception:
-            simsight_log.error('plus notify: record notification')
-        return original(self, dialog_type, dialog_msg, **kwargs)
-
-    UiDialogNotification.distribute_dialog = a11yplus_distribute_dialog
+    simsight_patch.wrap(UiDialogNotification, 'distribute_dialog', _hook)
 
 
 try:
@@ -97,6 +105,6 @@ def open_history() -> None:
         'Notifications',
         f'Newest first. {len(_history)} kept.',
         rows,
-        lambda v: None,
+        lambda _value: None,
         tag='notify',
     )

@@ -5,9 +5,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+import simsight_log
+
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+    from lots.lot import Lot
 
     from .state import Grid
 
@@ -16,13 +20,13 @@ if TYPE_CHECKING:
 
 
 class Frame:
-    def __init__(self, lot: Any) -> None:
+    def __init__(self, lot: Lot) -> None:
         xs = [c.x for c in lot.corners]
         zs = [c.z for c in lot.corners]
         self.x0, self.x1 = min(xs), max(xs)
         self.z0, self.z1 = min(zs), max(zs)
-        self.width = int(round(self.x1 - self.x0))  # west to east
-        self.depth = int(round(self.z1 - self.z0))  # north to south
+        self.width = round(self.x1 - self.x0)  # west to east
+        self.depth = round(self.z1 - self.z0)  # north to south
 
     def world(self, e: float, n: float) -> tuple[float, float]:
         """meters from west edge, meters from north edge -> world x, z"""
@@ -67,7 +71,8 @@ def tile_map(level: int = 0) -> tuple[Frame, Grid]:
             pos = sims4.math.Vector3(x, terrain.get_terrain_height(x, z), z)
             try:
                 outside = build_buy.is_location_outside(pos, level)
-            except Exception:  # the game's build data may not answer for this tile
+            except Exception:  # EA's native build data may not answer for this tile (logged)
+                simsight_log.error('plus build: outside')
                 outside = rid == 0
             grid[n][e] = 'free' if outside else (rid or 'inside')
     for obj in services.object_manager().values():
@@ -123,7 +128,7 @@ def free_spots(grid: Grid, w: int, d: int, limit: int = 6) -> list[tuple[int, in
     return out
 
 
-def _touch_text(grid: Grid, e: int, n: int, w: int, d: int) -> str:
+def touch_text(grid: Grid, e: int, n: int, w: int, d: int) -> str:
     sides = []
     rows, cols = len(grid), len(grid[0])
 

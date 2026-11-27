@@ -6,10 +6,11 @@ import threading
 import time
 from typing import TYPE_CHECKING, Any
 
+import simsight_log
 import simsight_plus_core as core
 
-from .state import _product, busy, catalog_state
-from .lot import _touch_text, frame, free_spots, in_build_mode, tile_map
+from .state import product, busy, catalog_state
+from .lot import touch_text, frame, free_spots, in_build_mode, tile_map
 from .pointer import click, drag, send_ui, set_floor, user32
 from .jobs import (
     VIEW_FROM,
@@ -26,7 +27,7 @@ from .jobs import (
 )
 from .rooms import (
     _cell_status,
-    _new_room_box,
+    new_room_box,
     room_ids,
     room_rows,
     room_walls,
@@ -60,12 +61,12 @@ def build_room() -> None:
             core.speak('Please type two numbers, for example 4 5.')
             return
         (w, d) = nums[0], nums[1]
-        f, grid = tile_map()
+        _f, grid = tile_map()
         spots = free_spots(grid, w, d)
         rows: list[Row] = [
             (
                 f'{e} from west, {n} from north',
-                f'This room {_touch_text(grid, e, n, w, d)}.',
+                f'This room {touch_text(grid, e, n, w, d)}.',
                 (e, n),
             )
             for e, n in spots
@@ -86,7 +87,7 @@ def build_room() -> None:
                     'Room position',
                     'Type meters from the west edge, then meters from the north edge, for example 2 3.',
                     '',
-                    lambda t: _do_room(w, d, *(whole_numbers(t) + [None, None])[:2]),
+                    lambda t: _do_room(w, d, *([*whole_numbers(t), None, None])[:2]),
                 )
             else:
                 _do_room(w, d, value[0], value[1])
@@ -153,7 +154,7 @@ def _do_room(w: int, d: int, e: int | None, n: int | None) -> None:
                     'You can undo it from the SimSight build actions.',
                 )
         except Exception:
-            core.log_exc('room job')
+            simsight_log.error(core.log_exc('room job'))
             core.post(core.speak, 'Sorry, building the room failed.')
         finally:
             busy[0] = False
@@ -189,7 +190,7 @@ def room_worker_base(
         # 0.7.1: slower computers take longer to report a new room (upstairs especially).
         for _wait in range(10):
             time.sleep(0.5)
-            box = on_main(_new_room_box, before)
+            box = on_main(new_room_box, before)
             if box is not None:
                 break
         core.log(f'build: wanted {want} got {box} (fix {fix})')
@@ -228,7 +229,7 @@ def build_wall() -> None:
     u = user32()
     u.keybd_event(0x42, 0x30, 0, 0)
     u.keybd_event(0x42, 0x30, 2, 0)
-    _product.update(id=None, name='Wall Tool')
+    product.update(id=None, name='Wall Tool')
 
     def got(text: str) -> None:
         nums = whole_numbers(text)
