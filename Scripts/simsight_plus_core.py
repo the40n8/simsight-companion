@@ -127,8 +127,7 @@ def _save_settings() -> None:
     try:
         with open(SETTINGS_PATH, 'w', encoding='utf-8') as f:
             f.write('# SimSight Plus settings. on or off.\n')
-            for k, default in DEFAULTS.items():
-                f.write(f'{k} = {_settings.get(k, default)}\n')
+            f.writelines(f'{k} = {_settings.get(k, default)}\n' for k, default in DEFAULTS.items())
     except (OSError, ValueError):
         log_exc('save settings')
 
@@ -605,7 +604,7 @@ def choose(  # noqa: PLR0913, PLR0917 - public signature, called across the mod
             text=lambda *a, **k: raw(text),
             picker_type=UiObjectPicker.UiObjectPickerObjectPickerType.OBJECT,
             min_selectable=min_pick if multi else 1,
-            max_selectable=multi if multi else 1,
+            max_selectable=multi or 1,
         )
         values: dict[int, Any] = {}
         for i, row in enumerate(rows):

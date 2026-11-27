@@ -307,8 +307,7 @@ def _save_names() -> None:
         return
     try:
         with open(NAMES_PATH, 'w', encoding='utf-8') as f:
-            for key, name in _names.by_box.items():
-                f.write(name_line(key, name))
+            f.writelines(name_line(key, name) for key, name in _names.by_box.items())
     except OSError:
         simsight_log.error('plus rooms: save room names')
 

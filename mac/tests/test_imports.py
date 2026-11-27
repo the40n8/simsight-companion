@@ -142,7 +142,7 @@ def _load_all(scripts, platform):
             continue
         try:
             importlib.import_module(name)
-        except BaseException as exc:  # noqa: BLE001 - report every kind of failure
+        except BaseException as exc:
             failed += 1
             print(f'{name}: {type(exc).__name__}: {exc}')
     sys.stdout.flush()

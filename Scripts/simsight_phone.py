@@ -109,7 +109,7 @@ def _say(term: str) -> None:
 class _Entry:
     """One phone action: EA's aop with the name and texts the phone shows."""
 
-    __slots__ = ('aop', 'name', 'enabled', 'tip', 'detail', 'affordance_id')
+    __slots__ = ('affordance_id', 'aop', 'detail', 'enabled', 'name', 'tip')
 
     def __init__(self, aop: Any, name: Any, enabled: bool, tip: Any, detail: Any) -> None:
         self.aop = aop

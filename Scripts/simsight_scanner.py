@@ -108,17 +108,17 @@ class Entry:
     """One Sim or object in the scanner lists."""
 
     __slots__ = (
-        'obj_id',
+        'availability',
+        'bearing',
+        'category',
+        'distance',
+        'first_name',
+        'group',
         'is_sim',
+        'level_delta',
         'name',
         'name_hash',
-        'distance',
-        'bearing',
-        'level_delta',
-        'category',
-        'group',
-        'first_name',
-        'availability',
+        'obj_id',
         'role',
     )
 
@@ -619,7 +619,7 @@ def _object_name_parts(obj: Any) -> tuple[str | None, int]:
         return None, 0
 
 
-def entry_for(  # noqa: PLR0913, PLR0917 - used by other modules with this signature
+def entry_for(
     obj: Any, origin: Any, origin_level: int, is_sim: bool, category: str, group: str
 ) -> Entry:
     pos = obj.position
@@ -1415,7 +1415,7 @@ def _do_where() -> None:
     sim = services.get_active_sim()
     if sim is not None:
         name, key = _sim_name_parts(sim.sim_info)
-        parts.append(name if name else ('loc', key))
+        parts.append(name or ('loc', key))
         parts.append('. ')
     entry = _current()
     if entry is None:

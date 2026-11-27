@@ -29,17 +29,17 @@ class _Pending:
 
     __slots__ = (
         'dialog',
-        'msg_type',
         'dialog_msg',
-        'kwargs',
-        'places',
-        'worlds',
         'fallback_used',
-        'mode',
-        'party',
-        'rented',
         'generation',
+        'kwargs',
+        'mode',
+        'msg_type',
+        'party',
+        'places',
         'prices',
+        'rented',
+        'worlds',
     )
 
     def __init__(
@@ -68,22 +68,22 @@ class _Place:
     """One destination row (or a building grouping unit rows)."""
 
     __slots__ = (
-        'zone_id',
-        'name',
-        'world_key',
-        'world_name',
-        'world_label',
-        'venue',
         'household',
         'household_id',
         'master',
-        'units',
-        'residential',
-        'visible',
-        'region',
-        'residents',
-        'rental',
+        'name',
         'price',
+        'region',
+        'rental',
+        'residential',
+        'residents',
+        'units',
+        'venue',
+        'visible',
+        'world_key',
+        'world_label',
+        'world_name',
+        'zone_id',
     )
 
     def __init__(self, zone_id: int, name: str) -> None:

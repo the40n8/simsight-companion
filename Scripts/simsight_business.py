@@ -126,7 +126,7 @@ def businesses_window() -> bool:
     for manager in managers:
         try:
             text = ' '.join(business_lines(manager))
-        except Exception:  # noqa: PERF203 - one unreadable business must not hide the others
+        except Exception:
             simsight_log.error(f'business: {type(manager).__name__} unreadable')
             continue
         rows.append((menu.raw_text(business_name(manager)), menu.raw_text(text), _open_panel))

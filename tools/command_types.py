@@ -14,7 +14,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'mac', 'tests'))
-from test_imports import WINDOWS_ONLY, GameFinder, GameModule, mod_names  # noqa: E402
+from test_imports import WINDOWS_ONLY, GameFinder, GameModule, mod_names
 
 COMMANDS = {}
 
@@ -53,7 +53,7 @@ def main():
             continue
         try:
             importlib.import_module(name)
-        except BaseException as exc:  # noqa: BLE001 - report every kind of failure
+        except BaseException as exc:
             failed.append(f'{name}: {exc!r}')
     print(json.dumps({'commands': COMMANDS, 'failed': failed}, indent=1, sort_keys=True))
     sys.stdout.flush()

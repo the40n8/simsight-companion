@@ -47,7 +47,7 @@ def _needs(info: Any) -> list[Json]:
 
 def _mood_key(mood: Any) -> str:
     name = getattr(mood, '__name__', '') or ''
-    return re.sub(r'^mood_', '', name, flags=re.I).lower()
+    return re.sub(r'^mood_', '', name, flags=re.IGNORECASE).lower()
 
 
 def _mood(info: Any) -> Json | None:

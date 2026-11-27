@@ -98,7 +98,6 @@ from .state import _product as _product  # simsight_wall reads the chosen produc
 __all__ = [
     'BUILD_CATALOG',
     'BUY_CATALOG',
-    'Frame',
     'LEFT_DOWN',
     'LEFT_UP',
     'NEXT_HINT',
@@ -107,6 +106,7 @@ __all__ = [
     'STYLED_ROOMS',
     'VIEW_FROM',
     'WHEEL',
+    'Frame',
     'bridge_ok',
     'build_room',
     'build_wall',

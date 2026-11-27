@@ -30,7 +30,7 @@ import types
 import zipfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from ea_overlay import RETURNS  # noqa: E402
+from ea_overlay import RETURNS
 
 CO_VARARGS, CO_VARKEYWORDS = 0x04, 0x08
 FLEX = {'flexmethod', 'flexproperty'}

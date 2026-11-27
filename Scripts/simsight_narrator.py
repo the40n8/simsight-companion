@@ -45,7 +45,7 @@ FIELD_SEP = '\x01'
 
 _EFFECT_RE = re.compile(r'^[A-Za-z][A-Za-z ]* \+\d+$')
 _DURATION_RE = re.compile(r'^\d+ (?:minute|hour|day)s?$')
-_FIELD_RE = re.compile(r'^(-?\d+)\|(-?\d+)\|(.*)$', re.S)
+_FIELD_RE = re.compile(r'^(-?\d+)\|(-?\d+)\|(.*)$', re.DOTALL)
 _ROW_TOLERANCE = 8
 
 # ------------------------------------------------------------------ commands
@@ -327,7 +327,7 @@ def _own_phrase(seg: str) -> str:
 
 def _process(decoded: str, channel: str = '?') -> str:
     if _state.rawdiag:
-        simsight_log.line(f'RAWDIAG[{channel}]: {ascii(decoded)}')
+        simsight_log.line(f'RAWDIAG[{channel}]: {decoded!a}')
     if FIELD_SEP not in decoded and '|' not in decoded[:12]:
         return _clean_glyphs(decoded)
     segments = _order_segments(_fields_to_segments(decoded))

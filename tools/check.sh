@@ -16,6 +16,8 @@ echo "== Lint (ruff)"
 $RUFF check Scripts tools mac/build.py mac/tests
 echo "== Format (ruff)"
 $RUFF format --check Scripts tools mac/build.py mac/tests
+echo "== Errors are reported (tools/check_excepts.py)"
+python3 tools/check_excepts.py Scripts
 echo "== Types (mypy)"
 # EA's game types, when the game is installed here (tools/ea_stubs.py).
 GAME="${SIMS4_APP:-/Applications/EA Games/The Sims 4.app}"
