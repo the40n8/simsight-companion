@@ -48,7 +48,8 @@ RETURNS = _overlay()
 CO_VARARGS, CO_VARKEYWORDS = 0x04, 0x08
 FLEX = {'flexmethod', 'flexproperty'}
 CLASSY = {'classmethod', 'classproperty', 'flexmethod'}
-PROPS = {'property', 'classproperty', 'constproperty', 'flexproperty', 'cached_property'}
+# Field: distributor.fields.Field(...), a property that also sends to the UI
+PROPS = {'property', 'classproperty', 'constproperty', 'flexproperty', 'cached_property', 'Field'}
 BUILTIN_BASES = {
     'object',
     'int',
@@ -87,6 +88,7 @@ def ok_name(name):
 
 class Func:
     def __init__(self, code, defaults, decorators):
+        self.settable = False  # a property with a setter
         self.code = code
         self.defaults = defaults  # how many positional parameters have defaults
         self.decorators = decorators
@@ -213,9 +215,22 @@ def function_parts(instrs, make):
 
 
 def decorators_before(instrs, i):
-    """Decorator names loaded just before index i."""
-    names: list = []
+    """Decorator names applied by the expressions just before index i:
+    plain names (@property, @x.setter) and calls (@Field(...) gives 'Field')."""
+    names = []
     while i > 0:
+        if instrs[i - 1].opname.startswith('CALL_FUNCTION'):
+            start = items_start(instrs, i, 1)
+            name, _ = dotted_before(instrs, start + 1) if start is not None else (None, 0)
+            if name is None or start is None:
+                break
+            # the callee must be a plain name chain starting at `start`
+            j = start + 1
+            while j < i and instrs[j].opname == 'LOAD_ATTR':
+                j += 1
+            names.insert(0, name.split('.')[-1])
+            i = start
+            continue
         name, start = dotted_before(instrs, i)
         if name is None:
             break
@@ -293,8 +308,12 @@ def read_class(name, bases, code):
             continue
         make = function_at(instrs, k)
         if make is not None:
-            klass.funcs[target] = make_func(instrs, make)
+            func = make_func(instrs, make)
             klass.attrs |= self_attrs(instrs[make - 2].argval)
+            if target in klass.funcs and {'setter', 'deleter'} & set(func.decorators):
+                klass.funcs[target].settable = True  # @x.setter: x stays the property it was
+                continue
+            klass.funcs[target] = func
             continue
         prev = instrs[k - 1]
         if target in ('INSTANCE_TUNABLES', 'FACTORY_TUNABLES'):
@@ -457,7 +476,13 @@ def func_lines(name, func, indent, owner):
         # classproperty and friends: read on the class too, a plain attribute
         return [f'{indent}{name}: {ret}']
     if decos & PROPS:
-        return [f'{indent}@property', f'{indent}def {name}(self) -> {ret}: ...']
+        lines = [f'{indent}@property', f'{indent}def {name}(self) -> {ret}: ...']
+        if func.settable:
+            lines += [
+                f'{indent}@{name}.setter',
+                f'{indent}def {name}(self, value: Any) -> None: ...',
+            ]
+        return lines
     skip = 0
     pre = []
     if indent and 'staticmethod' in decos:

@@ -32,12 +32,37 @@ class Wrap(unittest.TestCase):
         self.assertEqual(Dialog().distribute(1, 2, immediate=True), (1, 2, True))
         self.assertEqual(self.seen, [(1, 2, True), (1, 2)])
 
-    def test_wrapping_twice_keeps_the_game_original(self):
+    def test_the_same_wrapper_twice_is_added_once(self):
         first = patch.wrap(Dialog, 'distribute', self.make)
         second = patch.wrap(Dialog, 'distribute', self.make)
         self.assertIs(first, second)
         self.assertEqual(Dialog().distribute(1, 2), (1, 2, False))
-        self.assertEqual(len(self.seen), 1)  # only the newest wrapper runs
+        self.assertEqual(len(self.seen), 1)  # not stacked
+
+    def test_two_modules_wrapping_the_same_function_both_run(self):
+        order = []
+
+        def make_a(original):
+            def a(*args, **kwargs):
+                order.append('a')
+                return original(*args, **kwargs)
+
+            return a
+
+        def make_b(original):
+            def b(*args, **kwargs):
+                order.append('b')
+                return original(*args, **kwargs)
+
+            return b
+
+        game = Dialog.distribute
+        patch.wrap(Dialog, 'distribute', make_a)
+        patch.wrap(Dialog, 'distribute', make_b)
+        patch.wrap(Dialog, 'distribute', make_a)  # A's install() again: not a third wrapper
+        self.assertEqual(Dialog().distribute(1, 2, True), (1, 2, True))
+        self.assertEqual(order, ['b', 'a'])  # the newest runs first, each once
+        self.assertIs(patch.original(Dialog, 'distribute'), game)
 
     def test_unwrap(self):
         game = Dialog.distribute
