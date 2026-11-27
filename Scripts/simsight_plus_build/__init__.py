@@ -1,0 +1,173 @@
+"""SimSight Plus - build helper (Alt+B, in Build mode).
+
+Walls and rooms are drawn by the game's own tools with a real mouse drag
+between two points. SimSight projects world points to screen points (its
+"buildaim" message); we then move the real mouse there. The tool (Room Tool,
+Wall Tool, a door, a paint) is chosen by the player in the Build catalog with
+SimSight's keyboard navigation; we only do the pointing.
+
+Submodules, each depending only on the ones before it: state (what other
+modules read and set: busy, the chosen product, the catalog list, the last
+build error), lot (the lot frame and tile map), pointer, jobs, rooms,
+features, catalog, menu. Jobs run through simsight_steps.
+"""
+
+from __future__ import annotations
+
+import simsight_plus_core as core
+
+from .state import busy, catalog_state, last_error
+from .lot import Frame, frame, free_spots, in_build_mode, tile_map
+from .pointer import (
+    LEFT_DOWN,
+    LEFT_UP,
+    OFFSET,
+    WHEEL,
+    clear_of_panels,
+    click,
+    cursor_off,
+    drag,
+    floor_height,
+    mouse,
+    mouse_base,
+    move_to,
+    park_mouse,
+    project,
+    screenshot,
+    send_ui,
+    set_floor,
+    stage_size,
+    tap_scan,
+    to_screen,
+    user32,
+)
+from .jobs import (
+    NO_MOUSE_TEXT,
+    VIEW_FROM,
+    cost_check,
+    funds,
+    no_mouse,
+    on_main,
+    overview_camera,
+    point_and_act,
+    point_and_act_base,
+    run_job,
+    tool_name,
+    undo,
+    watch_product,
+    whole_numbers,
+)
+from .rooms import (
+    room_box,
+    room_ids,
+    room_rows,
+    room_tiles,
+    room_walls,
+    wall_cell_point,
+    wall_point,
+    wall_things,
+)
+from .features import (
+    build_room,
+    build_wall,
+    paint_room,
+    place_on_wall,
+    reselect,
+    room_worker,
+    room_worker_base,
+)
+from .catalog import (
+    BUILD_CATALOG,
+    BUY_CATALOG,
+    NEXT_HINT,
+    STYLED_ROOMS,
+    bridge_ok,
+    fetch_catalog,
+    fetch_catalog_steps,
+    flash_reply_base,
+    open_catalog,
+    place_object_in_room,
+    place_styled_room,
+    request_catalog,
+    select_item,
+    select_item_steps,
+)
+from .menu import open_menu
+from .state import _product as _product  # simsight_wall reads the chosen product
+
+__all__ = [
+    'BUILD_CATALOG',
+    'BUY_CATALOG',
+    'Frame',
+    'LEFT_DOWN',
+    'LEFT_UP',
+    'NEXT_HINT',
+    'NO_MOUSE_TEXT',
+    'OFFSET',
+    'STYLED_ROOMS',
+    'VIEW_FROM',
+    'WHEEL',
+    'bridge_ok',
+    'build_room',
+    'build_wall',
+    'busy',
+    'catalog_state',
+    'clear_of_panels',
+    'click',
+    'core',
+    'cost_check',
+    'cursor_off',
+    'drag',
+    'fetch_catalog',
+    'fetch_catalog_steps',
+    'flash_reply_base',
+    'floor_height',
+    'frame',
+    'free_spots',
+    'funds',
+    'in_build_mode',
+    'last_error',
+    'mouse',
+    'mouse_base',
+    'move_to',
+    'no_mouse',
+    'on_main',
+    'open_catalog',
+    'open_menu',
+    'overview_camera',
+    'paint_room',
+    'park_mouse',
+    'place_object_in_room',
+    'place_on_wall',
+    'place_styled_room',
+    'point_and_act',
+    'point_and_act_base',
+    'project',
+    'request_catalog',
+    'reselect',
+    'room_box',
+    'room_ids',
+    'room_rows',
+    'room_tiles',
+    'room_walls',
+    'room_worker',
+    'room_worker_base',
+    'run_job',
+    'screenshot',
+    'select_item',
+    'select_item_steps',
+    'send_ui',
+    'set_floor',
+    'stage_size',
+    'tap_scan',
+    'tile_map',
+    'to_screen',
+    'tool_name',
+    'undo',
+    'user32',
+    'wall_cell_point',
+    'wall_point',
+    'wall_things',
+    'watch_product',
+    'whole_numbers',
+]
